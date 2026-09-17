@@ -6,62 +6,54 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Whallm</title>
         <item>
-            <title>1.1.7</title>
-            <pubDate>Mon, 14 Sep 2026 10:57:39 +0800</pubDate>
-            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.7</link>
-            <sparkle:version>1.1.7</sparkle:version>
-            <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>
+            <title>1.1.8</title>
+            <pubDate>Fri, 18 Sep 2026 05:25:26 +0800</pubDate>
+            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.8</link>
+            <sparkle:version>1.1.8</sparkle:version>
+            <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[## What's new since 1.1.6
+            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.8
 
-Whallm 1.1.7 brings DeepSeek V4.1 Flash support, a built-in Throughput benchmark, and more control over model loading, caching, and updates. This stable release includes the changes from 1.1.7-dev and 1.1.7-dev.2, plus the fixes and model options added since those previews.
+Changes since v1.1.7.
 
-### Throughput benchmark
+## Chat and sampling
 
-- Run benchmarks from the new **Throughput** page. Select an installed model and Whallm loads it automatically.
-- Choose bundled, offline **Code** or **Novel** input, context lengths from **1K to 200K**, and output limits of **128, 1024, or 4096** tokens.
-- View first-token latency, input/output speed, time per output token, total time, throughput, peak MLX memory, and the slots used for each run.
-- Copy results as plain text, JSON, or a Markdown table.
-- Cancel during input processing or generation. Completed results remain available, and the model unloads when the run finishes, fails, or is cancelled.
-- Benchmarks run sequentially with prompt reuse disabled. Model loading and input tokenization are excluded from timing; no extra warm-up is performed. Dry run remains exclusive to local builds and is excluded from this release.
+- Keep long Chat responses inside a scrollable viewport instead of letting the transcript expand the app window. The message composer stays outside the response scroll area.
+- Add a per-message Seed field to Chat and optional unsigned 32-bit `seed` support to all three generation endpoints. Omitting the seed now uses a fresh random seed for each request rather than reusing a fixed request seed.
 
-### DeepSeek V4.1 Flash
+## Runtime and model settings
 
-- Added text-only installation, repacking, model discovery, API access, SSD expert and Engram loading, and model-specific tool-call parsing for the pinned DeepSeek V4.1 Flash checkpoint.
-- Added **Off / Memory / Disk** prompt-cache choices, with **Memory** as the default for new settings.
-- Added optional DSpark installation and generation, layer-major input processing, batched expert input processing, next-layer expert prefetch, packed KV/index caches, candidate-only index scoring, and CED input processing.
-- Added optional ANE input projection for DeepSeek V4 and V4.1, and an optional approximation mode for all three model families. Approximation and DSpark/MTP cannot be enabled together.
-- V4.1 defaults to **1152 slots**. Its displayed **501.38 GB** weight size comes from the verified installation plan; metadata and network traffic are not included in that figure.
+- Improve DeepSeek V4.1 layer-major prefill with contiguous expert layer buffers, request-scoped buffer reuse, and batched expert processing. Enable V4.1 layer-major prefill and next-layer prefetch by default in the runtime and CLI.
+- Support V4.1 DSpark with layer-major prefill and next-layer prefetch, while retaining the restrictions on CED, DSpark prompt caching, and sequential verification.
+- Add separate Prefill/Decode I/O policies and an optional route-aware expert cache eviction policy alongside LRU and LFU.
+- Enable supported layer-major processing, ready-expert computation, expert batching, and next-layer prefetch in new or reset App settings. Explicitly saved disabled settings are preserved.
+- Add Qwen pooled index caching, optimized N-gram lookup, compiled tensor operations, and phase-aware expert cache sizing, enabled in new or reset Qwen App settings. Add optional MTP draft-depth and zero-acceptance retry controls; MTP and its custom strategy remain off by default.
+- Add memory budgets and peak estimates to model settings, GiB cache sliders, a persistent slots-editing preference, and a two-step reset for the selected model's advanced settings. Slots editing is enabled by default.
+- Update new/reset App defaults, including LRU expert eviction, in-memory prompt caching, an 8,192-token output limit, and GPU-only ANE allocation. Saved settings are retained.
 
-### Model settings and runtime fixes
+## Throughput and memory reporting
 
-- **Max tokens defaults to 8192 for every model**. Qwen3.8 defaults to **3072 slots**. Explicitly saved custom values remain unchanged.
-- Added or exposed controls for prompt caching, prefetch workers, input batch size, LRU/LFU expert-cache eviction, and processing experts as their reads finish. Qwen also gains optional quantized QSA KV/index caches.
-- Unloaded models can be configured while the server is running; updated settings take effect when the model next loads. Fixed command-line settings being ignored with a model catalog.
-- Reduced overlapping expert memory during long-input processing in DeepSeek V4 and Qwen by releasing old expert slots and avoiding overlapping layer buffers, while retaining the loaded model and prompt cache.
-- Added cancellation checks during input processing and shared expert reads, with cleanup before another run starts.
-- Removed Qwen's text-derived four-token verification and resident-expert grouped Decode options. Prefill batching and trained DSpark/MTP remain available. Old catalogs that explicitly enable either removed option must be updated; false values remain accepted.
-- Unified installation and runtime model descriptions, and moved **Log Level** to the Logs page.
+- Add a 512-token output option alongside 128, 1,024, and 4,096 tokens, with matching server validation.
+- Fix Throughput sampling to `temperature=0` and `seed=42` for every trial and include sampling settings in exported results. Chat sampling is unaffected.
+- Report Whallm plus its Python inference process's physical memory footprint in Throughput and Status instead of MLX allocation or RSS. Retain sampled Status peaks between UI updates and reset them with Clear metric history.
+- Use nominal 10 ms memory sampling during model work and 1-second sampling while idle. Unavailable memory readings remain unavailable rather than falling back to a different metric.
 
-### App updates
+## Packaging and documentation
 
-- Added **stable / dev** update sources and an **Automatically check for updates** setting under **Settings → Updates**.
-- Stable receives official releases; dev also receives development builds. Both can update to this stable 1.1.7 release, including from 1.1.7-dev.2.
-- Added English, Simplified Chinese, and Traditional Chinese text for the new controls.
+- Validate framework-based Python environments and restore required Python framework symlinks when packaging.
+- Update multilingual documentation, preserve historical benchmark context, and keep local research archives out of the public checkout.
+- Expand regression coverage to 135 Swift tests and 464 Python tests.
 
-### Validation and limitations
+## Notes
 
-- Release checks passed **424 Python tests** and **91 Swift tests**. The interactive Keychain test was excluded.
-- DeepSeek V4.1 remains experimental and text-only. A complete checkpoint installation, full-model generation, and full V4.1 DSpark weights have not been validated.
-- New packed-cache, candidate-index, CED, DeepSeek ANE, and approximation options default to off. Some combinations are incompatible and are disabled or rejected by the app/runtime.
-- Qwen quantized caches are lossy, and ANE uses FP16; these options may change generated output. No new full-model speed, peak-memory, or quality improvement is claimed for the optional acceleration features.
-- Bundled inputs cover 200K tokens with all three tokenizers; this is an offline coverage check, not a verified 200K generation result. Generation may end before the selected output limit.
-- This release retains MLX/MLX Metal 0.32.2.
+Acceleration changes have component and regression coverage, but this release does not claim a new full-model speedup or a completed DeepSeek V4.1 quality validation. Historical PR measurements are not measurements of this release. The previously observed Qwen MTP/non-MTP output difference remains unresolved. Fixed seeds do not guarantee identical output across versions, cache states, or acceleration settings.
 
-**Full changelog:** https://github.com/yanun0323/Whallm/compare/v1.1.6...v1.1.7
+Requires Apple Silicon and macOS 15 or later. Model weights are downloaded separately. This is a distribution build; local-only debug and Dry run features are not included.
+
+[Full changelog](https://github.com/yanun0323/Whallm/compare/v1.1.7...v1.1.8)
 ]]></description>
-            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.7/Whallm-macOS-arm64.zip" length="186877549" type="application/octet-stream" sparkle:edSignature="k4wkKtYwrCTB4P0p+cKsZXgorIjD814Fo2GPNjEW6QeWgrXdmQC4VbLEAZl22rgdLmoe+C8PEvbZXOv/BINsBA=="/>
+            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.8/Whallm-macOS-arm64.zip" length="187049638" type="application/octet-stream" sparkle:edSignature="kxR6Jz6h1QAz2u0KVhc+mwCKDH2v39D/Zf0WfWdolcz10jM8pf2Zx6qBc7eViKSQ7gQhwSVGudBLMZ4f9QHKCg=="/>
         </item>
         <item>
             <title>1.1.7</title>
@@ -102,6 +94,6 @@ This alpha adds a Throughput benchmark page and updates model defaults. Select *
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: GJjvfOn7gM6Asq8E1Pq5JGxzjhSor/eW9sulFT6aCOIkSJSfd53t93gtBDX/wD9ORc1nlNiRvGv7o+uD6+wXDg==
-length: 9130
+edSignature: 44s5Nq8mmmKKi1SkycZLOzL1lMi8aPSih4Qm2vnvoaPeLmhOk3IT6zb7MTAy7JA/Qr9TEtEHdvjhclrl13VTAA==
+length: 8012
 -->
