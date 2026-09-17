@@ -91,7 +91,7 @@ TTFT 是等待首个 token 的时间。Prefill 为输入处理速度，Decode �
 | DeepSeek V4.1 | 1152 | 8192 | 144011.4 | 56.9 | 2.1 | 32.19 |
 | DeepSeek V4.1 | 1152 | 16384 | 248481.9 | 65.9 | 1.9 | 32.75 |
 
-要测试自己的 Mac，打开 **Throughput**，选择已安装模型、**Code** 或 **Novel** 素材、**1K–200K** 输入长度，以及 **128、1024 或 4096** 的输出上限。结果可以复制为纯文本、JSON 或 Markdown。整轮完成或取消后，App 会卸载测试模型。本地打包版另有 **Dry run**，只生成模拟结果。
+要测试自己的 Mac，打开 **Throughput**，选择已安装模型、**Code** 或 **Novel** 素材、**1K–200K** 输入长度，以及 **128、512、1024 或 4096** 的输出上限。结果可以复制为纯文本、JSON 或 Markdown。整轮完成或取消后，App 会卸载测试模型。本地打包版另有 **Dry run**，只生成模拟结果。
 
 SSD 速度、输入长度、缓存状态和设置都会影响结果。
 
@@ -111,7 +111,7 @@ wire_api = "responses"
 requires_openai_auth = false
 ```
 
-将 `model` 设为上表中的 API model ID 或 Alias，保存后重启 Codex。此示例使用默认本地地址，且未设置 API key。如果在 Whallm 设置了密钥，客户端也要设置相同密钥。详见 [Codex 配置参考](https://developers.openai.com/codex/config-reference/)。
+将 `model` 设为Whallm 显示的 API model ID 或 Alias，保存后重启 Codex。此示例使用默认本地地址，且未设置 API key。如果在 Whallm 设置了密钥，客户端也要设置相同密钥。详见 [Codex 配置参考](https://developers.openai.com/codex/config-reference/)。
 
 ## API 与隐私
 
@@ -122,7 +122,7 @@ API 支持文本流式输出和工具调用，提供以下端点：
 - `POST /v1/chat/completions` 和 `POST /v1/completions`
 - `POST /api/models/load` 和 `POST /api/models/unload`
 
-当前源码的三个生成端点支持可选 `seed`，接受 `0` 到 `4294967295` 的整数；省略或传入 `null` 时，每次请求使用新的随机值。Playground Chat 的 Seed 仅应用于下一条消息，发送后清空。固定 seed 有助于在相同输入、模型、设置与运行环境下复现结果，但不保证跨版本、缓存状态或加速设置仍逐字一致。`temperature=0` 仍选择概率最高的结果。此变更尚未打包或发布。
+当前源码的三个生成端点支持可选 `seed`，接受 `0` 到 `4294967295` 的整数；省略或传入 `null` 时，每次请求使用新的随机值。Playground Chat 的 Seed 仅应用于下一条消息，发送后清空。固定 seed 有助于在相同输入、模型、设置与运行环境下复现结果，但不保证跨版本、缓存状态或加速设置仍逐字一致。`temperature=0` 仍选择概率最高的结果。自 v1.1.8 起提供。
 
 工具由客户端执行，再返回结果。不支持图片、音频、`logprobs`、`response_format` 和 `stop`。请求体上限为 **1 MiB**。
 
@@ -130,7 +130,7 @@ API 支持文本流式输出和工具调用，提供以下端点：
 
 ## 验证与限制
 
-v1.1.7 本地打包版通过 **424 项 Python 测试**、**91 项 Swift 测试**和 **12 项包内运行测试**。App 和 ZIP 解压副本均通过签名，以及英文、简体中文、繁体中文的隔离启动检查。
+v1.1.8 源码通过 **464 项 Python 测试**和 **135 项 Swift 测试**。App 和 ZIP 解压副本均通过签名，以及英文、简体中文、繁体中文的隔离启动检查。
 
 目前仅支持这三个固定版本的文本模型。新增加速路径已通过小模型和组件测试；完整模型的速度与质量比较仍待验证。很长的输入需要更多缓存内存。
 

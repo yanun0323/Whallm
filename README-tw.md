@@ -91,7 +91,7 @@ TTFT 是等待第一個 token 的時間。Prefill 為輸入處理速度，Decode
 | DeepSeek V4.1 | 1152 | 8192 | 144011.4 | 56.9 | 2.1 | 32.19 |
 | DeepSeek V4.1 | 1152 | 16384 | 248481.9 | 65.9 | 1.9 | 32.75 |
 
-要測試自己的 Mac，開啟 **Throughput**，選擇已安裝模型、**Code** 或 **Novel** 素材、**1K–200K** 輸入長度，以及 **128、1024 或 4096** 的輸出上限。結果可複製為純文字、JSON 或 Markdown。整輪完成或取消後，App 會卸載測試模型。本機打包版另有 **Dry run**，只產生模擬結果。
+要測試自己的 Mac，開啟 **Throughput**，選擇已安裝模型、**Code** 或 **Novel** 素材、**1K–200K** 輸入長度，以及 **128、512、1024 或 4096** 的輸出上限。結果可複製為純文字、JSON 或 Markdown。整輪完成或取消後，App 會卸載測試模型。本機打包版另有 **Dry run**，只產生模擬結果。
 
 SSD 速度、輸入長度、快取狀態與設定都會影響結果。
 
@@ -111,7 +111,7 @@ wire_api = "responses"
 requires_openai_auth = false
 ```
 
-將 `model` 設為上表的 API model ID 或 Alias，儲存後重新啟動 Codex。此範例使用預設本機位址，且未設定 API key。若在 Whallm 設定了金鑰，用戶端也要設定相同金鑰。詳見 [Codex 設定參考](https://developers.openai.com/codex/config-reference/)。
+將 `model` 設為Whallm 顯示的 API model ID 或 Alias，儲存後重新啟動 Codex。此範例使用預設本機位址，且未設定 API key。若在 Whallm 設定了金鑰，用戶端也要設定相同金鑰。詳見 [Codex 設定參考](https://developers.openai.com/codex/config-reference/)。
 
 ## API 與隱私
 
@@ -122,7 +122,7 @@ API 支援文字串流與工具呼叫，提供以下端點：
 - `POST /v1/chat/completions` 與 `POST /v1/completions`
 - `POST /api/models/load` 與 `POST /api/models/unload`
 
-目前原始碼的三個生成端點支援選填 `seed`，接受 `0` 到 `4294967295` 的整數；省略或傳入 `null` 時，每次請求使用新的隨機值。Playground Chat 的 Seed 只套用到下一則訊息，送出後清空。固定 seed 有助於在相同輸入、模型、設定與執行環境下重現結果，但不保證跨版本、快取狀態或加速設定仍逐字一致。`temperature=0` 維持選取最高機率的結果。這項變更尚未打包或發布。
+目前原始碼的三個生成端點支援選填 `seed`，接受 `0` 到 `4294967295` 的整數；省略或傳入 `null` 時，每次請求使用新的隨機值。Playground Chat 的 Seed 只套用到下一則訊息，送出後清空。固定 seed 有助於在相同輸入、模型、設定與執行環境下重現結果，但不保證跨版本、快取狀態或加速設定仍逐字一致。`temperature=0` 維持選取最高機率的結果。自 v1.1.8 起提供。
 
 工具由用戶端執行，再回傳結果。不支援圖片、音訊、`logprobs`、`response_format` 與 `stop`。請求本文上限為 **1 MiB**。
 
@@ -130,7 +130,7 @@ API 支援文字串流與工具呼叫，提供以下端點：
 
 ## 驗證與限制
 
-v1.1.7 本機打包版通過 **424 項 Python 測試**、**91 項 Swift 測試**與 **12 項包內執行測試**。App 與 ZIP 解壓副本均通過簽章，以及英文、簡體中文、繁體中文的隔離啟動檢查。
+v1.1.8 原始碼通過 **464 項 Python 測試**與 **135 項 Swift 測試**。App 與 ZIP 解壓副本均通過簽章，以及英文、簡體中文、繁體中文的隔離啟動檢查。
 
 目前只支援這三個固定版本的文字模型。新增加速路徑已通過小模型與元件測試；完整模型的速度與品質比較仍待驗證。很長的輸入需要更多快取記憶體。
 

@@ -91,7 +91,7 @@ TTFT is the wait for the first token. Prefill measures input processing; Decode 
 | DeepSeek V4.1 | 1152 | 8192 | 144011.4 | 56.9 | 2.1 | 32.19 |
 | DeepSeek V4.1 | 1152 | 16384 | 248481.9 | 65.9 | 1.9 | 32.75 |
 
-To test your Mac, open **Throughput**, choose an installed model, select **Code** or **Novel**, input lengths from **1K to 200K**, and an output limit of **128, 1024, or 4096**. Results can be copied as plain text, JSON, or Markdown. The app unloads the test model when the run finishes or is cancelled. Local builds also offer **Dry run**, which produces simulated results.
+To test your Mac, open **Throughput**, choose an installed model, select **Code** or **Novel**, input lengths from **1K to 200K**, and an output limit of **128, 512, 1024, or 4096**. Results can be copied as plain text, JSON, or Markdown. The app unloads the test model when the run finishes or is cancelled. Local builds also offer **Dry run**, which produces simulated results.
 
 SSD speed, prompt length, cache state, and settings affect results.
 
@@ -111,7 +111,7 @@ wire_api = "responses"
 requires_openai_auth = false
 ```
 
-Set `model` to an API model ID or Alias from the table above, then restart Codex. This example assumes the default local address and no API key. If you configure a key in Whallm, configure the same key in your client. See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/).
+Set `model` to an API model ID or Alias shown in Whallm, then restart Codex. This example assumes the default local address and no API key. If you configure a key in Whallm, configure the same key in your client. See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/).
 
 ## API and privacy
 
@@ -122,7 +122,7 @@ The API supports text streaming and tool calls through:
 - `POST /v1/chat/completions` and `POST /v1/completions`
 - `POST /api/models/load` and `POST /api/models/unload`
 
-Current source supports an optional `seed` integer from `0` to `4294967295` on all three generation endpoints. Omit it or send `null` for a fresh random seed on every request. In Playground Chat, Seed applies only to the next message and clears after sending. A fixed seed helps reproduce a result with the same prompt, model, settings, and runtime; it does not guarantee identical text across versions, cache states, or acceleration settings. `temperature=0` remains greedy. This change has not been packaged or released yet.
+Current source supports an optional `seed` integer from `0` to `4294967295` on all three generation endpoints. Omit it or send `null` for a fresh random seed on every request. In Playground Chat, Seed applies only to the next message and clears after sending. A fixed seed helps reproduce a result with the same prompt, model, settings, and runtime; it does not guarantee identical text across versions, cache states, or acceleration settings. `temperature=0` remains greedy. Available in v1.1.8.
 
 The client executes tools and sends their results back. Images, audio, `logprobs`, `response_format`, and `stop` are not supported. Request bodies are limited to **1 MiB**.
 
@@ -130,7 +130,7 @@ Inference runs on your Mac. Network access is used for downloads, updates, and A
 
 ## Validation and limits
 
-The v1.1.7 local build passed **424 Python tests**, **91 Swift tests**, and **12 packaged-runtime tests**. Both the app and extracted ZIP passed signature and isolated startup checks in English, Simplified Chinese, and Traditional Chinese.
+The v1.1.8 source passed **464 Python tests** and **135 Swift tests**. Both the app and extracted ZIP passed signature and isolated startup checks in English, Simplified Chinese, and Traditional Chinese.
 
 Only the three pinned text checkpoints are supported. New acceleration paths have small-model and component tests; full-model speed and quality comparisons are still pending. Very long prompts need more cache memory.
 

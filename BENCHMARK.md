@@ -1,7 +1,7 @@
 # Benchmark
 
-Recorded measurements for the unreleased V4.1 prefill change, v1.1.7, v1.1.4,
-and v1.1.0. Each section states its workload and measurement conditions.
+Recorded historical measurements for the V4.1 prefill change, v1.1.7, v1.1.4,
+and v1.1.0. No new full-model performance measurements are claimed for v1.1.8. Each section states its workload and measurement conditions.
 
 ## Historical PR measurements: DeepSeek V4.1 prefill on M5 Max
 
@@ -117,7 +117,11 @@ Status and Throughput maxima need not be identical.
 
 ## Qwen optimization correctness pilot (2026-09-17)
 
-Opt-in runtime candidates retain the existing App defaults:
+The following are the standalone runtime defaults and the historical pilot's
+opt-in configuration, not the v1.1.8 App defaults. New or reset Qwen App settings
+enable pooled index caching, optimized N-gram lookup, compiled tensor operations,
+and phase memory; explicitly saved choices are preserved. MTP and its custom
+strategy remain off by default. This default change is not evidence of a speedup.
 
 | RuntimeConfig field | Default | Candidate scope |
 | --- | --- | --- |
@@ -128,8 +132,9 @@ Opt-in runtime candidates retain the existing App defaults:
 | `qwen_mtp_draft_tokens` | `5` | Draft depth from 1 through 5 |
 | `qwen_mtp_zero_acceptance_limit` | `1` | Consecutive zero-acceptance rounds before request-local fallback, from 1 through 32 |
 
-These fields are optional in runtime catalogs. Qwen model settings now expose
-independent experimental switches, all off by default, applied on next load.
+These fields are optional in runtime catalogs. At the time of the pilot, Qwen
+model settings exposed independent experimental switches, all off by default,
+applied on next load. v1.1.8 changes the App defaults as described above.
 The custom MTP switch reveals depth and retry choices (initially 2/2); switching
 it off uses 5/1 without erasing the choices. MTP must be installed and enabled
 to edit that strategy. Model locking and two-confirmation reset still apply.
