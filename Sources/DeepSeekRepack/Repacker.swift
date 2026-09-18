@@ -126,9 +126,7 @@ struct Repacker {
         try Task.checkCancellation()
         let range = conversionSourceRange(conversion, layout: layout)
         let scaleRange = conversionScaleRange(conversion, layout: layout)
-        let id = conversionChunkID(
-          conversion: conversion,
-          version: plan.expertQuantization?.conversionVersion ?? 0)
+        let id = try conversionChunkID(conversion: conversion, plan: plan)
         let completedChunkIsValid = try receipt?.completed[id].map { expectedDigest in
           try conversionDestinationDigest(
             conversion: conversion, layout: layout, handles: handles) == expectedDigest
@@ -342,9 +340,7 @@ struct Repacker {
       where !invalidFiles.contains(conversion.destinationFile)
       {
         let layout = try conversionLayout(conversion, plan: plan)
-        let id = conversionChunkID(
-          conversion: conversion,
-          version: plan.expertQuantization?.conversionVersion ?? 0)
+        let id = try conversionChunkID(conversion: conversion, plan: plan)
         receipt?.completed[id] = try conversionDestinationDigest(
           conversion: conversion, layout: layout, handles: handles)
         preparedCount += 1
@@ -639,6 +635,7 @@ struct Repacker {
   {
     guard conversion.sourceDType == "F8_E4M3", conversion.sourceShape.count == 2,
       conversion.sourceScaleDType == "BF16", conversion.sourceScaleShape.count == 2,
+      plan.expertQuantization?.conversionVersion != nil,
       let weight = plan.expertRegions.first(where: { $0.name == conversion.weightRegion }),
       let scale = plan.expertRegions.first(where: { $0.name == conversion.scaleRegion })
     else {
@@ -683,9 +680,12 @@ struct Repacker {
 
   private func conversionChunkID(
     conversion: ExpertConversion,
-    version: Int
-  ) -> String {
-    "mxfp4-v\(version):\(conversion.tensor)"
+    plan: RepackPlan
+  ) throws -> String {
+    guard let version = plan.expertQuantization?.conversionVersion else {
+      throw RepackError.invalidPlan("missing expert quantization conversion version")
+    }
+    return "mxfp4-v\(version):\(conversion.tensor)"
   }
 
   private func writeConversion(

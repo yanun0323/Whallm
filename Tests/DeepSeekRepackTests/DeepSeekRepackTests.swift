@@ -561,6 +561,72 @@ final class DeepSeekRepackTests: XCTestCase {
       plan: plan, output: output, invalidFiles: ["experts/layer_00.bin"], progress: nil)
     XCTAssertTrue(try InstalledModel.audit(manifest: repaired, at: output).isValid)
   }
+
+  func testQwenConversionRejectsPlanWithoutConversionVersion() async throws {
+    let gateBytes = QwenContract.expertIntermediateSize * QwenContract.hiddenSize
+    let downBytes = QwenContract.hiddenSize * QwenContract.expertIntermediateSize
+    let scaleBytes = 5 * 20 * 2
+    var files = qwenCompanionFiles()
+    files["common"] = Data([7])
+    files["gate"] = Data(repeating: 0, count: gateBytes)
+    files["up"] = Data(repeating: 0, count: gateBytes)
+    files["down"] = Data(repeating: 0, count: downBytes)
+    files["gate-scale"] = Data(repeating: 0, count: scaleBytes)
+    files["up-scale"] = Data(repeating: 0, count: scaleBytes)
+    files["down-scale"] = Data(repeating: 0, count: scaleBytes)
+    let source = MemoryCheckpointSource(files: files)
+    let plan = RepackPlan(
+      formatVersion: 2,
+      modelID: QwenContract.modelID,
+      revision: QwenContract.revision,
+      layerCount: 1,
+      expertCount: 1,
+      selectedExpertCount: 1,
+      expertBlobSize: QwenContract.expertBlobSize,
+      checkpointTensorBytes: UInt64(1 + gateBytes * 2 + downBytes + scaleBytes * 3),
+      files: [
+        PlannedFile(path: "common.bin", size: 1),
+        PlannedFile(path: "experts/layer_00.bin", size: QwenContract.expertBlobSize),
+      ],
+      commonTensors: [
+        InstalledTensor(name: "fixture", dtype: "U8", shape: [1], offset: 0, length: 1)
+      ],
+      expertRegions: QwenContract.expertRegions,
+      copies: [
+        TensorCopy(
+          tensor: "fixture", sourceFile: "common", sourceOffset: 0, length: 1,
+          destinationFile: "common.bin", destinationOffset: 0)
+      ],
+      modelKind: .qwen3_8FlashNext,
+      maximumContext: QwenContract.maximumContext,
+      expertQuantization: nil,
+      expertConversions: [
+        ExpertConversion(
+          tensor: "gate", sourceFile: "gate", sourceOffset: 0, sourceDType: "F8_E4M3",
+          sourceShape: [QwenContract.expertIntermediateSize, QwenContract.hiddenSize],
+          sourceScaleTensor: "gate-scale", sourceScaleFile: "gate-scale",
+          sourceScaleOffset: 0, sourceScaleDType: "BF16", sourceScaleShape: [5, 20],
+          destinationFile: "experts/layer_00.bin", expert: 0, destinationRow: 0,
+          weightRegion: "gate_up.weight",
+          scaleRegion: "gate_up.scale"),
+      ]
+    )
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let output = parent.appendingPathComponent("qwen.dsv4")
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: parent) }
+
+    do {
+      _ = try await Repacker(source: source).run(
+        plan: plan, output: output, progress: nil)
+      XCTExpectFailure("a plan with conversions but no quantization must not install")
+    } catch let RepackError.invalidPlan(message) {
+      XCTAssertTrue(
+        message.contains("invalid MXFP4 conversion for gate")
+          || message.contains("missing expert quantization conversion version"),
+        "unexpected message: \(message)")
+    }
+  }
 }
 
 private actor DownloadByteCounter {
