@@ -12,6 +12,10 @@ class ModelSupport:
     model; the caller may only clone or serialize them through these methods.
     """
 
+    # True when DSpark requests reuse prompt snapshots of the target cache and
+    # draft context without the experimental dspark_prompt_cache option.
+    dspark_reuses_prompt_cache = False
+
     def __init__(self, descriptor: ModelDescriptor):
         self.descriptor = descriptor
 
@@ -24,7 +28,7 @@ class ModelSupport:
                     and self.descriptor.kind != "qwen3.8-flash-next"):
                 raise ValueError(f"{name} is supported only by qwen3.8-flash-next")
         if self.descriptor.kind == "deepseek-v4.1" and getattr(config, "dspark_enabled", False):
-            for name in ("v41_ced_prefill", "dspark_prompt_cache", "dspark_sequential_verification"):
+            for name in ("v41_ced_prefill", "dspark_sequential_verification"):
                 if getattr(config, name, False):
                     raise ValueError(f"{name} is not supported by V4.1 DSpark")
         # The two V4.1 prefill defaults are consulted only by its support package.
