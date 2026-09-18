@@ -8,6 +8,7 @@ from .base import ModelSupport
 
 class DeepSeekV41Support(ModelSupport):
     expert_layout = FusedMXFP4Layout()
+    dspark_reuses_prompt_cache = True
 
     @property
     def option_error_name(self):

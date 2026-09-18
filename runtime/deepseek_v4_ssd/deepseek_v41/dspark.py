@@ -98,7 +98,9 @@ class DSpark(nn.Module):
             return
         if len(state) != len(self.mtp):
             raise ValueError("Invalid V4.1 DSpark state")
-        for stage, (context, offset) in zip(self.mtp, state):
+        for stage, saved in zip(self.mtp, state):
+            # A missing stage state starts that stage empty, as V4 DSpark does.
+            context, offset = saved if saved is not None else (None, 0)
             stage.attn.context = mx.array(context) if context is not None else None
             stage.attn.offset = offset
 
