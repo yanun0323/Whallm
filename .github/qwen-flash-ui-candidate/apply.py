@@ -13,10 +13,16 @@ if hashlib.sha256(payload).hexdigest() != expected:
 patch = gzip.decompress(payload)
 if len(patch) != 55886:
     raise RuntimeError('Unexpected candidate patch length')
-fix = (root / 'build-fix.patch').read_bytes()
-if hashlib.sha256(fix).hexdigest() != 'd226aae49c3737e29425b3a12927aa14e821d3bef2d86fbe75a449d04b106d67':
-    raise RuntimeError('Build-fix digest mismatch; refusing to apply')
-for content in (patch, fix):
+patches = [patch]
+for filename, digest in [
+    ('build-fix.patch', 'd226aae49c3737e29425b3a12927aa14e821d3bef2d86fbe75a449d04b106d67'),
+    ('test-build-fix.patch', '854e3e98bbc7fcc19c905195cb4e20b71c9f9578f44d8b449fcd70465ceaa6fa'),
+]:
+    content = (root / filename).read_bytes()
+    if hashlib.sha256(content).hexdigest() != digest:
+        raise RuntimeError(f'{filename} digest mismatch; refusing to apply')
+    patches.append(content)
+for content in patches:
     with tempfile.NamedTemporaryFile(suffix='.patch') as temporary:
         temporary.write(content)
         temporary.flush()
