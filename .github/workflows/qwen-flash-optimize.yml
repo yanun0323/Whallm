@@ -1,0 +1,51 @@
+name: Qwen Flash optimization
+
+on:
+  push:
+    branches: [feat/qwen-flash-optimize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qwen-flash-optimize-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Fetch pinned source snapshots
+        shell: bash
+        env:
+          WHALLM_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir snapshots
+          fetch_snapshot() {
+            local repository="$1" directory="$2" revision="$3"
+            git init -q "snapshots/$directory"
+            git -C "snapshots/$directory" remote add origin "https://github.com/$repository.git"
+            git -C "snapshots/$directory" fetch --depth=1 origin "$revision"
+            git -C "snapshots/$directory" checkout --detach FETCH_HEAD
+            test "$(git -C "snapshots/$directory" rev-parse HEAD)" = "$revision"
+            printf '%s\t%s\t%s\n' "$repository" "$directory" "$revision" >> snapshots/SOURCES.tsv
+          }
+          fetch_snapshot yanun0323/Whallm Whallm "$WHALLM_SHA"
+          fetch_snapshot npanj/llama.cpp npanj-llama f507d75f8dfeb90ad96c3e6a08129dbb1999d17a
+          fetch_snapshot derekrparris/DynaMoE DynaMoE b396e115f396790b4269d5118eb1b0bf22581d1e
+          fetch_snapshot mihailescu2m/llama.cpp mihailescu2m-llama d1762fce3e88ab78d99639b3cd8fa2e108f74f53
+          tar --exclude=.git -czf qwen-flash-sources.tar.gz snapshots
+          sha256sum qwen-flash-sources.tar.gz > qwen-flash-sources.tar.gz.sha256
+      - name: Preserve reproducible source audit
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qwen-flash-sources
+          path: |
+            qwen-flash-sources.tar.gz
+            qwen-flash-sources.tar.gz.sha256
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
