@@ -1,0 +1,30 @@
+--- a/runtime/tests/test_qwen_flash_mlx.py
++++ b/runtime/tests/test_qwen_flash_mlx.py
+@@ -191,22 +191,22 @@
+                     hidden = (mx.random.normal((1, 17, 32)) * 0.1).astype(dtype)
+                     for length in (1, 3, 8, 9, 17):
+                         attention.sparse_sdpa = False
+-                        expected = attention(hidden[:, :length])
++                        expected = attention(hidden[:, :length], None)
+                         attention.sparse_sdpa = True
+-                        actual = attention(hidden[:, :length])
++                        actual = attention(hidden[:, :length], None)
+                         np.testing.assert_allclose(np.asarray(actual.astype(mx.float32)),
+                             np.asarray(expected.astype(mx.float32)), atol=tolerance, rtol=tolerance)
+                     # Alter only future tokens: causal prefix must be identical.
+                     changed = mx.concatenate([hidden[:, :9], hidden[:, 9:] * -30], axis=1)
+-                    original = attention(hidden)
+-                    future_changed = attention(changed)
++                    original = attention(hidden, None)
++                    future_changed = attention(changed, None)
+                     np.testing.assert_array_equal(bits(original[:, :9]), bits(future_changed[:, :9]))
+ 
+     def test_chunked_decode_and_cache_rollback(self):
+         attention = self.attention()
+         attention.sparse_sdpa = True
+         hidden = mx.random.normal((1, 17, 32)) * 0.1
+-        expected = attention(hidden)
++        expected = attention(hidden, None)
+         cache = CacheList(KVCache(), KVCache())
+         chunks = [attention(hidden[:, :3], cache), attention(hidden[:, 3:9], cache),
+                   attention(hidden[:, 9:16], cache), attention(hidden[:, 16:], cache)]

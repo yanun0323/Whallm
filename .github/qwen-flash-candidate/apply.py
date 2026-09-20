@@ -39,5 +39,10 @@ with tempfile.NamedTemporaryFile(suffix=".patch") as stream:
         raise SystemExit(f"Unexpected candidate paths: {paths.symmetric_difference(ALLOWED)}")
     subprocess.run(["git", "apply", "--check", "--index", stream.name], check=True)
     subprocess.run(["git", "apply", "--index", stream.name], check=True)
-    subprocess.run(["git", "diff", "--cached", "--check"], check=True)
-print(f"Applied {len(ALLOWED)} reviewed files; compressed SHA256={EXPECTED}", flush=True)
+fix = root / "fix.patch"
+if hashlib.sha256(fix.read_bytes()).hexdigest() != "dd6fcdf59868a3f418ccb8a21b819da144b288470e34ce218438bb5f4e6bd286":
+    raise SystemExit("Test interface correction digest mismatch")
+subprocess.run(["git", "apply", "--check", "--index", str(fix)], check=True)
+subprocess.run(["git", "apply", "--index", str(fix)], check=True)
+subprocess.run(["git", "diff", "--cached", "--check"], check=True)
+print(f"Applied {len(ALLOWED)} reviewed files and the pinned cache-argument test correction", flush=True)
