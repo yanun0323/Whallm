@@ -76,6 +76,7 @@ jobs:
           test "$(git ls-remote origin refs/heads/feat/qwen-flash-optimize | cut -f1)" = "$EXPECTED_HEAD"
           git rm -r .github/qwen-flash-ui-candidate
           git add Sources/DeepSeekV4SSDApp Tests/DeepSeekV4SSDAppTests \
+            Sources/DeepSeekRepack/DeepSeekV41.swift \
             Scripts/validate_qwen_flash_app_catalog.py docs/qwen-flash-app-controls.md \
             docs/qwen-flash-optimization.md
           git diff --cached --check

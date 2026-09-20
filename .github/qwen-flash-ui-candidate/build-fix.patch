@@ -1,0 +1,25 @@
+--- a/Sources/DeepSeekRepack/DeepSeekV41.swift
++++ b/Sources/DeepSeekRepack/DeepSeekV41.swift
+@@ -132,11 +132,17 @@
+     }
+ 
+     try validateDSpark(manifest.dspark, files: manifest.files)
+-    let required = Set(
+-      ["common.bin"] + companionPaths
+-        + (0..<layerCount).map(expertLayerPath)
+-        + engram.tables.flatMap { [$0.weightFile, $0.scaleFile] }
+-        + (manifest.dspark == nil ? [] : ["dspark/common.bin", "inference/config.json"] + (0..<3).map { String(format: "dspark/experts/layer_%02d.bin", $0) }))
++    var required: Set<String> = ["common.bin"]
++    required.formUnion(companionPaths)
++    required.formUnion((0..<layerCount).map(expertLayerPath))
++    for table in engram.tables {
++      required.insert(table.weightFile)
++      required.insert(table.scaleFile)
++    }
++    if manifest.dspark != nil {
++      required.formUnion(["dspark/common.bin", "inference/config.json"])
++      required.formUnion((0..<3).map { String(format: "dspark/experts/layer_%02d.bin", $0) })
++    }
+     let paths = manifest.files.map(\.path)
+     guard Set(paths) == required, Set(paths).count == paths.count else {
+       throw RepackError.invalidPlan("installed V4.1 files do not match the pinned layout")
