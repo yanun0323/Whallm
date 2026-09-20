@@ -17,6 +17,7 @@ patches = [patch]
 for filename, digest in [
     ('build-fix.patch', 'd226aae49c3737e29425b3a12927aa14e821d3bef2d86fbe75a449d04b106d67'),
     ('test-build-fix.patch', '854e3e98bbc7fcc19c905195cb4e20b71c9f9578f44d8b449fcd70465ceaa6fa'),
+    ('test-maintenance.patch', '56d0fc310ef98c1e5fb247adc686c6d632370514a64798b9474116abf9f02d73'),
 ]:
     content = (root / filename).read_bytes()
     if hashlib.sha256(content).hexdigest() != digest:
@@ -28,4 +29,4 @@ for content in patches:
         temporary.flush()
         subprocess.run(['git', 'apply', '--check', temporary.name], check=True)
         subprocess.run(['git', 'apply', temporary.name], check=True)
-print(f'Applied reviewed Qwen App candidate and Swift type-checking fixes; compressed SHA256={expected}')
+print(f'Applied reviewed Qwen App candidate and test maintenance; compressed SHA256={expected}')
