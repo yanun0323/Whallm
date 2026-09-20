@@ -1,0 +1,45 @@
+{
+  "kind": "app_correctness_and_rendering_not_model_performance",
+  "baseline": "06c9c458f06ba1959264312e8b051b86a5e4caeb",
+  "tested_checkout": "acfe8b5f705586498c2316f53ed4aed365a808a1",
+  "digest_pinned_candidate_applied_before_tests": true,
+  "published_source_commit": "da917658ab89fcbe1a5aa8b963a9a65ae249ecca",
+  "workflow_run_id": 35533814727,
+  "validation_job_id": 106139133163,
+  "artifact_id": 10611868675,
+  "artifact_sha256": "5ebef8bf928f18ad5b1304e7692e3145ee77e90660b3727a82f21f5c0934bed1",
+  "environment": {
+    "os": "macOS 15.7.9",
+    "architecture": "arm64",
+    "xcode": "26.3",
+    "swift": "6.2.4",
+    "python": "3.12",
+    "mlx": "0.32.2"
+  },
+  "swift_tests": {
+    "total": 148,
+    "passed": 145,
+    "skipped": 3,
+    "failures": 0,
+    "new_tests": 12,
+    "new_tests_passed": 12,
+    "skip_reason": "Pre-existing discovery tests require a complete installed model or its manifest, which are absent on the hosted runner."
+  },
+  "swift_to_python_catalog_cases": 8,
+  "catalog_cases_passed": 8,
+  "rendered_control_previews": 9,
+  "languages": ["en", "zh-Hant", "zh-Hans"],
+  "states": ["default", "enabled", "locked"],
+  "compatibility_maintenance": [
+    "Split the pre-existing V4.1 manifest file-set expression without changing required files.",
+    "Split the pre-existing throughput row expression without changing export formatting.",
+    "Type the pre-existing memory reference calculations explicitly without changing formulas or assertions.",
+    "Synchronize the existing chat-navigation test with publications and a controlled second delta instead of fixed sleeps.",
+    "Extend the existing exact catalog-key assertion with the four newly supported fields."
+  ],
+  "limitations": [
+    "No full model weights loaded; no throughput or quality claim.",
+    "Rendered SwiftUI controls are not an interactive full-App acceptance or assistive-technology audit.",
+    "No packaged App, signing, notarization, tag, release, or master merge performed."
+  ]
+}
