@@ -25,7 +25,7 @@ def main():
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--prompt", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--variant", choices=("baseline", "pooled", "ngram", "compiled", "mtp5", "mtp2", "mtp2-retry", "combined", "phase", "phase-combined"), required=True)
+    parser.add_argument("--variant", choices=("baseline", "pooled", "ngram", "compiled", "mtp5", "mtp2", "mtp2-retry", "combined", "phase", "phase-combined", "waves", "pread", "sparse-sdpa", "flash-combined"), required=True)
     parser.add_argument("--max-tokens", type=int, default=32)
     parser.add_argument("--lifecycle", action="store_true", help="Also check continuation, cancellation, warmup and another request")
     parser.add_argument("--layer-major", action="store_true", help="Exercise layer-major batched prefill instead of default-off controls")
@@ -45,6 +45,11 @@ def main():
         prompt_cache_entries=0, persistent_prompt_cache=False, layer_major_prefill=False,
         batched_expert_prefill=False, ready_expert_decode=False, ane_prefill=False)
     overrides = {
+        "waves": {"qwen_expert_wave_slots": 32},
+        "pread": {"qwen_ngram_io": "pread", "qwen_ngram_cache_bytes": 64 * 1024**2},
+        "sparse-sdpa": {"qwen_sparse_sdpa": True},
+        "flash-combined": {"qwen_expert_wave_slots": 32, "qwen_ngram_io": "pread",
+                           "qwen_ngram_cache_bytes": 64 * 1024**2, "qwen_sparse_sdpa": True},
         "phase": {"qwen_phase_memory": True},
         "phase-combined": {"qwen_phase_memory": True, "qwen_pooled_index_cache": True,
                            "qwen_ngram_lookup_optimized": True, "qwen_compile_tensor_ops": True},
@@ -104,6 +109,10 @@ def main():
             result["generated_token_ids"] = tokens
             result["token_sha256"] = sha(",".join(map(str, tokens)).encode())
             result["metrics"] = runtime.metrics.snapshot()
+            result["ngram_io"] = runtime.model.ngram_store.io_snapshot()
+            result["expert_waves"] = [dict(layer=i, waves=layer.mlp.experts.wave_count,
+                pairs=int(layer.mlp.experts.wave_pairs), peak_experts=layer.mlp.experts.wave_peak_experts)
+                for i, layer in enumerate(runtime.model.model.layers)]
             phase_snapshot = getattr(runtime.expert_cache, "phase_memory_snapshot", None)
             result["phase_memory"] = phase_snapshot() if phase_snapshot is not None else None
             if args.lifecycle:

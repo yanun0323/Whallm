@@ -224,7 +224,8 @@ def rollback_mtp_cache(cache: CacheList, checkpoint: int) -> None:
 class NGramStore:
     """Read and decode only the requested FP8 N-gram rows."""
 
-    def __init__(self, path: Path, descriptor: NGram, weight_scale: float = 1.0, *, optimized: bool = False):
+    def __init__(self, path: Path, descriptor: NGram, weight_scale: float = 1.0, *,
+                 optimized: bool = False, io_backend: str = "mmap", cache_bytes: int = 0):
         self.path = path
         self.descriptor = descriptor
         expected = descriptor.shard_count * descriptor.shard_row_count * descriptor.row_bytes
@@ -239,6 +240,23 @@ class NGramStore:
         if optimized:
             from .qwen_ngram_lookup import fp8_table
             self._fp8_table = fp8_table(weight_scale)
+        self._row_count = descriptor.shard_count * descriptor.shard_row_count
+        self._reader = None
+        self._rows = None
+        self._closed = False
+        if io_backend not in ("mmap", "pread"):
+            raise ValueError("N-gram I/O backend must be mmap or pread")
+        if type(cache_bytes) is not int or cache_bytes < 0:
+            raise ValueError("N-gram cache bytes must be a nonnegative integer")
+        if io_backend == "pread":
+            from .qwen_flash_io import NGramRowReader
+            self._reader = NGramRowReader(
+                path, self._row_count, descriptor.row_bytes,
+                cache_bytes=cache_bytes, check_cancelled=check_cancelled,
+            )
+            return
+        if cache_bytes:
+            raise ValueError("N-gram row cache requires the pread backend")
         self._rows = np.memmap(
             path,
             mode="r",
@@ -249,16 +267,39 @@ class NGramStore:
             ),
         )
 
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            if self._reader is not None:
+                self._reader.close()
+            if self._rows is not None:
+                self._rows._mmap.close()
+                self._rows = None
+
+    def io_snapshot(self) -> dict:
+        if self._reader is not None:
+            return {"backend": "pread", **self._reader.snapshot()}
+        return {"backend": "mmap"}
+
     def lookup(self, row_ids: np.ndarray) -> mx.array:
+        if self._closed:
+            raise ValueError("N-gram store is closed")
+        check_cancelled()
         row_ids = np.asarray(row_ids, dtype=np.int64)
         if row_ids.size and (
-            row_ids.min() < 0 or row_ids.max() >= self._rows.shape[0]
+            row_ids.min() < 0 or row_ids.max() >= self._row_count
         ):
             raise ValueError("N-gram row is outside ngram.bin")
-        if self.optimized:
+        if self.optimized and self._reader is None:
             from .qwen_ngram_lookup import lookup_rows
             return lookup_rows(self._rows, row_ids, self._fp8_table)
-        copied = np.array(self._rows[row_ids], copy=True)
+        copied = (self._reader.lookup(row_ids) if self._reader is not None
+                  else np.array(self._rows[row_ids], copy=True))
+        if self.optimized:
+            decoded = self._fp8_table[copied]
+            if np.isnan(decoded).any():
+                raise ValueError("Qwen N-gram store contains NaN")
+            return mx.array(decoded).astype(mx.bfloat16)
         exponent = (copied >> 3) & 0x0F
         mantissa = copied & 0x07
         sign = np.where(copied & 0x80, -1.0, 1.0)
@@ -427,6 +468,7 @@ class QSAAttention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
+        self.sparse_sdpa = False
         self.q_proj = nn.Linear(
             args.hidden_size,
             args.num_attention_heads * args.head_dim * 2,
@@ -561,6 +603,17 @@ class QSAAttention(nn.Module):
             repeats = self.args.num_attention_heads // selected_key.shape[1]
             current_query = query[0, :, start:end].transpose(1, 0, 2)
             causal = selected_valid & (selected <= absolute[:, None])
+            if self.sparse_sdpa:
+                # Each query is a separate batch; GQA shares its selected KV rows.
+                # Keep the baseline indexer, selected cells and causal membership.
+                # Different reduction precision can change logits: opt-in only.
+                current = mx.fast.scaled_dot_product_attention(
+                    current_query[:, :, None, :], selected_key, selected_value,
+                    scale=self.args.head_dim**-0.5,
+                    mask=causal[:, None, None, :],
+                ).squeeze(-2)
+                outputs.append(current.transpose(1, 0, 2)[None])
+                continue
             grouped_query = current_query.reshape(
                 end - start,
                 selected_key.shape[1],
@@ -619,6 +672,10 @@ class StreamingExperts(nn.Module):
         self.layer = layer
         self.cache = cache
         self.grouped_prefill = False
+        self.wave_slots = 0
+        self.wave_count = 0
+        self.wave_pairs = 0
+        self.wave_peak_experts = 0
 
     @staticmethod
     def _one(value: mx.array, weights: QwenExpertWeights) -> mx.array:
@@ -626,7 +683,43 @@ class StreamingExperts(nn.Module):
         gate, up = mx.split(projected, 2, axis=-1)
         return _qmm(nn.silu(gate) * up, weights.down, weights.down_scales)
 
+    def _waves(self, value: mx.array, selected: np.ndarray) -> mx.array:
+        from .qwen_expert_waves import expert_waves
+        capacity = min(self.wave_slots, self.cache.slots)
+        flat = selected.reshape(-1)
+        flat_value = value.reshape(-1, value.shape[-1])
+        outputs, order = [], []
+        for wave in expert_waves(selected, capacity, self.cache.model.expert_count):
+            check_cancelled()
+            positions = np.concatenate([positions for _, positions in wave.groups])
+            # Retain repeated IDs for route-frequency accounting in ExpertCache.
+            resident = self.cache.get_many(self.layer, flat[positions].tolist())
+            current = []
+            try:
+                for expert, pair_positions in wave.groups:
+                    check_cancelled()
+                    weights = resident.individual_weights[resident.slots[expert]]
+                    source = mx.take(flat_value, mx.array(pair_positions // selected.shape[-1]), axis=0)
+                    current.append(self._one(source, weights))
+                # Slot-backed weights MUST finish being read before the next wave
+                # can evict/reuse them. async_eval alone is not a lifetime fence.
+                mx.eval(*current)
+            except BaseException:
+                mx.synchronize()
+                raise
+            outputs.extend(current)
+            order.append(positions)
+            self.wave_count += 1
+            self.wave_pairs += positions.size
+            self.wave_peak_experts = max(self.wave_peak_experts, len(wave.groups))
+        grouped = mx.concatenate(outputs, axis=0)
+        inverse = np.argsort(np.concatenate(order))
+        return mx.take(grouped, mx.array(inverse), axis=0).reshape(*selected.shape, -1)
+
     def __call__(self, value: mx.array, indices: mx.array) -> mx.array:
+        # Whole-layer batching is disabled by QwenSupport when waves are enabled.
+        if self.wave_slots and value.size // value.shape[-1] > 1:
+            return self._waves(value, np.asarray(indices, dtype=np.int32))
         batched = self.cache.current_batched(self.layer)
         if isinstance(batched, QwenBatchedExperts):
             if getattr(self.cache, "route_cache_enabled", False):
@@ -803,6 +896,7 @@ class Model(nn.Module):
         self.args = args
         self.model_type = args.model_type
         self.model = TextModel(args, cache, ngram_store)
+        self.ngram_store = ngram_store
         self._expert_cache = cache
         self.quantize_kv = False
         self.quantize_index = False
@@ -1227,6 +1321,7 @@ def load(
         separate_prefill_io=getattr(config, "separate_prefill_io", True),
         eviction_policy=getattr(config, "expert_eviction_policy", "lfu"),
     )
+    ngram_store = None
     try:
         if getattr(config, "qwen_phase_memory", False):
             cache.enable_phase_memory()
@@ -1242,6 +1337,8 @@ def load(
             installed.ngram,
             weight_scale,
             optimized=getattr(config, "qwen_ngram_lookup_optimized", False),
+            io_backend=getattr(config, "qwen_ngram_io", "mmap"),
+            cache_bytes=getattr(config, "qwen_ngram_cache_bytes", 0),
         )
         model = Model(args, cache, ngram_store)
         model.quantize_kv = config.qwen_quantized_kv
@@ -1257,6 +1354,10 @@ def load(
         )
         for layer in model.model.layers:
             layer.mlp.experts.grouped_prefill = grouped_prefill
+            layer.mlp.experts.wave_slots = getattr(config, "qwen_expert_wave_slots", 0)
+            attention = getattr(layer, "self_attn", None)
+            if isinstance(attention, QSAAttention):
+                attention.sparse_sdpa = getattr(config, "qwen_sparse_sdpa", False)
         model.eval()
         model.load_weights(list(model.sanitize(weights).items()), strict=True)
         model.dspark = None
@@ -1269,6 +1370,10 @@ def load(
             getattr(config, "ane_prefill_ratio", 0.0),
         )
         return model, cache
-    except Exception:
-        cache.close()
+    except BaseException:
+        try:
+            cache.close()
+        finally:
+            if ngram_store is not None:
+                ngram_store.close()
         raise

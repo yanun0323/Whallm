@@ -35,7 +35,8 @@ class QwenSupport(ModelSupport):
         return _qwen_layer_major_prefill(
             model, tokens, cache, step_size, expert_cache,
             getattr(config, "qwen_next_layer_prefetch", False),
-            getattr(config, "batched_expert_prefill", True),
+            (getattr(config, "batched_expert_prefill", True)
+             and not getattr(config, "qwen_expert_wave_slots", 0)),
         )
 
     def open_codec(self, root, tokenizer):
@@ -167,7 +168,7 @@ def _qwen_layer_major_prefill(
     next_layer_prefetch: bool = False,
     batched_expert_prefill: bool = True,
 ) -> mx.array | None:
-    """Populate Qwen caches while reading each complete expert layer once."""
+    """Populate Qwen caches layer-major, using whole layers or bounded pair waves."""
     if not token_ids:
         return None
     core = model.model

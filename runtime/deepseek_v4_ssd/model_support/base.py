@@ -17,6 +17,12 @@ class ModelSupport:
 
     def validate_config(self, config) -> None:
         features = self.descriptor.features
+        from ..qwen_flash_config import DEFAULTS, validate_flash_config
+        validate_flash_config(config)
+        for name, default in DEFAULTS.items():
+            if (getattr(config, name, default) != default
+                    and self.descriptor.kind != "qwen3.8-flash-next"):
+                raise ValueError(f"{name} is supported only by qwen3.8-flash-next")
         if self.descriptor.kind == "deepseek-v4.1" and getattr(config, "dspark_enabled", False):
             for name in ("v41_ced_prefill", "dspark_prompt_cache", "dspark_sequential_verification"):
                 if getattr(config, name, False):
@@ -152,7 +158,8 @@ class ModelSupport:
             dspark.reset_cache()
             resources.append(dspark.expert_cache)
         resources.extend((getattr(model, "mtp_expert_cache", None),
-                          getattr(model, "ane_prefill", None), expert_cache))
+                          getattr(model, "ane_prefill", None), expert_cache,
+                          getattr(model, "ngram_store", None)))
         error = None
         seen = set()
         for resource in resources:

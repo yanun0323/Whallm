@@ -117,6 +117,8 @@ def main() -> None:
         help="enable experimental Qwen MTP speculative decoding",
     )
     parser.add_argument("--mtp-slots", type=int, default=32)
+    from .qwen_flash_config import add_flash_arguments
+    add_flash_arguments(parser)
     for name in ('qwen_quantized_kv', 'qwen_quantized_index', 'v41_packed_kv', 'v41_packed_index', 'v41_candidate_index', 'v41_ced_prefill', 'v41_next_layer_prefetch', 'deepseek_ane_prefill', 'v41_layer_major_prefill'):
         parser.add_argument("--" + name.replace("_", "-"), action=argparse.BooleanOptionalAction,
                             default=getattr(RuntimeConfig(), name))
@@ -247,7 +249,9 @@ def main() -> None:
         parser.error("--qwen-next-layer-prefetch requires layer-major Prefill")
     if not 0 <= arguments.ane_prefill_ratio <= 1:
         parser.error("--ane-prefill-ratio must be between 0 and 1")
+    from .qwen_flash_config import flash_arguments
     config = RuntimeConfig(
+        **flash_arguments(arguments),
         qwen_quantized_kv=arguments.qwen_quantized_kv,
         qwen_quantized_index=arguments.qwen_quantized_index,
         v41_packed_kv=arguments.v41_packed_kv,

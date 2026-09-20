@@ -84,6 +84,10 @@ class RuntimeConfig:
     qwen_ngram_lookup_optimized: bool = False
     qwen_compile_tensor_ops: bool = False
     qwen_phase_memory: bool = False
+    qwen_expert_wave_slots: int = 0
+    qwen_ngram_io: str = "mmap"
+    qwen_ngram_cache_bytes: int = 0
+    qwen_sparse_sdpa: bool = False
     qwen_mtp_draft_tokens: int = 5
     qwen_mtp_zero_acceptance_limit: int = 1
 

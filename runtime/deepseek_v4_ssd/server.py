@@ -2333,6 +2333,8 @@ def _parser() -> argparse.ArgumentParser:
         help="enable experimental Qwen MTP speculative decoding",
     )
     parser.add_argument("--mtp-slots", type=int, default=32)
+    from .qwen_flash_config import add_flash_arguments
+    add_flash_arguments(parser)
     parser.add_argument(
         "--expert-page-cache-probe",
         action="store_true",
@@ -2437,7 +2439,9 @@ def main() -> None:
         parser.error("--api-key is required when --host is not local")
     if not 1 <= arguments.port <= 65535:
         parser.error("--port must be between 1 and 65535")
+    from .qwen_flash_config import flash_arguments
     config = RuntimeConfig(
+        **flash_arguments(arguments),
         qwen_quantized_kv=arguments.qwen_quantized_kv,
         qwen_quantized_index=arguments.qwen_quantized_index,
         v41_packed_kv=arguments.v41_packed_kv,

@@ -1,0 +1,126 @@
+{
+  "formal_performance_result": false,
+  "scope": "synthetic packed-row lookup only; no MLX, FP8 decoding or model inference",
+  "created_at": "2026-09-20T18:48:14.760993+00:00",
+  "environment": {
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+    "machine": "x86_64",
+    "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+    "numpy": "2.3.5"
+  },
+  "source_sha256": {
+    "runtime/deepseek_v4_ssd/qwen_flash_io.py": "84af3e658b6d2543ed1f0651301e53482d4be71e35238cfa566ebb5c531cb838",
+    "Scripts/benchmark_qwen_flash_host.py": "f0564d2bb409365c601f64e0b43a1d5df23e09cecda1d42f50aedc5eec497a18"
+  },
+  "workload": {
+    "rows": 65536,
+    "row_bytes": 160,
+    "requests": 64,
+    "rows_per_request": 128,
+    "seed": 20260921,
+    "payload_sha256": "355ca05f0f2fccade828480ad3b6fba0a9873ce15bc1f3926d7e791dcd2429a0"
+  },
+  "cache_state": "new reader per variant; OS page cache uncontrolled; generated file is warm",
+  "limits": [
+    "Not evidence of Apple Silicon or SSD throughput.",
+    "Single timing sample; do not promote defaults from these results.",
+    "Byte counters are pread-returned bytes, not physical storage traffic.",
+    "Row-cache ceiling excludes Python metadata, returned arrays and OS caches."
+  ],
+  "experiments": [
+    {
+      "trace": "reused_rows",
+      "variant": "mmap",
+      "seconds": 0.005489759000056438,
+      "queries_sha256": "0b373034b21af7e4d1216e41fc55d337720306054859667473b10fe6012390aa",
+      "output_sha256": "4d1947048ae25366f533a8d4dcfac5e48cd99a1c8234fc417662a3adbf66332f",
+      "exact_match": true,
+      "counters": null
+    },
+    {
+      "trace": "reused_rows",
+      "variant": "pread",
+      "seconds": 0.028345145999992383,
+      "queries_sha256": "0b373034b21af7e4d1216e41fc55d337720306054859667473b10fe6012390aa",
+      "output_sha256": "4d1947048ae25366f533a8d4dcfac5e48cd99a1c8234fc417662a3adbf66332f",
+      "exact_match": true,
+      "counters": {
+        "lookups": 64,
+        "requested_rows": 8192,
+        "unique_rows": 6448,
+        "cache_hits": 0,
+        "read_calls": 3928,
+        "bytes_read": 1031680,
+        "cached_rows": 0,
+        "cached_payload_bytes": 0,
+        "capacity_rows": 0
+      }
+    },
+    {
+      "trace": "reused_rows",
+      "variant": "pread-cache",
+      "seconds": 0.017509779999954844,
+      "queries_sha256": "0b373034b21af7e4d1216e41fc55d337720306054859667473b10fe6012390aa",
+      "output_sha256": "4d1947048ae25366f533a8d4dcfac5e48cd99a1c8234fc417662a3adbf66332f",
+      "exact_match": true,
+      "counters": {
+        "lookups": 64,
+        "requested_rows": 8192,
+        "unique_rows": 6448,
+        "cache_hits": 6192,
+        "read_calls": 193,
+        "bytes_read": 40960,
+        "cached_rows": 256,
+        "cached_payload_bytes": 40960,
+        "capacity_rows": 512
+      }
+    },
+    {
+      "trace": "uniform_rows",
+      "variant": "mmap",
+      "seconds": 0.010813945999984753,
+      "queries_sha256": "94871a31f990c3975b7ec9c7d899280fbe0a68fc44ea64035fcca04bf42d4cc3",
+      "output_sha256": "0c550ddac13177aef4f99e274e67c16cacffd886e2b11504127562287e156e25",
+      "exact_match": true,
+      "counters": null
+    },
+    {
+      "trace": "uniform_rows",
+      "variant": "pread",
+      "seconds": 0.03725357799999074,
+      "queries_sha256": "94871a31f990c3975b7ec9c7d899280fbe0a68fc44ea64035fcca04bf42d4cc3",
+      "output_sha256": "0c550ddac13177aef4f99e274e67c16cacffd886e2b11504127562287e156e25",
+      "exact_match": true,
+      "counters": {
+        "lookups": 64,
+        "requested_rows": 8192,
+        "unique_rows": 8179,
+        "cache_hits": 0,
+        "read_calls": 8158,
+        "bytes_read": 1308640,
+        "cached_rows": 0,
+        "cached_payload_bytes": 0,
+        "capacity_rows": 0
+      }
+    },
+    {
+      "trace": "uniform_rows",
+      "variant": "pread-cache",
+      "seconds": 0.04844236300004923,
+      "queries_sha256": "94871a31f990c3975b7ec9c7d899280fbe0a68fc44ea64035fcca04bf42d4cc3",
+      "output_sha256": "0c550ddac13177aef4f99e274e67c16cacffd886e2b11504127562287e156e25",
+      "exact_match": true,
+      "counters": {
+        "lookups": 64,
+        "requested_rows": 8192,
+        "unique_rows": 8179,
+        "cache_hits": 55,
+        "read_calls": 8103,
+        "bytes_read": 1299840,
+        "cached_rows": 512,
+        "cached_payload_bytes": 81920,
+        "capacity_rows": 512
+      }
+    }
+  ]
+}

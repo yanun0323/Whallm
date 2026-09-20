@@ -40,6 +40,34 @@ test:
 test-python:
 	MLX_ENABLE_TF32=0 PYTHONPATH=runtime:. .venv/bin/python -m unittest discover -s runtime/tests $(ARGS)
 
+PYTHON ?= .venv/bin/python
+QWEN_VARIANT ?= baseline
+QWEN_FLASH_OUTPUT ?= scratch/qwen-flash/$(QWEN_VARIANT).json
+QWEN_FLASH_MAX_TOKENS ?= 32
+QWEN_FLASH_ARGS ?=
+
+.PHONY: test-qwen-flash-portable test-qwen-flash benchmark-qwen-flash-host pilot-qwen-flash
+
+## test-qwen-flash-portable: run host-only row I/O, wave and config tests
+test-qwen-flash-portable:
+	$(PYTHON) -m unittest discover -s runtime/tests/portable -v
+
+## test-qwen-flash: run synthetic MLX tests and Qwen regression tests on Apple Silicon
+test-qwen-flash: test-qwen-flash-portable
+	MLX_ENABLE_TF32=0 PYTHONPATH=runtime:. $(PYTHON) -m unittest discover -s runtime/tests -p 'test_qwen*.py' -v
+
+## benchmark-qwen-flash-host: measure synthetic row I/O (not an inference benchmark)
+benchmark-qwen-flash-host:
+	$(PYTHON) Scripts/benchmark_qwen_flash_host.py --output "$(QWEN_FLASH_OUTPUT)"
+
+## pilot-qwen-flash: run a real-model correctness pilot (QWEN_MODEL, PROMPT, QWEN_VARIANT)
+pilot-qwen-flash:
+	@test -n "$(QWEN_MODEL)" || (echo "QWEN_MODEL must name an installed Qwen model" >&2; exit 2)
+	@test -n "$(PROMPT)" || (echo "PROMPT must name a UTF-8 prompt file" >&2; exit 2)
+	MLX_ENABLE_TF32=0 PYTHONPATH=runtime:. $(PYTHON) Scripts/research_qwen_optimizations.py \
+		--model "$(QWEN_MODEL)" --prompt "$(PROMPT)" --variant "$(QWEN_VARIANT)" \
+		--output "$(QWEN_FLASH_OUTPUT)" --max-tokens "$(QWEN_FLASH_MAX_TOKENS)" $(QWEN_FLASH_ARGS)
+
 ## package: build a local macOS app with Python, runtime, and local debug features
 package:
 	WHALLM_BUILD_FLAVOR=local ./Scripts/package-app.sh
