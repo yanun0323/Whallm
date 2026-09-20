@@ -181,7 +181,8 @@ quality and stochastic sampling still require validation on the installed model.
 
 Both standalone CLI and server accept the switches. Catalog fields are optional
 for backward compatibility. Nondefault settings are rejected for non-Qwen models.
-No new App UI controls were added; packaged defaults remain unchanged.
+The Qwen model's [App controls](qwen-flash-app-controls.md) expose these experiments.
+They are saved per model; packaged defaults remain unchanged.
 
 ```sh
 # Host tests need only Python and NumPy; no MLX import or mocked GPU.

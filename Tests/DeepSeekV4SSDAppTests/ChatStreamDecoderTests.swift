@@ -267,14 +267,33 @@ final class ChatStreamDecoderTests: XCTestCase {
     let suite = "ChatStreamDecoderTests.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
+    // Hold the second delta until navigation finishes; runner load must not
+    // decide whether generation is still in progress when the view returns.
+    let gate = AsyncStream<Void>.makeStream()
+    defer { gate.continuation.finish() }
     let session = ChatSession(
       defaults: defaults,
       stream: { _, _, _, _, _, _, receive in
         receive(ChatDelta(content: "first", reasoningContent: ""))
-        try await Task.sleep(for: .milliseconds(500))
+        var iterator = gate.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        try Task.checkCancellation()
         receive(ChatDelta(content: " second", reasoningContent: ""))
       }
     )
+    let firstPublished = expectation(description: "first delta published")
+    let generationFinished = expectation(description: "generation finished")
+    let firstSubscription = session.$messages
+      .filter { $0.last?.content == "first" }.prefix(1)
+      .sink { _ in firstPublished.fulfill() }
+    let finishSubscription = session.$isSending.dropFirst()
+      .filter { !$0 }.prefix(1)
+      .sink { _ in generationFinished.fulfill() }
+    defer {
+      firstSubscription.cancel()
+      finishSubscription.cancel()
+      session.stopGenerating()
+    }
     let visibility = ChatVisibility()
     let hostingView = NSHostingView(
       rootView: ChatNavigationHarness(
@@ -293,17 +312,19 @@ final class ChatStreamDecoderTests: XCTestCase {
         thinkingMode: "chat",
         language: .english
       ))
-    try await Task.sleep(for: .milliseconds(100))
+    await fulfillment(of: [firstPublished], timeout: 5)
     XCTAssertEqual(session.messages.last?.content, "first")
 
     visibility.showsChat = false
-    try await Task.sleep(for: .milliseconds(100))
+    await Task.yield()
     hostingView.layoutSubtreeIfNeeded()
     visibility.showsChat = true
-    try await Task.sleep(for: .milliseconds(100))
+    await Task.yield()
     hostingView.layoutSubtreeIfNeeded()
     XCTAssertTrue(session.isSending)
-    try await Task.sleep(for: .milliseconds(400))
+    gate.continuation.yield(())
+    gate.continuation.finish()
+    await fulfillment(of: [generationFinished], timeout: 5)
 
     XCTAssertEqual(session.messages.last?.content, "first second")
     XCTAssertFalse(session.isSending)

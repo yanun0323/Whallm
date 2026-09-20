@@ -557,3 +557,23 @@
 "Applies to the next message only. Blank uses a random seed." = "Applies to the next message only. Blank uses a random seed.";
 
 "Enter a whole number from 0 to 4294967295, or leave blank for automatic." = "Enter a whole number from 0 to 4294967295, or leave blank for automatic.";
+
+/* Qwen Flash opt-in experiments */
+"Qwen Flash experiments" = "Qwen Flash experiments";
+"Experimental; full-model speed and quality are not yet verified. All four controls default to off or mmap." = "Experimental; full-model speed and quality are not yet verified. All four controls default to off or mmap.";
+"Saved automatically for this model. Changes apply on the next model load. Unload the model before editing." = "Saved automatically for this model. Changes apply on the next model load. Unload the model before editing.";
+"Unload this model to edit these settings. Loading and unloading also lock the controls." = "Unload this model to edit these settings. Loading and unloading also lock the controls.";
+"Experts per wave" = "Experts per wave";
+"0 disables waves; 1–512 limits the experts acquired per wave, capped by the expert cache. This is not a total memory limit. Small waves may be slower." = "0 disables waves; 1–512 limits the experts acquired per wave, capped by the expert cache. This is not a total memory limit. Small waves may be slower.";
+"Expert waves temporarily disable whole-layer batching, next-layer prefetch, and grouped prefill. Their saved choices are restored when waves are disabled." = "Expert waves temporarily disable whole-layer batching, next-layer prefetch, and grouped prefill. Their saved choices are restored when waves are disabled.";
+"N-gram read backend" = "N-gram read backend";
+"mmap is the default. Buffered pread reads selected rows explicitly; it is not direct SSD-to-GPU I/O and may be slower." = "mmap is the default. Buffered pread reads selected rows explicitly; it is not direct SSD-to-GPU I/O and may be slower.";
+"mmap (default)" = "mmap (default)";
+"pread (experimental)" = "pread (experimental)";
+"N-gram row cache MiB" = "N-gram row cache MiB";
+"0 disables retention; 1–512 MiB retains packed FP8 rows with pread. Metadata, temporary buffers and the OS page cache are extra. The saved size is inactive with mmap." = "0 disables retention; 1–512 MiB retains packed FP8 rows with pread. Metadata, temporary buffers and the OS page cache are extra. The saved size is inactive with mmap.";
+"Use fused QSA SDPA" = "Use fused QSA SDPA";
+"Uses the same selected attention cells with a fused kernel. Floating-point rounding and generated text may differ; a speed improvement is not guaranteed." = "Uses the same selected attention cells with a fused kernel. Floating-point rounding and generated text may differ; a speed improvement is not guaranteed.";
+"Experts per wave must be an integer from 0 to 512." = "Experts per wave must be an integer from 0 to 512.";
+"Choose mmap or pread for the N-gram read backend." = "Choose mmap or pread for the N-gram read backend.";
+"N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram row cache must be an integer from 0 to 512 MiB.";

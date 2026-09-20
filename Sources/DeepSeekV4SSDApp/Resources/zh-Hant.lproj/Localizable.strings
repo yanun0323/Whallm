@@ -557,3 +557,23 @@
 "Applies to the next message only. Blank uses a random seed." = "只套用到下一則訊息。留空則使用隨機值。";
 
 "Enter a whole number from 0 to 4294967295, or leave blank for automatic." = "請輸入 0 到 4294967295 的整數，或留空使用自動值。";
+
+/* Qwen Flash opt-in experiments */
+"Qwen Flash experiments" = "Qwen Flash 實驗功能";
+"Experimental; full-model speed and quality are not yet verified. All four controls default to off or mmap." = "實驗性功能；尚未驗證完整模型的速度與品質。這四個控制項預設皆為關閉或 mmap。";
+"Saved automatically for this model. Changes apply on the next model load. Unload the model before editing." = "設定會依模型自動儲存，並於下次載入模型時生效。修改前請先卸載模型。";
+"Unload this model to edit these settings. Loading and unloading also lock the controls." = "請先卸載此模型再修改設定。載入與卸載過程中也無法修改。";
+"Experts per wave" = "每波專家數";
+"0 disables waves; 1–512 limits the experts acquired per wave, capped by the expert cache. This is not a total memory limit. Small waves may be slower." = "0 關閉分波；1–512 限制每波取得的專家數，且不超過專家快取容量。這不是總記憶體上限；較小的波次可能更慢。";
+"Expert waves temporarily disable whole-layer batching, next-layer prefetch, and grouped prefill. Their saved choices are restored when waves are disabled." = "專家分波會暫時停用整層批次計算、下一層預讀與分組 prefill。關閉分波後會恢復這些選項原本儲存的設定。";
+"N-gram read backend" = "N-gram 讀取方式";
+"mmap is the default. Buffered pread reads selected rows explicitly; it is not direct SSD-to-GPU I/O and may be slower." = "預設為 mmap。使用緩衝的 pread 會明確讀取所選資料列；這不是 SSD 直接傳送至 GPU，也可能更慢。";
+"mmap (default)" = "mmap（預設）";
+"pread (experimental)" = "pread（實驗性）";
+"N-gram row cache MiB" = "N-gram 資料列快取 MiB";
+"0 disables retention; 1–512 MiB retains packed FP8 rows with pread. Metadata, temporary buffers and the OS page cache are extra. The saved size is inactive with mmap." = "0 不保留快取；1–512 MiB 在 pread 模式保留 packed FP8 資料列。不含中繼資料、暫存緩衝區與系統頁面快取。切回 mmap 時保留設定值，但不使用這份快取。";
+"Use fused QSA SDPA" = "使用融合 QSA SDPA";
+"Uses the same selected attention cells with a fused kernel. Floating-point rounding and generated text may differ; a speed improvement is not guaranteed." = "以融合核心處理相同的注意力選取位置。浮點捨入與生成文字可能不同，且不保證加速。";
+"Experts per wave must be an integer from 0 to 512." = "每波專家數必須為 0 至 512 的整數。";
+"Choose mmap or pread for the N-gram read backend." = "N-gram 讀取方式請選擇 mmap 或 pread。";
+"N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram 資料列快取必須為 0 至 512 MiB 的整數。";

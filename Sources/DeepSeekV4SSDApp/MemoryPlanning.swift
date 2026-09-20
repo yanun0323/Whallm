@@ -111,6 +111,12 @@ struct MemoryPlanningProfile {
     func file(_ name: String) -> Double { Double(manifest.files.first { $0.path == name }?.size ?? 0) }
     guard let expert = payload(s.expertCacheGiB, s.slots, manifest.selectedExpertCount), file("common.bin") > 0 else { return nil }
     let qwen = kind == .qwen3_8FlashNext
+    if qwen {
+      do { try s.validateQwenFlashSettings() } catch { return nil }
+    }
+    let flashWaves = qwen && s.qwenFlashWavesEnabled
+    // Packed LRU payload only; Python objects and OS pages are outside this estimate.
+    let ngramCache = qwen ? Double(s.effectiveQwenNgramCacheBytes) : 0
     let v41 = kind == .deepSeekV41
     let mtp = qwen && s.mtpEnabled == true && mtpAvailable
     let dspark = !qwen && s.dsparkEnabled && dsparkAvailable
@@ -135,7 +141,7 @@ struct MemoryPlanningProfile {
     // V4.1 can seed DSpark from layer-major prefill; V4 still uses chunks.
     let threshold = qwen ? 128 : s.layerMajorPrefillThreshold ?? 1_024
     let layerMajor = s.layerMajorPrefill && (!dspark || v41) && input >= threshold
-    let batched = layerMajor && s.batchedExpertPrefill == true
+    let batched = layerMajor && s.batchedExpertPrefill == true && !flashWaves
     let moeStep = v41 && layerMajor ? min(Double(input), 4_096)
       : !qwen && layerMajor
         ? min(Double(input), Double((s.moePrefillStepSize ?? 0) == 0 ? 4_096 : s.moePrefillStepSize!)) : step
@@ -261,11 +267,11 @@ struct MemoryPlanningProfile {
     let loading = MemoryStageEstimate(model: weights, conversation: 0, auxiliary: auxiliaryWeights,
       temporary: loadingCopy + ane + allocator)
     let prefill = MemoryStageEstimate(model: weights + prefillExperts, conversation: conversation,
-      auxiliary: auxiliary, temporary: promptHidden + sharedIndices + prefillWork + checkpoint + reads + ane + allocator)
+      auxiliary: auxiliary, temporary: promptHidden + sharedIndices + prefillWork + checkpoint + reads + ane + allocator + ngramCache)
     // Qwen MTP retains prefilled_hidden through its generation iterator.
     let retainedHidden = mtp && layerMajor ? Double(input) * hidden * hc * activationBytes : 0
     let decoding = MemoryStageEstimate(model: weights + expert, conversation: conversation,
-      auxiliary: auxiliary + verification, temporary: decodeWork + retainedHidden + checkpoint + reads + ane + allocator)
+      auxiliary: auxiliary + verification, temporary: decodeWork + retainedHidden + checkpoint + reads + ane + allocator + ngramCache)
     let result = MemoryEstimate(loading: loading, prefill: prefill, decoding: decoding,
       inputTokens: input, outputTokens: output)
     return result.total.isFinite ? result : nil

@@ -345,6 +345,7 @@ final class ModelLibrary: ObservableObject {
       let settings = (settings[modelKind] ?? .defaults(for: modelKind))
         .normalized(for: modelKind)
       try settings.validate(for: modelKind)
+      let flashWaves = modelKind == .qwen3_8FlashNext && settings.qwenFlashWavesEnabled
       let alias = aliases[modelKind] ?? ""
       return ModelCatalog.Entry(
         id: modelKind.apiModelID,
@@ -369,9 +370,9 @@ final class ModelLibrary: ObservableObject {
           persistentPromptCacheEntries: 8,
           promptCacheDirectory: nil,
           moePrefillStepSize: settings.moePrefillStepSize ?? 0,
-          batchedExpertPrefill: settings.batchedExpertPrefill == true,
-          qwenNextLayerPrefetch: modelKind == .qwen3_8FlashNext && settings.nextLayerPrefetch == true && settings.layerMajorPrefill,
-          qwenGroupedExperts: settings.qwenGroupedExperts == true,
+          batchedExpertPrefill: settings.batchedExpertPrefill == true && !flashWaves,
+          qwenNextLayerPrefetch: modelKind == .qwen3_8FlashNext && settings.nextLayerPrefetch == true && settings.layerMajorPrefill && !flashWaves,
+          qwenGroupedExperts: settings.qwenGroupedExperts == true && !flashWaves,
           expertEvictionPolicy: settings.routeAwareExpertCache == true ? "route" : (settings.recentExpertCache == true ? "lru" : "lfu"),
           anePrefill: modelKind.descriptor.supports("anePrefill"),
           anePrefillRatio: settings.anePrefillRatio ?? 0,
@@ -397,6 +398,10 @@ final class ModelLibrary: ObservableObject {
           qwenNgramLookupOptimized: modelKind == .qwen3_8FlashNext && settings.qwenNgramLookupOptimized == true,
           qwenCompileTensorOps: modelKind == .qwen3_8FlashNext && settings.qwenCompileTensorOps == true,
           qwenPhaseMemory: modelKind == .qwen3_8FlashNext && settings.qwenPhaseMemory == true,
+          qwenExpertWaveSlots: settings.qwenExpertWaveSlots ?? 0,
+          qwenNgramIO: settings.qwenNgramIO ?? "mmap",
+          qwenNgramCacheBytes: settings.effectiveQwenNgramCacheBytes,
+          qwenSparseSDPA: settings.qwenSparseSDPA ?? false,
           qwenMTPDraftTokens: modelKind == .qwen3_8FlashNext ? settings.effectiveQwenMTPDraftTokens : 5,
           qwenMTPZeroAcceptanceLimit: modelKind == .qwen3_8FlashNext ? settings.effectiveQwenMTPZeroAcceptanceLimit : 1,
           v41PackedKV: modelKind == .deepSeekV41 && settings.packedKVCache == true,

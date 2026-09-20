@@ -409,11 +409,11 @@ private struct AppInputModifier: ViewModifier {
 }
 
 extension View {
-  fileprivate func appCard(padding: CGFloat = 16) -> some View {
+  func appCard(padding: CGFloat = 16) -> some View {
     modifier(AppCardModifier(padding: padding))
   }
 
-  fileprivate func appInput(width: CGFloat? = nil) -> some View {
+  func appInput(width: CGFloat? = nil) -> some View {
     modifier(AppInputModifier(width: width))
   }
 }
@@ -1871,15 +1871,17 @@ struct ModelAdvancedView: View {
             Divider()
             toggleField("Batch expert calculations",
               hint: "Processes the experts for an input batch together.",
-              value: optionalToggle(\.batchedExpertPrefill, defaultValue: true))
-            .disabled(!settings.layerMajorPrefill)
+              value: optionalToggle(\.batchedExpertPrefill, defaultValue: true,
+                suppressed: qwenFlashWavesActive))
+            .disabled(!settings.layerMajorPrefill || qwenFlashWavesActive)
           }
           if modelKind.descriptor.supports("nextLayerPrefetch") {
             Divider()
             toggleField("Read the next expert layer ahead",
               hint: "Reads the next layer while the current layer runs. Uses extra memory.",
-              value: optionalToggle(\.nextLayerPrefetch, defaultValue: true))
-            .disabled(!settings.layerMajorPrefill || settings.batchedExpertPrefill == false)
+              value: optionalToggle(\.nextLayerPrefetch, defaultValue: true,
+                suppressed: qwenFlashWavesActive))
+            .disabled(!settings.layerMajorPrefill || settings.batchedExpertPrefill == false || qwenFlashWavesActive)
           }
           if modelKind.descriptor.supports("packedKVCache") {
             Divider()
@@ -1924,7 +1926,7 @@ struct ModelAdvancedView: View {
                 "Speeds up prompt processing. Requires layer-major prefill with MTP off. Changes apply on next load.",
               value: qwenGroupedExperts
             )
-            .disabled(!settings.layerMajorPrefill || mtpEnabled.wrappedValue)
+            .disabled(!settings.layerMajorPrefill || mtpEnabled.wrappedValue || qwenFlashWavesActive)
           }
           if modelKind.descriptor.editableSettings.contains("prefillThreshold") {
             Divider()
@@ -2042,6 +2044,8 @@ struct ModelAdvancedView: View {
         }
         .appCard()
         .disabled(settingsLocked)
+        QwenFlashSettingsSection(settings: $settings, modelKind: modelKind,
+          settingsLocked: settingsLocked, language: language)
       }
       .frame(maxWidth: AppLayout.contentWidth)
       .frame(maxWidth: .infinity)
@@ -2065,7 +2069,15 @@ struct ModelAdvancedView: View {
     .disabled(!mtpEnabled.wrappedValue || !mtpAvailable)
   }
 
+  private var qwenFlashWavesActive: Bool {
+    modelKind == .qwen3_8FlashNext && settings.qwenFlashWavesEnabled
+  }
+
   private func impactHint(_ label: String, _ hint: String) -> String {
+    if qwenFlashWavesActive && ["Batch expert calculations", "Read the next expert layer ahead",
+      "Prefill acceleration"].contains(label) {
+      return L10n.string(QwenFlashCopy.wavesConflict, language: language)
+    }
     if label == "Use MTP" && !mtpAvailable {
       return L10n.string("Install the MTP files before enabling this setting.", language: language)
     }
@@ -2207,9 +2219,9 @@ struct ModelAdvancedView: View {
   }
 
   private func optionalToggle(_ keyPath: WritableKeyPath<ModelAdvancedSettings, Bool?>,
-                              defaultValue: Bool) -> Binding<Bool> {
-    Binding(get: { settings[keyPath: keyPath] ?? defaultValue },
-            set: { settings[keyPath: keyPath] = $0 })
+                              defaultValue: Bool, suppressed: Bool = false) -> Binding<Bool> {
+    Binding(get: { !suppressed && (settings[keyPath: keyPath] ?? defaultValue) },
+            set: { if !suppressed { settings[keyPath: keyPath] = $0 } })
   }
 
   private var approximationEnabled: Binding<Bool> {
@@ -2239,8 +2251,8 @@ struct ModelAdvancedView: View {
 
   private var qwenGroupedExperts: Binding<Bool> {
     Binding(
-      get: { settings.qwenGroupedExperts ?? true },
-      set: { settings.qwenGroupedExperts = $0 }
+      get: { !qwenFlashWavesActive && (settings.qwenGroupedExperts ?? true) },
+      set: { if !qwenFlashWavesActive { settings.qwenGroupedExperts = $0 } }
     )
   }
 

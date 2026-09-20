@@ -267,6 +267,10 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var qwenNgramLookupOptimized: Bool? = false
   var qwenCompileTensorOps: Bool? = false
   var qwenPhaseMemory: Bool? = false
+  var qwenExpertWaveSlots: Int? = 0
+  var qwenNgramIO: String? = "mmap"
+  var qwenNgramCacheMiB: Int? = 0
+  var qwenSparseSDPA: Bool? = false
   var qwenMTPPolicy: Bool? = false
   var qwenMTPDraftTokens: Int? = 2
   var qwenMTPZeroAcceptanceLimit: Int? = 2
@@ -356,6 +360,11 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
       ? (settings.qwenGroupedExperts ?? true) : false
     settings.mtpEnabled = descriptor.supports("mtp") ? (settings.mtpEnabled ?? false) : false
     settings.mtpSlots = settings.mtpSlots ?? 32
+    let qwen = modelKind == .qwen3_8FlashNext
+    settings.qwenExpertWaveSlots = qwen ? (settings.qwenExpertWaveSlots ?? 0) : 0
+    settings.qwenNgramIO = qwen ? (settings.qwenNgramIO ?? "mmap") : "mmap"
+    settings.qwenNgramCacheMiB = qwen ? (settings.qwenNgramCacheMiB ?? 0) : 0
+    settings.qwenSparseSDPA = qwen ? (settings.qwenSparseSDPA ?? false) : false
     settings.dsparkEnabled = descriptor.supports("dspark") && settings.dsparkEnabled
     return settings
   }
@@ -389,6 +398,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var effectiveQwenMTPZeroAcceptanceLimit: Int { qwenMTPPolicy == true ? (qwenMTPZeroAcceptanceLimit ?? 2) : 1 }
 
   func validate(for modelKind: ModelKind) throws {
+    if modelKind == .qwen3_8FlashNext { try validateQwenFlashSettings() }
     if modelKind == .qwen3_8FlashNext && qwenMTPPolicy == true {
       guard (1...5).contains(effectiveQwenMTPDraftTokens),
         (1...32).contains(effectiveQwenMTPZeroAcceptanceLimit) else {
@@ -744,6 +754,11 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       let qwenNgramLookupOptimized: Bool
       let qwenCompileTensorOps: Bool
       let qwenPhaseMemory: Bool
+      // Optional on decode so catalogs written before the App controls remain readable.
+      var qwenExpertWaveSlots: Int? = nil
+      var qwenNgramIO: String? = nil
+      var qwenNgramCacheBytes: Int? = nil
+      var qwenSparseSDPA: Bool? = nil
       let qwenMTPDraftTokens: Int
       let qwenMTPZeroAcceptanceLimit: Int
       let v41PackedKV: Bool
@@ -800,6 +815,10 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         case qwenNgramLookupOptimized = "qwen_ngram_lookup_optimized"
         case qwenCompileTensorOps = "qwen_compile_tensor_ops"
         case qwenPhaseMemory = "qwen_phase_memory"
+        case qwenExpertWaveSlots = "qwen_expert_wave_slots"
+        case qwenNgramIO = "qwen_ngram_io"
+        case qwenNgramCacheBytes = "qwen_ngram_cache_bytes"
+        case qwenSparseSDPA = "qwen_sparse_sdpa"
         case qwenMTPDraftTokens = "qwen_mtp_draft_tokens"
         case qwenMTPZeroAcceptanceLimit = "qwen_mtp_zero_acceptance_limit"
         case v41PackedKV = "v41_packed_kv"
@@ -823,6 +842,10 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         try values.encode(qwenNgramLookupOptimized, forKey: .qwenNgramLookupOptimized)
         try values.encode(qwenCompileTensorOps, forKey: .qwenCompileTensorOps)
         try values.encode(qwenPhaseMemory, forKey: .qwenPhaseMemory)
+        try values.encode(qwenExpertWaveSlots ?? 0, forKey: .qwenExpertWaveSlots)
+        try values.encode(qwenNgramIO ?? "mmap", forKey: .qwenNgramIO)
+        try values.encode(qwenNgramCacheBytes ?? 0, forKey: .qwenNgramCacheBytes)
+        try values.encode(qwenSparseSDPA ?? false, forKey: .qwenSparseSDPA)
         try values.encode(qwenMTPDraftTokens, forKey: .qwenMTPDraftTokens)
         try values.encode(qwenMTPZeroAcceptanceLimit, forKey: .qwenMTPZeroAcceptanceLimit)
         try values.encode(v41PackedKV, forKey: .v41PackedKV)

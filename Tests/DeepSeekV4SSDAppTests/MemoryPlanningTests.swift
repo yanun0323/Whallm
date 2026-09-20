@@ -197,13 +197,18 @@ final class MemoryPlanningTests: XCTestCase {
     // consumer and must not add a third history. FP32 partial compressor state.
     let partial = 2.0 * 64 * 8
     let history = 16_384.0 * 8
-    let rawBytes = 8.0 * 128 * 64 * 2 + (8_192 + 16_384) * (64.0 + 32) * 2 + partial + history
+    let rawRecent = 8.0 * 128.0 * 64.0 * 2.0
+    let rawCompressed = (8_192.0 + 16_384.0) * (64.0 + 32.0) * 2.0
+    let rawBytes = rawRecent + rawCompressed + partial + history
     XCTAssertEqual(raw.decoding.conversation, rawBytes, accuracy: 1)
     s.packedKVCache = true
     s.packedIndexCache = true
     let packed = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 16_384))
-    let packedBytes = 8.0 * 128 * 64 * (1 + 1.0 / 32)
-      + (8_192 + 16_384) * (64.0 * (0.5 + 1.0 / 16) + 32 * (0.5 + 1.0 / 32)) + partial + history
+    let packedRecent = 8.0 * 128.0 * 64.0 * (1.0 + 1.0 / 32.0)
+    let packedKVPerCell = 64.0 * (0.5 + 1.0 / 16.0)
+    let packedIndexPerCell = 32.0 * (0.5 + 1.0 / 32.0)
+    let packedCompressed = (8_192.0 + 16_384.0) * (packedKVPerCell + packedIndexPerCell)
+    let packedBytes = packedRecent + packedCompressed + partial + history
     XCTAssertEqual(packed.decoding.conversation, packedBytes, accuracy: 1)
     XCTAssertLessThan(packed.total, raw.total)
     // The inference-style configuration aliases must give the same result.
@@ -292,7 +297,10 @@ final class MemoryPlanningTests: XCTestCase {
     let with = try XCTUnwrap(candidates.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 1_024))
     // Candidate masks are bool; production _candidate_blocks promotes positions
     // to int64. Earlier chunks retain their own history width, not cache capacity.
-    let expected = [256, 512, 768, 1_024].reduce(0.0) { $0 + 256 * (Double($1) + 16 * 8) }
+    let historyWidths: [Double] = [256, 512, 768, 1_024]
+    let expected = historyWidths.reduce(0.0) { total, width in
+      total + 256.0 * (width + 16.0 * 8.0)
+    }
     XCTAssertEqual(with.prefill.temporary - without.prefill.temporary, expected, accuracy: 1)
   }
 
@@ -458,6 +466,31 @@ final class MemoryPlanningTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suite) }
     try render(SettingsView(languageCode: .constant("zh-Hant"), language: .traditionalChinese,
       appUpdater: AppUpdater(startingUpdater: false, defaults: defaults)), name: "settings")
+  }
+
+  func testQwenFlashEstimateCountsPackedCacheAndDoesNotTreatWaveSizeAsTotalCapacity() throws {
+    let p = try profile()
+    var settings = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    func estimate() throws -> MemoryEstimate {
+      try XCTUnwrap(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
+    }
+    let baseline = try estimate()
+    settings.qwenNgramIO = "pread"
+    settings.qwenNgramCacheMiB = 64
+    let cached = try estimate()
+    XCTAssertEqual(cached.prefill.temporary - baseline.prefill.temporary, 64 * 1_048_576, accuracy: 1)
+    XCTAssertEqual(cached.decoding.temporary - baseline.decoding.temporary, 64 * 1_048_576, accuracy: 1)
+    settings.qwenNgramIO = "mmap"
+    XCTAssertEqual(try estimate().total, baseline.total)
+    settings.qwenExpertWaveSlots = 1
+    let waves = try estimate()
+    settings.qwenExpertWaveSlots = 512
+    XCTAssertEqual(try estimate().model, waves.model)
+    settings.batchedExpertPrefill = false
+    settings.nextLayerPrefetch = false
+    XCTAssertEqual(try estimate().prefill.model, waves.prefill.model)
+    settings.qwenNgramCacheMiB = Int.max
+    XCTAssertNil(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
   }
 
   private func profile() throws -> MemoryPlanningProfile {
