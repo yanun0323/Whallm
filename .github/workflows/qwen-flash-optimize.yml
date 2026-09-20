@@ -3,6 +3,14 @@ name: Qwen Flash optimization
 on:
   push:
     branches: [feat/qwen-flash-optimize]
+  pull_request:
+    branches: [master]
+    paths:
+      - 'runtime/**'
+      - 'Scripts/*qwen*'
+      - 'requirements.txt'
+      - 'Makefile'
+      - '.github/workflows/qwen-flash-optimize.yml'
   workflow_dispatch:
 
 permissions:
@@ -14,7 +22,6 @@ concurrency:
 
 jobs:
   portable:
-    if: github.repository == 'yanun0323/Whallm' && github.ref == 'refs/heads/feat/qwen-flash-optimize'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -24,10 +31,7 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
-      - name: Apply reviewed candidate
-        run: python .github/qwen-flash-candidate/apply.py
-      - name: Install host test dependency
-        run: python -m pip install numpy==2.3.5
+      - run: python -m pip install numpy==2.3.5
       - name: Verify host tests and syntax
         shell: bash
         run: |
@@ -35,7 +39,7 @@ jobs:
           mkdir -p validation
           make test-qwen-flash-portable PYTHON=python 2>&1 | tee validation/portable.log
           python -m compileall -q runtime Scripts
-          git diff --cached --check
+          git diff --check
       - name: Preserve validation logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -45,7 +49,6 @@ jobs:
           retention-days: 14
 
   mlx:
-    if: github.repository == 'yanun0323/Whallm' && github.ref == 'refs/heads/feat/qwen-flash-optimize'
     runs-on: macos-15
     timeout-minutes: 30
     env:
@@ -58,58 +61,38 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
-      - name: Apply reviewed candidate
-        run: python .github/qwen-flash-candidate/apply.py
       - name: Install pinned runtime
         run: python -m pip install -r requirements.txt
-      - name: Run Qwen integration suite
+      - name: Run Qwen integration suite on Metal
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p validation
           python -u - <<'PY' 2>&1 | tee validation/mlx.log
+          import json
+          import os
           import platform
-          import sys
           import unittest
-          import mlx.core as mx
+          from pathlib import Path
           from importlib.metadata import version
-          print({'platform': platform.platform(), 'machine': platform.machine(), 'mlx': version('mlx'), 'metal_available': mx.metal.is_available()}, flush=True)
-          if not mx.metal.is_available():
-              mx.set_default_device(mx.cpu)
-              print('CPU backend: these results do not validate Metal kernels or model throughput.', flush=True)
+          import mlx.core as mx
+          metadata = dict(platform=platform.platform(), machine=platform.machine(), mlx=version('mlx'), metal_available=mx.metal.is_available(), commit=os.environ['GITHUB_SHA'])
+          print(metadata, flush=True)
+          if not metadata['metal_available']:
+              raise RuntimeError('Metal is unavailable; GPU validation cannot be reported as passing.')
+          mx.set_default_device(mx.gpu)
           suite = unittest.defaultTestLoader.discover('runtime/tests', pattern='test_qwen*.py')
           result = unittest.TextTestRunner(verbosity=2).run(suite)
+          metadata.update(tests_run=result.testsRun, errors=len(result.errors), failures=len(result.failures), skipped=[dict(test=str(test), reason=reason) for test, reason in result.skipped], success=result.wasSuccessful(), full_model_benchmark=False)
+          Path('validation/mlx-summary.json').write_text(json.dumps(metadata, indent=2) + '\n')
           raise SystemExit(not result.wasSuccessful())
           PY
-      - name: Preserve validation logs
+      - name: Record synthetic row I/O, not model throughput
+        run: make benchmark-qwen-flash-host PYTHON=python QWEN_FLASH_OUTPUT=validation/host-macos.json
+      - name: Preserve validation evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: qwen-mlx-validation
           path: validation/
           retention-days: 14
-
-  publish:
-    needs: [portable, mlx]
-    if: github.repository == 'yanun0323/Whallm' && github.ref == 'refs/heads/feat/qwen-flash-optimize'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Publish validated candidate to the requested feature branch
-        shell: bash
-        env:
-          EXPECTED_HEAD: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          test "$(git ls-remote origin refs/heads/feat/qwen-flash-optimize | cut -f1)" = "$EXPECTED_HEAD"
-          python3 .github/qwen-flash-candidate/apply.py
-          git rm -r .github/qwen-flash-candidate
-          git diff --cached --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat(qwen): add bounded expert waves, positioned ngram cache and sparse SDPA experiments'
-          git push origin HEAD:refs/heads/feat/qwen-flash-optimize
-          git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"

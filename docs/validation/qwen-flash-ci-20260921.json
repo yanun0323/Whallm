@@ -1,0 +1,41 @@
+{
+  "status": "passed_with_documented_preexisting_skips",
+  "date_taipei": "2026-09-21",
+  "repository": "yanun0323/Whallm",
+  "branch": "feat/qwen-flash-optimize",
+  "master_base": "6d88d72fafc62d75193a3290cbd14c782af23fd0",
+  "implementation_commit": "b243a8484c9cecdf1eb20c4cf6f5a05720fb660f",
+  "validation_candidate_commit": "0573aa9ef99080652a94db98e821b84161371ef5",
+  "workflow_run": 35531099283,
+  "workflow_url": "https://github.com/yanun0323/Whallm/actions/runs/35531099283",
+  "portable": {"platform": "ubuntu-24.04", "tests_run": 18, "success": true},
+  "mlx": {
+    "platform": "macOS-15.7.9-arm64-arm-64bit",
+    "mlx_version": "0.32.2",
+    "metal_available": true,
+    "tests_run": 111,
+    "passed": 107,
+    "skipped": 4,
+    "new_mlx_tests_passed": 11,
+    "portable_tests_included": 18,
+    "elapsed_seconds": 12.741,
+    "errors": 0,
+    "failures": 0,
+    "skip_reason": "Pre-existing tests require local archived evidence absent from hosted CI.",
+    "skipped_tests": ["test_official_reference_solutions", "test_qwen_ready_groups", "test_qwen_resident_block", "test_qwen_short_block"],
+    "artifact_id": 10610714511,
+    "artifact_zip_sha256": "ca4deec3092c1d6e5e9bcd3dad75e917be1f2351319d7041cb5d1c66d7e6c1be"
+  },
+  "first_attempt": {
+    "workflow_run": 35530956058,
+    "result": "failed",
+    "cause": "New QSA test calls omitted the required explicit cache argument.",
+    "resolution": "Passed None explicitly and reran the full Qwen suite; no test was disabled."
+  },
+  "limits": [
+    "Synthetic numerical and lifecycle tests; no installed full-model inference benchmark was performed.",
+    "No M2 Max or M5 hardware throughput, model-quality or peak-memory improvement is claimed.",
+    "All new runtime optimization switches remain disabled by default.",
+    "The permanent workflow is read-only and does not push or merge code."
+  ]
+}

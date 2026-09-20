@@ -105,8 +105,9 @@ Primary sources: [README](https://github.com/mihailescu2m/llama.cpp/blob/d1762fc
 The master baseline already has SSD expert slots, separate prefill I/O, LFU/LRU
 and route-aware eviction, whole-layer buffers, grouped expert GEMM, PLE mmap,
 opt-in row dedup/FP8 lookup-table decode, block-bounded QSA, pooled index caches,
-phase-memory experiments, prompt-state persistence, MTP checkpoint/rollback and
-request-local zero-acceptance fallback. Relevant modules are
+phase-memory experiments, prompt-state persistence, MTP checkpoint/rollback,
+probability-ratio rejection sampling with corrected residuals, and request-local
+zero-acceptance fallback. Relevant modules are
 `expert_cache.py`, `qwen4_exp.py`, `qwen_ngram_lookup.py`,
 `qwen_pooled_cache.py`, `qwen_phase_budget.py`, and `qwen_mtp_policy.py`.
 These are not counted as newly implemented features in this branch.
@@ -215,9 +216,16 @@ The uniform-row trace also exposed cache bookkeeping cost with little reuse.
 These are deliberately preserved negative results, not Apple SSD performance claims.
 
 The portable suite has 18 tests with additional subcases and seeded schedules.
-The MLX suite must run separately; merely committing it does not establish a pass.
-Check the branch's workflow logs for backend availability and actual outcomes.
-The source audit itself successfully acquired all four pinned repositories.
+GitHub Actions run `35531099283` passed the portable job and the macOS arm64 job
+(macOS 15.7.9, MLX 0.32.2, Metal available). The Qwen suite reported 111 tests,
+107 passing and 4 skipped because pre-existing local archive evidence was
+not present. All 11 new MLX tests and all 18 portable tests passed. This includes
+MXFP4 wave parity/lifetime fencing, FP8 row-decode bit parity and QSA numerical,
+causality, chunking and rollback checks. It does not load the full model.
+The first CI attempt found missing explicit cache arguments in the new QSA tests;
+those calls were corrected and the suite rerun, not suppressed. See
+[CI evidence](validation/qwen-flash-ci-20260921.json). The source audit itself
+successfully acquired all four pinned repositories.
 
 Before promoting an option: run the same installed model/quantization and MTP
 settings, representative prose/code/multilingual prompts at short, 8k, 32k and
@@ -236,9 +244,11 @@ to change quality. No throughput improvement is claimed for this branch yet.
 - JetSpec tree speculation: needs branch-isolated recurrent/conv/PLE states,
   tree-causal QSA, acceptance/rollback proofs and a compatible drafter. A tree
   mask on the present linear MTP path is insufficient.
-- Probability-ratio MTP acceptance and n-gram suffixes: require correct proposal
-  probabilities, sampling transforms, residual rejection sampling and checkpoint
-  alignment. Existing verified fallback remains untouched.
+- History n-gram suffixes and changes to MTP proposal construction: require
+  correct proposal probabilities, sampling transforms and checkpoint alignment.
+  Whallm already uses probability-ratio acceptance and corrected residual rejection
+  sampling through `dspark._verify`; it is not newly added or replaced here.
+  Existing MTP verification and fallback remain untouched.
 - ggml-specific fused HC/MXFP4/used-tile kernels: cannot be pasted into MLX. New
   custom kernels need numerical, dispatch, concurrency and M-series profiling.
 - Router lookahead and more prefetch depth: need separate bounded prediction
