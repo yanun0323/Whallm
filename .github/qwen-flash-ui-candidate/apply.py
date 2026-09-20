@@ -1,4 +1,4 @@
-"""Apply only the digest-pinned, reviewed Qwen App candidate and build fix."""
+"""Apply only the digest-pinned, reviewed Qwen App candidate and build fixes."""
 import gzip
 import hashlib
 from pathlib import Path
@@ -14,7 +14,7 @@ patch = gzip.decompress(payload)
 if len(patch) != 55886:
     raise RuntimeError('Unexpected candidate patch length')
 fix = (root / 'build-fix.patch').read_bytes()
-if hashlib.sha256(fix).hexdigest() != 'b59104a75345e3598b906c94260428c1c554352cfbd585bd11ace107e1c0156c':
+if hashlib.sha256(fix).hexdigest() != 'd226aae49c3737e29425b3a12927aa14e821d3bef2d86fbe75a449d04b106d67':
     raise RuntimeError('Build-fix digest mismatch; refusing to apply')
 for content in (patch, fix):
     with tempfile.NamedTemporaryFile(suffix='.patch') as temporary:
@@ -22,4 +22,4 @@ for content in (patch, fix):
         temporary.flush()
         subprocess.run(['git', 'apply', '--check', temporary.name], check=True)
         subprocess.run(['git', 'apply', temporary.name], check=True)
-print(f'Applied reviewed Qwen App candidate and V4.1 type-checking fix; compressed SHA256={expected}')
+print(f'Applied reviewed Qwen App candidate and Swift type-checking fixes; compressed SHA256={expected}')
