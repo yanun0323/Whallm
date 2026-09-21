@@ -1,0 +1,42 @@
+name: Qwen next throughput
+
+on:
+  push:
+    branches: [feat/qwen-flash-optimize]
+    paths: ['.github/workflows/qwen-next-throughput.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Acquire reference source only; do not execute third-party code
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p snapshots/Whallm
+          git archive HEAD | tar -x -C snapshots/Whallm
+          printf 'yanun0323/Whallm\t%s\n' "$(git rev-parse HEAD)" > snapshots/SOURCES.tsv
+          for repo in jundot/omlx ddalcu/mlx-serve antirez/ds4 raullenchai/Rapid-MLX; do
+            dest="snapshots/${repo##*/}"
+            git clone --depth=1 "https://github.com/$repo.git" "$dest"
+            printf '%s\t%s\n' "$repo" "$(git -C "$dest" rev-parse HEAD)" >> snapshots/SOURCES.tsv
+          done
+          tar --exclude=.git -czf qwen-next-sources.tar.gz snapshots
+          sha256sum qwen-next-sources.tar.gz > qwen-next-sources.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qwen-next-sources
+          path: |
+            qwen-next-sources.tar.gz
+            qwen-next-sources.sha256
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
