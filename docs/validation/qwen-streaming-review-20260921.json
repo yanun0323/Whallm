@@ -1,0 +1,49 @@
+{
+  "kind": "synthetic_native_expert_io_and_app_contracts_not_full_model_throughput",
+  "baseline": "c71231229f29c79160f51aba2b02d4aa1380b910",
+  "validated_checkout": "eb8501e6b60bb98dfbf76c3f39ca0fc9b66f2af8",
+  "candidate_applied": true,
+  "source_files_sha256": "5d1c2a33bb4b8e5edb927ad730165f14a5a7d041932fb8dd45cc7d1fab0512c5",
+  "published_source_commit": "181a6cb8b4fe1f0712cc23103a2b35071ed309ef",
+  "workflow_run_id": 35576548142,
+  "artifact_id": 10628198467,
+  "artifact_sha256": "a081650dadd5abd5289ead98602b203494d672471a6301cbf8babf8b0dcea894",
+  "full_model_benchmark": false,
+  "environment": {"os": "macOS 15.7.9", "machine": "arm64", "device": "Apple Paravirtual device", "memory_bytes": 7516192768, "mlx": "0.32.2"},
+  "python": {"total": 210, "passed": 203, "skipped": 7, "failures": 0, "errors": 0},
+  "swift": {"total": 155, "passed": 152, "skipped": 3, "failures": 0},
+  "portable_tests": 31,
+  "portable_included_in_python": true,
+  "catalog_cases": 13,
+  "settings_previews": 12,
+  "fixture": {"layers": 2, "experts_per_layer": 8, "slots": 8, "blob_bytes": 2611200, "interleaved_rounds": 3, "physical_cache_state_controlled": false},
+  "measurements": {
+    "reuse": {
+      "prefill_p50_seconds": {"baseline": 0.017630666999991718, "read-4": 0.018169375000013588, "seed-2": 0.016567000000009102, "combined": 0.023088333000004013},
+      "counters": {
+        "baseline": {"prefill_read_calls": 16, "logical_prefill_bytes": 41779200, "seeded_experts": 0, "decode_misses": 4, "logical_decode_bytes": 10444800, "seed_hits": 0},
+        "read-4": {"prefill_read_calls": 4, "logical_prefill_bytes": 41779200, "seeded_experts": 0, "decode_misses": 4, "logical_decode_bytes": 10444800, "seed_hits": 0},
+        "seed-2": {"prefill_read_calls": 16, "logical_prefill_bytes": 41779200, "seeded_experts": 4, "decode_misses": 0, "logical_decode_bytes": 0, "seed_hits": 4},
+        "combined": {"prefill_read_calls": 4, "logical_prefill_bytes": 41779200, "seeded_experts": 4, "decode_misses": 0, "logical_decode_bytes": 0, "seed_hits": 4}
+      }
+    },
+    "unrelated": {
+      "prefill_p50_seconds": {"baseline": 0.017351791000010053, "read-4": 0.01915912500001582, "seed-2": 0.01907129200000668, "combined": 0.022641749999991134},
+      "counters": {
+        "baseline": {"prefill_read_calls": 16, "logical_prefill_bytes": 41779200, "seeded_experts": 0, "decode_misses": 4, "logical_decode_bytes": 10444800, "seed_hits": 0},
+        "read-4": {"prefill_read_calls": 4, "logical_prefill_bytes": 41779200, "seeded_experts": 0, "decode_misses": 4, "logical_decode_bytes": 10444800, "seed_hits": 0},
+        "seed-2": {"prefill_read_calls": 16, "logical_prefill_bytes": 41779200, "seeded_experts": 4, "decode_misses": 4, "logical_decode_bytes": 10444800, "seed_hits": 0},
+        "combined": {"prefill_read_calls": 4, "logical_prefill_bytes": 41779200, "seeded_experts": 4, "decode_misses": 4, "logical_decode_bytes": 10444800, "seed_hits": 0}
+      }
+    }
+  },
+  "limitations": [
+    "Byte fixture and MXFP4 tensor parity are not whole-model output/quality tests.",
+    "Cache state is uncontrolled on a virtual Mac; no physical SSD bandwidth or token-rate claim.",
+    "Read batching reduces calls but did not improve measured synthetic prefill time.",
+    "Unrelated continuation gets no read savings from warm seeding.",
+    "Shared overlap has submission-order/parity tests, not measured concurrent GPU/I/O benefit.",
+    "Skipped tests require pre-existing local archives or installed models; failures were fixed and rerun.",
+    "Final read-only CI separately checks committed source, including the clarified report-scope note."
+  ]
+}

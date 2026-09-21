@@ -68,5 +68,5 @@ def make_report(config, before, first, after, metrics, initial_residents, final_
         "final_resident_experts": final_residents,
         "process_disk_bytes_read": metrics.get("request_process_disk_bytes_read"),
         "decode_cache_eval_seconds": metrics.get("decode_cache_eval_seconds"),
-        "notes": "First yielded token boundary; pipelined work may cross it. bytes_read is logical expert payload, not physical SSD traffic. read_seconds may overlap compute; wait_seconds counts only consumer blocking in expert futures. Source hash identifies files observed by this server, not a signed build. Prompt cache is disabled; expert/OS caches are not flushed.",
+        "notes": "Main-model expert cache only; auxiliary draft caches and N-gram I/O are excluded. First yielded token boundary; pipelined work may cross it. bytes_read is logical expert payload, not physical SSD traffic. read_seconds may overlap compute; wait_seconds counts only consumer blocking in expert futures. Source hash identifies files observed by this server, not a signed build. Prompt cache is disabled; expert/OS caches are not flushed.",
     }
