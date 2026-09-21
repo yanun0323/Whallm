@@ -12,6 +12,9 @@ extension ModelAdvancedSettings {
   }
 
   func validateQwenFlashSettings() throws {
+    guard (1...128).contains(qwenQSAQueryChunk ?? 4) else {
+      throw ConfigurationError(L10n.string(QwenFlashCopy.invalidQueryChunk))
+    }
     guard (0...512).contains(qwenExpertWaveSlots ?? 0) else {
       throw ConfigurationError(L10n.string(QwenFlashCopy.invalidWaves))
     }
@@ -27,7 +30,7 @@ extension ModelAdvancedSettings {
 /// English localization keys are shared by the controls and validation tests.
 enum QwenFlashCopy {
   static let title = "Qwen Flash experiments"
-  static let warning = "Experimental; full-model speed and quality are not yet verified. All four controls default to off or mmap."
+  static let warning = "Experimental; full-model speed and quality are not yet verified. New QSA controls retain the original chunk size and disable indexed attention by default."
   static let lifecycle = "Saved automatically for this model. Changes apply on the next model load. Unload the model before editing."
   static let locked = "Unload this model to edit these settings. Loading and unloading also lock the controls."
   static let waves = "Experts per wave"
@@ -44,7 +47,12 @@ enum QwenFlashCopy {
   static let invalidWaves = "Experts per wave must be an integer from 0 to 512."
   static let invalidBackend = "Choose mmap or pread for the N-gram read backend."
   static let invalidCache = "N-gram row cache must be an integer from 0 to 512 MiB."
-  static let allKeys = [title, warning, lifecycle, locked, waves, wavesHint,
+  static let queryChunk = "QSA queries per chunk"
+  static let queryChunkHint = "1–128 queries per attention chunk; default 4. Try 16 or 32 for prefill. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit. Numerical rounding may differ."
+  static let indexed = "Use indexed QSA decode"
+  static let indexedHint = "Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text."
+  static let invalidQueryChunk = "QSA queries per chunk must be an integer from 1 to 128."
+  static let allKeys = [queryChunk, queryChunkHint, indexed, indexedHint, invalidQueryChunk,title, warning, lifecycle, locked, waves, wavesHint,
     wavesConflict, backend, backendHint, mmap, pread, cache, cacheHint,
     sdpa, sdpaHint, invalidWaves, invalidBackend, invalidCache]
 }

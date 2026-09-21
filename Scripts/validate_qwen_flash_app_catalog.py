@@ -34,7 +34,13 @@ def validate(directory: Path) -> int:
                                 runtime.qwen_grouped_experts)):
             raise ValueError(f"{name}: waves must suppress whole-layer conflicts")
         print(f"PASS {name}: {actual}")
-    return len(cases)
+    for name, indexed in (("qwen-throughput", True), ("qwen-throughput-inactive", False)):
+        runtime = load_model_catalog(directory / f"{name}.json")[0].runtime
+        validate_flash_config(runtime)
+        if runtime.qwen_qsa_query_chunk != 32 or runtime.qwen_qsa_indexed != indexed:
+            raise ValueError(f"{name}: QSA throughput settings did not survive the catalog")
+        print(f"PASS {name}: QSA chunk=32 indexed={indexed}")
+    return len(cases) + 2
 
 
 def main() -> None:

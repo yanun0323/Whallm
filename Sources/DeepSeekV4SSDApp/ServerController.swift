@@ -271,6 +271,8 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var qwenNgramIO: String? = "mmap"
   var qwenNgramCacheMiB: Int? = 0
   var qwenSparseSDPA: Bool? = false
+  var qwenQSAQueryChunk: Int? = 4
+  var qwenQSAIndexed: Bool? = false
   var qwenMTPPolicy: Bool? = false
   var qwenMTPDraftTokens: Int? = 2
   var qwenMTPZeroAcceptanceLimit: Int? = 2
@@ -365,6 +367,8 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.qwenNgramIO = qwen ? (settings.qwenNgramIO ?? "mmap") : "mmap"
     settings.qwenNgramCacheMiB = qwen ? (settings.qwenNgramCacheMiB ?? 0) : 0
     settings.qwenSparseSDPA = qwen ? (settings.qwenSparseSDPA ?? false) : false
+    settings.qwenQSAQueryChunk = qwen ? (settings.qwenQSAQueryChunk ?? 4) : 4
+    settings.qwenQSAIndexed = qwen ? (settings.qwenQSAIndexed ?? false) : false
     settings.dsparkEnabled = descriptor.supports("dspark") && settings.dsparkEnabled
     return settings
   }
@@ -759,6 +763,8 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       var qwenNgramIO: String? = nil
       var qwenNgramCacheBytes: Int? = nil
       var qwenSparseSDPA: Bool? = nil
+      var qwenQSAQueryChunk: Int? = nil
+      var qwenQSAIndexed: Bool? = nil
       let qwenMTPDraftTokens: Int
       let qwenMTPZeroAcceptanceLimit: Int
       let v41PackedKV: Bool
@@ -819,6 +825,8 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         case qwenNgramIO = "qwen_ngram_io"
         case qwenNgramCacheBytes = "qwen_ngram_cache_bytes"
         case qwenSparseSDPA = "qwen_sparse_sdpa"
+        case qwenQSAQueryChunk = "qwen_qsa_query_chunk"
+        case qwenQSAIndexed = "qwen_qsa_indexed"
         case qwenMTPDraftTokens = "qwen_mtp_draft_tokens"
         case qwenMTPZeroAcceptanceLimit = "qwen_mtp_zero_acceptance_limit"
         case v41PackedKV = "v41_packed_kv"
@@ -846,6 +854,8 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         try values.encode(qwenNgramIO ?? "mmap", forKey: .qwenNgramIO)
         try values.encode(qwenNgramCacheBytes ?? 0, forKey: .qwenNgramCacheBytes)
         try values.encode(qwenSparseSDPA ?? false, forKey: .qwenSparseSDPA)
+        try values.encode(qwenQSAQueryChunk ?? 4, forKey: .qwenQSAQueryChunk)
+        try values.encode(qwenQSAIndexed ?? false, forKey: .qwenQSAIndexed)
         try values.encode(qwenMTPDraftTokens, forKey: .qwenMTPDraftTokens)
         try values.encode(qwenMTPZeroAcceptanceLimit, forKey: .qwenMTPZeroAcceptanceLimit)
         try values.encode(v41PackedKV, forKey: .v41PackedKV)

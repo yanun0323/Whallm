@@ -9,6 +9,8 @@ defaults or the installed-model format. It is not shown for DeepSeek models.
 | Experts per wave | `qwenExpertWaveSlots` | `qwen_expert_wave_slots` | `0` (off) |
 | N-gram read backend | `qwenNgramIO` | `qwen_ngram_io` | `mmap` |
 | N-gram row cache MiB | `qwenNgramCacheMiB` | `qwen_ngram_cache_bytes` | `0` (off) |
+| QSA queries per chunk | `qwenQSAQueryChunk` | `qwen_qsa_query_chunk` | `4` |
+| Use indexed QSA decode | `qwenQSAIndexed` | `qwen_qsa_indexed` | `false` |
 | Use fused QSA SDPA | `qwenSparseSDPA` | `qwen_sparse_sdpa` | `false` |
 
 Wave size accepts every integer from 0 through 512. It bounds experts acquired
@@ -24,7 +26,7 @@ Open **Model > Qwen3.8-Flash-Next > Advanced Settings**, then scroll to
 UserDefaults persistence and configure-model catalog update. Changes take effect
 on the next model load. A loaded, loading or unloading model has locked controls;
 unload it first. Starting the server with a catalog, configuring an unloaded
-model, and loading it all use the same four JSON fields.
+model, and loading it all use the same runtime JSON fields.
 
 The existing two-confirmation **Restore defaults** action resets these controls
 with the rest of that model's advanced settings. It does not remove model files
@@ -74,7 +76,10 @@ PYTHONPATH=runtime .venv/bin/python Scripts/validate_qwen_flash_app_catalog.py \
 ```
 
 The App CI runs the full Swift test suite on macOS, validates all localization
-files and consumes eight Swift-generated catalogs with the actual pinned Python
+files and consumes ten Swift-generated catalogs with the actual pinned Python
 runtime parser. Rendered previews cover default, enabled and locked states in
 three languages. Rendering checks do not replace interactive assistive-technology
 or end-to-end user acceptance testing. No full model weights are loaded.
+
+The two newer QSA throughput controls and their limits are documented in
+[Qwen Next throughput](qwen-next-throughput.md).

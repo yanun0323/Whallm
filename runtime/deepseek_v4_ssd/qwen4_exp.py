@@ -448,6 +448,8 @@ class QSAAttention(nn.Module):
         super().__init__()
         self.args = args
         self.sparse_sdpa = False
+        self.query_chunk = 4
+        self.indexed_decode = False
         self.q_proj = nn.Linear(
             args.hidden_size,
             args.num_attention_heads * args.head_dim * 2,
@@ -542,7 +544,13 @@ class QSAAttention(nn.Module):
         else:
             pooled = pool_rows(raw_index_keys[:, :blocks * ratio], 0)
         outputs = []
-        query_chunk = 4
+        from .qwen_qsa_schedule import query_chunk_size
+        query_chunk = query_chunk_size(
+            self.query_chunk, selected_rows=min(key.shape[2], self.args.indexer_budget + ratio),
+            kv_heads=key.shape[1], query_heads=query.shape[1], head_dim=query.shape[-1],
+            element_bytes=query.itemsize, index_blocks=blocks,
+            index_heads=self.args.indexer_n_heads,
+        )
         for start in range(0, query.shape[2], query_chunk):
             end = min(start + query_chunk, query.shape[2])
             absolute = mx.arange(start, end) + offset
@@ -579,10 +587,22 @@ class QSAAttention(nn.Module):
                     [selected_valid, tail_valid], axis=-1
                 )
             selected = mx.clip(selected, 0, key.shape[2] - 1)
-            selected_key = mx.take(key[0].transpose(1, 0, 2), selected, axis=0)
-            selected_value = mx.take(value[0].transpose(1, 0, 2), selected, axis=0)
-            selected_key = selected_key.transpose(0, 2, 1, 3)
-            selected_value = selected_value.transpose(0, 2, 1, 3)
+            causal = selected_valid & (selected <= absolute[:, None])
+            if self.sparse_sdpa and self.indexed_decode and query.shape[2] <= 8:
+                from .qwen_qsa_indexed import indexed_attention
+                current = indexed_attention(query[:, :, start:end], key, value,
+                    selected.astype(mx.int32), causal, offset + start)
+                if current is not None:
+                    outputs.append(current)
+                    continue
+            # Narrow gathers use the existing storage axis: no full-cache
+            # token-major transpose/copy just to read a few selected rows.
+            if end - start <= 8:
+                selected_key = mx.take(key[0], selected, axis=1).transpose(1, 0, 2, 3)
+                selected_value = mx.take(value[0], selected, axis=1).transpose(1, 0, 2, 3)
+            else:
+                selected_key = mx.take(key[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
+                selected_value = mx.take(value[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
             if self.args.num_attention_heads % selected_key.shape[1] != 0:
                 raise ValueError("Qwen query heads must be divisible by KV heads")
             repeats = self.args.num_attention_heads // selected_key.shape[1]
@@ -1356,6 +1376,8 @@ def load(
             attention = getattr(layer, "self_attn", None)
             if isinstance(attention, QSAAttention):
                 attention.sparse_sdpa = getattr(config, "qwen_sparse_sdpa", False)
+                attention.query_chunk = getattr(config, "qwen_qsa_query_chunk", 4)
+                attention.indexed_decode = getattr(config, "qwen_qsa_indexed", False)
         model.eval()
         model.load_weights(list(model.sanitize(weights).items()), strict=True)
         model.dspark = None

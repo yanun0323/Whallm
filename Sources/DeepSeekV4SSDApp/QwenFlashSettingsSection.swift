@@ -66,6 +66,22 @@ struct QwenFlashSettingsSection: View {
             .accessibilityHint(text(QwenFlashCopy.sdpaHint))
             .accessibilityIdentifier("qwen-flash-sparse-sdpa")
           }
+          Divider()
+          numberRow(QwenFlashCopy.queryChunk, hint: QwenFlashCopy.queryChunkHint,
+            key: \.qwenQSAQueryChunk, identifier: "qwen-qsa-query-chunk",
+            limits: 1...128, defaultValue: 4)
+          Divider()
+          SettingRow(QwenFlashCopy.indexed, hint: text(QwenFlashCopy.indexedHint), language: language) {
+            Toggle(text(QwenFlashCopy.indexed), isOn: Binding(
+              get: { settings.qwenSparseSDPA == true && settings.qwenQSAIndexed == true },
+              set: { settings.qwenQSAIndexed = $0 }
+            ))
+            .labelsHidden()
+            .disabled(settings.qwenSparseSDPA != true)
+            .accessibilityLabel(text(QwenFlashCopy.indexed))
+            .accessibilityHint(text(QwenFlashCopy.indexedHint))
+            .accessibilityIdentifier("qwen-qsa-indexed")
+          }
         }
         .appCard()
         .disabled(settingsLocked)
@@ -92,11 +108,12 @@ struct QwenFlashSettingsSection: View {
   }
 
   private func numberRow(_ title: String, hint: String,
-    key: WritableKeyPath<ModelAdvancedSettings, Int?>, identifier: String
+    key: WritableKeyPath<ModelAdvancedSettings, Int?>, identifier: String,
+    limits: ClosedRange<Int> = 0...512, defaultValue: Int = 0
   ) -> some View {
     let value = Binding<Int>(
-      get: { settings[keyPath: key] ?? 0 },
-      set: { settings[keyPath: key] = min(512, max(0, $0)) }
+      get: { settings[keyPath: key] ?? defaultValue },
+      set: { settings[keyPath: key] = min(limits.upperBound, max(limits.lowerBound, $0)) }
     )
     return SettingRow(title, hint: text(hint), language: language) {
       HStack(spacing: 8) {
@@ -105,7 +122,7 @@ struct QwenFlashSettingsSection: View {
           .accessibilityLabel(text(title))
           .accessibilityHint(text(hint))
           .accessibilityIdentifier(identifier)
-        Stepper(text(title), value: value, in: 0...512)
+        Stepper(text(title), value: value, in: limits)
           .labelsHidden()
           .accessibilityLabel(text(title))
           .accessibilityValue(String(value.wrappedValue))

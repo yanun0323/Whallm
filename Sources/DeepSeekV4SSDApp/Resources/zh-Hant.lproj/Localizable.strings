@@ -580,3 +580,11 @@
 
 "Compile Qwen tensor operations" = "編譯 Qwen 張量運算";
 "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "編譯分組正規化與單 token 的超連接運算。多 token 批次保留原本的混合路徑。浮點捨入與生成文字可能改變。";
+
+// QSA throughput experiments.
+"Experimental; full-model speed and quality are not yet verified. New QSA controls retain the original chunk size and disable indexed attention by default." = "實驗功能；完整模型的速度與品質尚未驗證。新的 QSA 控制項預設維持原本批次大小，並關閉索引注意力。";
+"QSA queries per chunk" = "每批 QSA 查詢數";
+"1–128 queries per attention chunk; default 4. Try 16 or 32 for prefill. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit. Numerical rounding may differ." = "每批注意力處理 1–128 個查詢，預設 4。Prefill 可試 16 或 32；每批工作區估算上限為 256 MiB，不是程序記憶體上限。浮點捨入可能不同。";
+"Use indexed QSA decode" = "使用索引式 QSA 解碼";
+"Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text." = "需啟用融合 QSA SDPA。超過稀疏門檻且不超過 8 個查詢時，直接讀取選中的 KV 列。Prefill 與不支援的格式維持 gather 路徑。FP32 歸約可能改變生成文字。";
+"QSA queries per chunk must be an integer from 1 to 128." = "每批 QSA 查詢數必須為 1 到 128 的整數。";

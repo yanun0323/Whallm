@@ -25,7 +25,7 @@ def main():
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--prompt", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--variant", choices=("baseline", "pooled", "ngram", "compiled", "mtp5", "mtp2", "mtp2-retry", "combined", "phase", "phase-combined", "waves", "pread", "sparse-sdpa", "flash-combined"), required=True)
+    parser.add_argument("--variant", choices=("baseline", "pooled", "ngram", "compiled", "mtp5", "mtp2", "mtp2-retry", "combined", "phase", "phase-combined", "waves", "pread", "sparse-sdpa", "flash-combined", "qsa-chunk16", "qsa-chunk32", "qsa-indexed", "qsa-throughput"), required=True)
     parser.add_argument("--max-tokens", type=int, default=32)
     parser.add_argument("--lifecycle", action="store_true", help="Also check continuation, cancellation, warmup and another request")
     parser.add_argument("--layer-major", action="store_true", help="Exercise layer-major batched prefill instead of default-off controls")
@@ -45,6 +45,11 @@ def main():
         prompt_cache_entries=0, persistent_prompt_cache=False, layer_major_prefill=False,
         batched_expert_prefill=False, ready_expert_decode=False, ane_prefill=False)
     overrides = {
+        "qsa-chunk16": {"qwen_sparse_sdpa": True, "qwen_qsa_query_chunk": 16},
+        "qsa-chunk32": {"qwen_sparse_sdpa": True, "qwen_qsa_query_chunk": 32},
+        "qsa-indexed": {"qwen_sparse_sdpa": True, "qwen_qsa_indexed": True},
+        "qsa-throughput": {"qwen_sparse_sdpa": True, "qwen_qsa_query_chunk": 32,
+                           "qwen_qsa_indexed": True},
         "waves": {"qwen_expert_wave_slots": 32},
         "pread": {"qwen_ngram_io": "pread", "qwen_ngram_cache_bytes": 64 * 1024**2},
         "sparse-sdpa": {"qwen_sparse_sdpa": True},

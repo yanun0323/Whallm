@@ -103,3 +103,7 @@ benchmark-qwen-speed:
 
 %:
 	@:
+
+## benchmark-qwen-qsa: compare QSA throughput candidates without loading a model
+benchmark-qwen-qsa:
+	MLX_ENABLE_TF32=0 PYTHONPATH=runtime:. $(PYTHON) Scripts/benchmark_qwen_qsa_throughput.py --output "$(QWEN_FLASH_OUTPUT)"

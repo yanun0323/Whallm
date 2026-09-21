@@ -88,6 +88,8 @@ class RuntimeConfig:
     qwen_ngram_io: str = "mmap"
     qwen_ngram_cache_bytes: int = 0
     qwen_sparse_sdpa: bool = False
+    qwen_qsa_query_chunk: int = 4
+    qwen_qsa_indexed: bool = False
     qwen_mtp_draft_tokens: int = 5
     qwen_mtp_zero_acceptance_limit: int = 1
 
@@ -1041,6 +1043,15 @@ def _load_qwen_mtp(
             installed_model.mtp.common_tensors,
         )
         model.load_weights(list(model.sanitize(weights).items()), strict=True)
+        # New QSA controls also cover the native draft head, not only the target.
+        # Preserve its previous defaults when the new experiments are disabled.
+        if getattr(config, "qwen_qsa_indexed", False) or getattr(config, "qwen_qsa_query_chunk", 4) != 4:
+            for layer in model.layers:
+                attention = getattr(layer, "self_attn", None)
+                if attention is not None:
+                    attention.sparse_sdpa = config.qwen_sparse_sdpa
+                    attention.query_chunk = getattr(config, "qwen_qsa_query_chunk", 4)
+                    attention.indexed_decode = getattr(config, "qwen_qsa_indexed", False)
         model.eval()
         mx.eval(model.parameters())
         return model, expert_cache

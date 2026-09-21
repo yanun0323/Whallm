@@ -200,8 +200,13 @@ struct MemoryPlanningProfile {
 
     func attentionWork(_ queries: Double) -> Double {
       if qwen {
-        // _bounded_attention uses four query tokens at a time, independently of prefill step.
-        let micro = min(queries, 4)
+        // Structural upper estimate; runtime may reduce chunks for workspace.
+        let micro = min(queries, Double(s.qwenQSAQueryChunk ?? 4))
+        if s.qwenSparseSDPA == true && s.qwenQSAIndexed == true && queries <= 8 && tokens > topk {
+          let partials = micro * heads * 32 * (dim + 2) * 4
+          let indexScores = micro * ceil(tokens / number("indexer_compress_ratio", 4)) * indexHeads * 8
+          return partials + indexScores + queries * heads * dim * activationBytes * 3
+        }
         let gathered = micro * min(tokens, topk + number("indexer_compress_ratio", 4))
           * (2 * number("num_key_value_heads", 2) * dim * activationBytes + heads * 8)
         let scores = micro * ceil(tokens / number("indexer_compress_ratio", 4)) * indexHeads * 8

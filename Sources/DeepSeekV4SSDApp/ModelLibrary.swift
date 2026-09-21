@@ -402,6 +402,8 @@ final class ModelLibrary: ObservableObject {
           qwenNgramIO: settings.qwenNgramIO ?? "mmap",
           qwenNgramCacheBytes: settings.effectiveQwenNgramCacheBytes,
           qwenSparseSDPA: settings.qwenSparseSDPA ?? false,
+          qwenQSAQueryChunk: settings.qwenQSAQueryChunk ?? 4,
+          qwenQSAIndexed: settings.qwenSparseSDPA == true && settings.qwenQSAIndexed == true,
           qwenMTPDraftTokens: modelKind == .qwen3_8FlashNext ? settings.effectiveQwenMTPDraftTokens : 5,
           qwenMTPZeroAcceptanceLimit: modelKind == .qwen3_8FlashNext ? settings.effectiveQwenMTPZeroAcceptanceLimit : 1,
           v41PackedKV: modelKind == .deepSeekV41 && settings.packedKVCache == true,

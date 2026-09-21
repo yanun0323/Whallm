@@ -580,3 +580,11 @@
 
 "Compile Qwen tensor operations" = "Compile Qwen tensor operations";
 "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change.";
+
+// QSA throughput experiments.
+"Experimental; full-model speed and quality are not yet verified. New QSA controls retain the original chunk size and disable indexed attention by default." = "Experimental; full-model speed and quality are not yet verified. New QSA controls retain the original chunk size and disable indexed attention by default.";
+"QSA queries per chunk" = "QSA queries per chunk";
+"1–128 queries per attention chunk; default 4. Try 16 or 32 for prefill. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit. Numerical rounding may differ." = "1–128 queries per attention chunk; default 4. Try 16 or 32 for prefill. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit. Numerical rounding may differ.";
+"Use indexed QSA decode" = "Use indexed QSA decode";
+"Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text." = "Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text.";
+"QSA queries per chunk must be an integer from 1 to 128." = "QSA queries per chunk must be an integer from 1 to 128.";
