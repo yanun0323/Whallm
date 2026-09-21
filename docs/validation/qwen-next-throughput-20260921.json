@@ -1,0 +1,55 @@
+{
+  "kind": "synthetic_qsa_components_not_full_model_performance",
+  "baseline": "0b1cb7a46021b446195716ceb64d9fc1cced4cf4",
+  "full_model_benchmark": false,
+  "environment": {
+    "cpu": "Apple M1 (Virtual)",
+    "device": "Apple Paravirtual device",
+    "physical_memory_bytes": 7516192768,
+    "os": "macOS 15.7.9",
+    "mlx": "0.32.2"
+  },
+  "source_recheck": {
+    "checkout": "7e3ff70e1ba653fa07b106547868607e17fb4404",
+    "candidate_applied": false,
+    "workflow_run_id": 35564306040,
+    "workflow_success": true,
+    "artifact_id": 10623039872,
+    "artifact_sha256": "76271dc63a7bfc5d27be0bcaf337c2f2c6801d7a31528914c8c7b9b4ed8f643c",
+    "qwen_results": {"total": 136, "skipped": 4, "failures": 0, "errors": 0},
+    "swift_results": {"total": 150, "skipped": 3, "failures": 0},
+    "portable_tests": 25,
+    "catalog_cases": 10
+  },
+  "refinement": {
+    "checkout": "545cf39a78d8dfa84b502741d0cbdad0dbf17e74",
+    "candidate_applied": true,
+    "workflow_run_id": 35564665325,
+    "validation_success": true,
+    "workflow_success": false,
+    "publication_failure": "Actions token cannot update workflow files; source is subsequently published without granting that permission.",
+    "artifact_id": 10623846316,
+    "artifact_sha256": "47e771c61ca6f84118520778e00b9cb14a44a45f4caf7b66b2b904f428fcd895",
+    "qwen_results": {"total": 137, "skipped": 4, "failures": 0, "errors": 0},
+    "swift_results": {"total": 150, "skipped": 3, "failures": 0},
+    "portable_tests": 25,
+    "catalog_cases": 10,
+    "p50_ms_rounded_to_4_decimals": [
+      {"kv": 8192, "queries": 1, "previous_fused_4": 3.7954, "indexed": 3.2838},
+      {"kv": 8192, "queries": 3, "previous_fused_4": 6.8268, "indexed": 5.8238},
+      {"kv": 8192, "queries": 128, "previous_fused_4": 141.9900, "chunk_32": 142.4273},
+      {"kv": 32768, "queries": 1, "previous_fused_4": 7.3900, "indexed": 5.5604},
+      {"kv": 32768, "queries": 3, "previous_fused_4": 9.4785, "indexed": 6.2640},
+      {"kv": 32768, "queries": 128, "previous_fused_4": 208.0747, "chunk_32": 201.9915},
+      {"kv": 131072, "queries": 1, "previous_fused_4": 26.2385, "indexed": 15.0913},
+      {"kv": 131072, "queries": 3, "previous_fused_4": 28.3290, "indexed": 16.7276}
+    ]
+  },
+  "limits": [
+    "Raw samples, p95, allocations, output and source hashes remain in the cited artifacts.",
+    "Qwen discovery includes portable tests; counts must not be summed.",
+    "Archive-dependent Qwen skips and installed-model Swift skips are pre-existing.",
+    "No full checkpoint or physical-device end-to-end throughput, quality or memory measurement.",
+    "Final qualification tests and source changes are reported by their own commit CI."
+  ]
+}

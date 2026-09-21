@@ -23,7 +23,8 @@ def supported(query, key, value, selected, valid) -> bool:
         and key.shape == value.shape and key.shape[2] > 0
         and 1 <= query.shape[2] <= MAX_QUERIES
         and query.shape[3] == key.shape[3] and query.shape[3] in (32, 64, 128, 256)
-        and key.shape[1] > 0 and query.shape[1] % key.shape[1] == 0
+        and query.shape[1] > 0 and key.shape[1] > 0
+        and query.shape[1] % key.shape[1] == 0
         and query.dtype == key.dtype == value.dtype
         and query.dtype in (mx.float32, mx.float16, mx.bfloat16)
         and selected.ndim == valid.ndim == 2 and selected.shape == valid.shape
