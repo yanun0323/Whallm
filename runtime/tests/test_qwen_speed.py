@@ -103,6 +103,17 @@ class DenseQSASpeedTests(unittest.TestCase):
 
 
 class HyperCompilationTests(unittest.TestCase):
+    def test_multiple_tokens_keep_norm_only_path(self):
+        from deepseek_v4_ssd import qwen_tensor_ops as ops
+        layer = qwen.GatedResidual(tiny_args())
+        layer.compiled = True
+        layer.hc_norm.compiled = True
+        hidden = mx.ones((1, 3, 256))
+        with patch.object(ops, 'compiled_scaled_silu', side_effect=AssertionError('batched fusion')):
+            with patch.object(ops, 'compiled_hyper_inject', side_effect=AssertionError('batched injection')):
+                mixed, residual, injection = layer(hidden)
+                mx.eval(layer.inject(residual, mixed, injection))
+
     def test_compiled_hyper_connection_and_live_weights(self):
         mx.random.seed(12)
         for dtype, tol in ((mx.float32, 3e-5), (mx.float16, 3e-3), (mx.bfloat16, 2e-2)):

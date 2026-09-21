@@ -142,7 +142,9 @@ class GatedResidual(nn.Module):
 
     def __call__(self, hyper_input: mx.array):
         normalized = self.hc_norm(hyper_input)
-        if self.compiled:
+        # Multi-token fusion regressed in the interleaved Metal experiment.
+        # Retain the prior norm-only route for prefill and speculative batches.
+        if self.compiled and hyper_input.size // hyper_input.shape[-1] == 1:
             from .qwen_tensor_ops import (
                 compiled_scaled_silu, compiled_hyper_mix, compiled_injection_gate,
             )
@@ -168,7 +170,7 @@ class GatedResidual(nn.Module):
         return mixed, hyper_input, injection
 
     def inject(self, residual: mx.array, result: mx.array, injection: mx.array) -> mx.array:
-        if self.compiled:
+        if self.compiled and residual.size // residual.shape[-1] == 1:
             from .qwen_tensor_ops import compiled_hyper_inject
             return compiled_hyper_inject(residual, result, injection)
         return residual + (result[..., None, :] * injection[..., None]).reshape(residual.shape)

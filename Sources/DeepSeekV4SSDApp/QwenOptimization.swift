@@ -33,7 +33,7 @@ enum QwenOptimization: String, CaseIterable, Identifiable {
     case .ngramLookup:
       "Reads repeated N-gram rows once per lookup and uses a decoding table."
     case .compiledNorm:
-      "Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change."
+      "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change."
     case .phaseMemory:
       "Limits the expert cache to half its capacity while reading a prompt, keeping room for one layer when possible. Restores full capacity for answers. May cause extra SSD reads."
     case .mtpPolicy:

@@ -579,4 +579,4 @@
 "N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram row cache must be an integer from 0 to 512 MiB.";
 
 "Compile Qwen tensor operations" = "Compile Qwen tensor operations";
-"Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change." = "Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change.";
+"Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change.";

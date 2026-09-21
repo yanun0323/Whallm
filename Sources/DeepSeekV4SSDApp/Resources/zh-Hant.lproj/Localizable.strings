@@ -579,4 +579,4 @@
 "N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram 資料列快取必須為 0 至 512 MiB 的整數。";
 
 "Compile Qwen tensor operations" = "編譯 Qwen 張量運算";
-"Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change." = "編譯分組正規化與超連接的混合／注入運算，不編譯整個生成圖。浮點捨入與生成文字可能改變。";
+"Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "編譯分組正規化與單 token 的超連接運算。多 token 批次保留原本的混合路徑。浮點捨入與生成文字可能改變。";
