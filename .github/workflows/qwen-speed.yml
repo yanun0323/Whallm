@@ -1,0 +1,36 @@
+name: Qwen speed experiments
+
+on:
+  push:
+    branches: [feat/qwen-flash-optimize]
+    paths: ['.github/workflows/qwen-speed.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Archive tracked source and pinned MLX model implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir evidence
+          git archive HEAD -o evidence/whallm.tar
+          git rev-parse HEAD > evidence/commit.txt
+          git init -q mlx-lm
+          git -C mlx-lm remote add origin https://github.com/Blaizzy/mlx-lm.git
+          git -C mlx-lm fetch --depth 1 origin 5c10538136b9038b9626c134612b08afc18d697a
+          git -C mlx-lm archive FETCH_HEAD -o "$PWD/evidence/mlx-lm.tar"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qwen-speed-baseline
+          path: evidence/
+          retention-days: 3
+          if-no-files-found: error
