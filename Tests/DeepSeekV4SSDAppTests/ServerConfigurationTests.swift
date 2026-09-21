@@ -774,7 +774,7 @@ final class ServerConfigurationTests: XCTestCase {
         "expert_route_trace", "expert_page_cache_probe",
         "separate_prefill_io", "expert_file_cache_policy", "ready_expert_decode", "staged_expert_streaming",
         "qwen_next_layer_prefetch",
-        "qwen_expert_wave_slots", "qwen_ngram_io", "qwen_ngram_cache_bytes", "qwen_sparse_sdpa", "qwen_qsa_query_chunk", "qwen_qsa_indexed",
+        "qwen_expert_wave_slots", "qwen_ngram_io", "qwen_ngram_cache_bytes", "qwen_sparse_sdpa", "qwen_qsa_query_chunk", "qwen_qsa_indexed", "qwen_prefill_read_experts", "qwen_prefill_seed_experts", "qwen_shared_expert_overlap",
         "qwen_quantized_kv", "qwen_quantized_index", "qwen_pooled_index_cache", "qwen_ngram_lookup_optimized",
         "qwen_compile_tensor_ops", "qwen_phase_memory", "qwen_mtp_draft_tokens", "qwen_mtp_zero_acceptance_limit", "v41_packed_kv", "v41_packed_index",
         "v41_candidate_index", "v41_ced_prefill", "v41_next_layer_prefetch", "deepseek_ane_prefill", "v41_layer_major_prefill",

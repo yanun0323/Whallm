@@ -11,13 +11,16 @@ from .io_metrics import configure_expert_file_cache_policy
 
 
 class PrefillReader:
-    def __init__(self, directory, layers: int, blob_size: int, read_limiter=None):
+    def __init__(self, directory, layers: int, blob_size: int, read_limiter=None, *, batch_experts: int = 1):
+        if type(batch_experts) is not int or not 1 <= batch_experts <= 32:
+            raise ValueError("batch_experts must be an integer from 1 through 32")
         self.descriptors: list[int] = []
         self._local = threading.local()
         self._buffers: list[mmap.mmap] = []
         self._lock = threading.Lock()
-        self._capacity = blob_size + 2 * mmap.PAGESIZE
+        self._capacity = blob_size * batch_experts + 2 * mmap.PAGESIZE
         self._read_limiter = read_limiter
+        self.read_calls = 0
         self.direct_bytes = 0
         self.copied_bytes = 0
         try:
@@ -41,9 +44,16 @@ class PrefillReader:
 
     def _preadv(self, fd, views, offset):
         check_cancelled()
-        if self._read_limiter is None:
-            return os.preadv(fd, views, offset)
-        return self._read_limiter.preadv(fd, views, offset)
+        while True:
+            check_cancelled()
+            with self._lock:
+                self.read_calls += 1
+            try:
+                if self._read_limiter is None:
+                    return os.preadv(fd, views, offset)
+                return self._read_limiter.preadv(fd, views, offset)
+            except InterruptedError:
+                continue
 
     def read(self, layer: int, views: list[memoryview], offset: int) -> int:
         alignment = mmap.PAGESIZE
@@ -68,7 +78,7 @@ class PrefillReader:
         prefix = offset - begin
         size = (prefix + length + alignment - 1) // alignment * alignment
         if size > self._capacity:
-            raise ValueError("Prefill read exceeds one expert buffer")
+            raise ValueError("Prefill read exceeds configured staging capacity")
         buffer = getattr(self._local, "buffer", None)
         if buffer is None:
             buffer = mmap.mmap(-1, self._capacity)
@@ -104,6 +114,6 @@ class PrefillReader:
 
     def snapshot(self):
         with self._lock:
-            return {"direct_bytes": self.direct_bytes, "copied_bytes": self.copied_bytes,
+            return {"read_calls": self.read_calls, "direct_bytes": self.direct_bytes, "copied_bytes": self.copied_bytes,
                     "staging_buffers": len(self._buffers),
                     "staging_capacity_bytes": len(self._buffers) * self._capacity}

@@ -273,6 +273,9 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var qwenSparseSDPA: Bool? = false
   var qwenQSAQueryChunk: Int? = 4
   var qwenQSAIndexed: Bool? = false
+  var qwenPrefillReadExperts: Int? = 1
+  var qwenPrefillSeedExperts: Int? = 0
+  var qwenSharedExpertOverlap: Bool? = false
   var qwenMTPPolicy: Bool? = false
   var qwenMTPDraftTokens: Int? = 2
   var qwenMTPZeroAcceptanceLimit: Int? = 2
@@ -369,6 +372,9 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.qwenSparseSDPA = qwen ? (settings.qwenSparseSDPA ?? false) : false
     settings.qwenQSAQueryChunk = qwen ? (settings.qwenQSAQueryChunk ?? 4) : 4
     settings.qwenQSAIndexed = qwen ? (settings.qwenQSAIndexed ?? false) : false
+    settings.qwenPrefillReadExperts = qwen ? qwenPrefillReadExperts ?? 1 : 1
+    settings.qwenPrefillSeedExperts = qwen ? qwenPrefillSeedExperts ?? 0 : 0
+    settings.qwenSharedExpertOverlap = qwen ? qwenSharedExpertOverlap ?? false : false
     settings.dsparkEnabled = descriptor.supports("dspark") && settings.dsparkEnabled
     return settings
   }
@@ -765,6 +771,9 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       var qwenSparseSDPA: Bool? = nil
       var qwenQSAQueryChunk: Int? = nil
       var qwenQSAIndexed: Bool? = nil
+      var qwenPrefillReadExperts: Int? = nil
+      var qwenPrefillSeedExperts: Int? = nil
+      var qwenSharedExpertOverlap: Bool? = nil
       let qwenMTPDraftTokens: Int
       let qwenMTPZeroAcceptanceLimit: Int
       let v41PackedKV: Bool
@@ -827,6 +836,9 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         case qwenSparseSDPA = "qwen_sparse_sdpa"
         case qwenQSAQueryChunk = "qwen_qsa_query_chunk"
         case qwenQSAIndexed = "qwen_qsa_indexed"
+        case qwenPrefillReadExperts = "qwen_prefill_read_experts"
+        case qwenPrefillSeedExperts = "qwen_prefill_seed_experts"
+        case qwenSharedExpertOverlap = "qwen_shared_expert_overlap"
         case qwenMTPDraftTokens = "qwen_mtp_draft_tokens"
         case qwenMTPZeroAcceptanceLimit = "qwen_mtp_zero_acceptance_limit"
         case v41PackedKV = "v41_packed_kv"
@@ -856,6 +868,9 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         try values.encode(qwenSparseSDPA ?? false, forKey: .qwenSparseSDPA)
         try values.encode(qwenQSAQueryChunk ?? 4, forKey: .qwenQSAQueryChunk)
         try values.encode(qwenQSAIndexed ?? false, forKey: .qwenQSAIndexed)
+        try values.encode(qwenPrefillReadExperts ?? 1, forKey: .qwenPrefillReadExperts)
+        try values.encode(qwenPrefillSeedExperts ?? 0, forKey: .qwenPrefillSeedExperts)
+        try values.encode(qwenSharedExpertOverlap ?? false, forKey: .qwenSharedExpertOverlap)
         try values.encode(qwenMTPDraftTokens, forKey: .qwenMTPDraftTokens)
         try values.encode(qwenMTPZeroAcceptanceLimit, forKey: .qwenMTPZeroAcceptanceLimit)
         try values.encode(v41PackedKV, forKey: .v41PackedKV)
@@ -1133,6 +1148,18 @@ final class ServerController: ObservableObject {
   private var memoryResetFailed = false
   private var modelConfigurationTask: Task<Void, Never>?
   private var pendingModelConfigurations: [String: ModelCatalog.Entry] = [:]
+  private var modelConfigurationErrors: [String: String] = [:]
+
+  func waitForModelConfigurationUpdates(_ modelID: String) async throws {
+    while let task = modelConfigurationTask {
+      try Task.checkCancellation()
+      await task.value
+    }
+    try Task.checkCancellation()
+    if let message = modelConfigurationErrors[modelID] {
+      throw ConfigurationError(message)
+    }
+  }
   private var monitorConfiguration: ServerConfiguration?
   private var temporaryModelCatalog: TemporaryModelCatalog?
   private var previousSSDBytes: UInt64?
@@ -1333,8 +1360,10 @@ final class ServerController: ObservableObject {
           timeoutInterval: 1_800
         )
         updateCatalogModel(configuration)
+        modelConfigurationErrors.removeValue(forKey: configuration.id)
         modelActionError = nil
       } catch {
+        modelConfigurationErrors[configuration.id] = error.localizedDescription
         if case .running = state {
           modelActionError = error.localizedDescription
         }
@@ -1381,6 +1410,7 @@ final class ServerController: ObservableObject {
     modelConfigurationTask?.cancel()
     modelConfigurationTask = nil
     pendingModelConfigurations.removeAll()
+    modelConfigurationErrors.removeAll()
   }
 
   private func readOutput(_ handle: FileHandle) {

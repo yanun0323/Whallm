@@ -724,6 +724,9 @@ class StreamingExperts(nn.Module):
             return self._waves(value, np.asarray(indices, dtype=np.int32))
         batched = self.cache.current_batched(self.layer)
         if isinstance(batched, QwenBatchedExperts):
+            capture = getattr(self.cache, "capture_prefill_seed_routes", None)
+            if capture is not None:
+                capture(self.layer, indices)
             if getattr(self.cache, "route_cache_enabled", False):
                 self.cache.observe_batched_routes(self.layer, np.asarray(indices, dtype=np.int32))
             source = mx.expand_dims(value, (-2, -3))
@@ -760,7 +763,15 @@ class StreamingExperts(nn.Module):
                 output = _scatter_unsort(output, inverse, indices.shape)
             return output.squeeze(-2)
 
+        sync_started = time.perf_counter()
         selected = np.asarray(indices, dtype=np.int32)
+        record_sync = getattr(self.cache, "record_routing_sync", None)
+        if record_sync is not None:
+            record_sync(time.perf_counter() - sync_started)
+        return self._routed(value, selected)
+
+    def _routed(self, value: mx.array, selected: np.ndarray) -> mx.array:
+        """Consume already materialized routes without a second GPU-to-host wait."""
         if value.size // value.shape[-1] == 1 and getattr(self.cache, "ready_expert_decode", False):
             outputs = {}
             ready = self.cache.iter_ready(self.layer, selected.reshape(-1).tolist())
@@ -812,6 +823,7 @@ class SparseMoE(nn.Module):
         self.shared_expert_gate = nn.Linear(args.hidden_size, 1, bias=False)
         self.top_k = args.num_experts_per_tok
         self.norm_topk_prob = args.norm_topk_prob
+        self.shared_overlap = False
         self.cache = cache
         self.layer = layer
 
@@ -824,7 +836,24 @@ class SparseMoE(nn.Module):
         if getattr(self.cache, "route_trace_enabled", False):
             self.cache.record_routes(self.layer, np.asarray(indices, dtype=np.int32))
         shared = mx.sigmoid(self.shared_expert_gate(value)) * self.shared_expert(value)
-        routed = self.experts(value, indices)
+        if (self.shared_overlap and value.size // value.shape[-1] == 1
+                and self.cache.current_batched(self.layer) is None):
+            # Resolve routing FIRST. Co-evaluating indices and shared could make
+            # the CPU route wait also wait for the shared branch to complete.
+            sync_started = time.perf_counter()
+            selected = np.asarray(indices, dtype=np.int32)
+            record_sync = getattr(self.cache, "record_routing_sync", None)
+            if record_sync is not None:
+                record_sync(time.perf_counter() - sync_started)
+            # Shared weights do not alias mutable expert slots. No subsequent
+            # route conversion may synchronize this submission before the I/O.
+            mx.async_eval(shared)
+            record = getattr(self.cache, "record_shared_overlap", None)
+            if record is not None:
+                record()
+            routed = self.experts._routed(value, selected)
+        else:
+            routed = self.experts(value, indices)
         routed = (routed * scores[..., None].astype(routed.dtype)).sum(axis=-2)
         return routed + shared
 
@@ -1335,6 +1364,8 @@ def load(
         file_cache_policy=getattr(config, "expert_file_cache_policy", "cached"),
         separate_prefill_io=getattr(config, "separate_prefill_io", True),
         eviction_policy=getattr(config, "expert_eviction_policy", "lfu"),
+        prefill_read_experts=getattr(config, "qwen_prefill_read_experts", 1),
+        prefill_seed_experts=getattr(config, "qwen_prefill_seed_experts", 0),
     )
     ngram_store = None
     try:
@@ -1368,6 +1399,7 @@ def load(
             and not getattr(config, "mtp_enabled", False)
         )
         for layer in model.model.layers:
+            layer.mlp.shared_overlap = getattr(config, "qwen_shared_expert_overlap", False)
             layer.mlp.experts.grouped_prefill = grouped_prefill
             layer.mlp.experts.wave_slots = getattr(config, "qwen_expert_wave_slots", 0)
             attention = getattr(layer, "self_attn", None)

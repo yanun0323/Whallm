@@ -588,3 +588,28 @@
 "Use indexed QSA decode" = "使用索引式 QSA 解碼";
 "Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text." = "需啟用融合 QSA SDPA。超過稀疏門檻且不超過 8 個查詢時，直接讀取選中的 KV 列。Prefill 與不支援的格式維持 gather 路徑。FP32 歸約可能改變生成文字。";
 "QSA queries per chunk must be an integer from 1 to 128." = "每批 QSA 查詢數必須為 1 到 128 的整數。";
+
+// Streaming review experiments and benchmark diagnostics.
+"Experts per prefill read" = "每次 Prefill 讀取的專家數";
+"1 keeps existing reads; 2–32 merges adjacent expert payloads without reading unselected gaps. Requires layer-major whole-layer prefill with waves off. Larger batches retain more per-worker staging memory." = "1 維持原本讀取；2–32 合併相鄰專家資料，不讀取未選中的間隙。需要逐層完整批次 Prefill，且關閉專家分波。較大批次會保留更多工作執行緒暫存記憶體。";
+"Warm decode experts per layer" = "每層熱啟動的 Decode 專家數";
+"0 keeps the cold handoff; 1–128 copies hot experts from the last 128 prompt tokens into free cache slots. Requires whole-layer prefill. Adds prefill time and memory, but may reduce early decode reads. Actual retention is capped by cache capacity." = "0 維持冷啟動交接；1–128 將提示最後 128 個 token 的熱門專家複製到空閒快取槽。需要整層 Prefill。會增加 Prefill 時間與記憶體，但可能減少早期 Decode 讀取。實際保留量受快取容量限制。";
+"Overlap shared expert compute with reads" = "讓共享專家計算與讀取重疊";
+"Submit the resident shared expert and router before waiting for routed experts on single-token calls. No experts are skipped. Submission overhead may outweigh the overlap; compare the same throughput workload." = "單 token 呼叫中，先提交常駐的共享專家與路由計算，再等待路由專家。不會跳過專家。提交成本可能抵銷重疊收益，請以相同 Throughput 工作負載比較。";
+"Read batching and warm handoff are inactive without layer-major whole-layer prefill, or while expert waves are enabled. Saved choices are retained." = "未啟用逐層整層 Prefill，或專家分波啟用時，讀取批次與熱啟動交接不生效。原本的選擇會保留。";
+"Experts per prefill read must be an integer from 1 to 32." = "每次 Prefill 讀取的專家數必須為 1–32 的整數。";
+"Warm decode experts per layer must be an integer from 0 to 128." = "每層熱啟動的 Decode 專家數必須為 0–128 的整數。";
+"Runtime configuration and expert I/O" = "實際執行設定與專家 I/O";
+"Counter" = "計數項目";
+"Through first token" = "截至第一個 token";
+"After first token" = "第一個 token 之後";
+"Expert payload GiB" = "專家資料量 GiB";
+"Expert wait seconds" = "專家等待秒數";
+"Expert cache hits" = "專家快取命中";
+"Expert cache misses" = "專家快取未命中";
+"Prefill seeded experts" = "Prefill 保留專家數";
+"Seeded experts used" = "已使用的保留專家數";
+"Prefill read batches" = "Prefill 讀取批次數";
+"Expert bytes are logical payload, not SSD traffic. Wait counts consumer blocking, not total I/O service time. Asynchronous work may cross the first-token boundary." = "專家資料量是邏輯資料量，不是 SSD 實體流量。等待時間只計算消費端阻塞，不是總 I/O 服務時間。非同步工作可能跨越第一個 token 的時間分界。";
+"Configuration hash" = "設定雜湊";
+"Source files hash" = "來源檔案雜湊";

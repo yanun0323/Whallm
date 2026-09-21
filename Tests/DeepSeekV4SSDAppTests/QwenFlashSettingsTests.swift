@@ -198,7 +198,7 @@ final class QwenFlashSettingsTests: XCTestCase {
   func testControlsRenderForAllLanguagesAndLockStates() throws {
     _ = NSApplication.shared
     for language in [AppLanguage.english, .traditionalChinese, .simplifiedChinese] {
-      for state in ["default", "enabled", "locked"] {
+      for state in ["default", "enabled", "locked", "streaming"] {
         var settings = ModelAdvancedSettings.defaults(for: qwen)
         if state != "default" {
           settings.qwenExpertWaveSlots = 32
@@ -207,6 +207,12 @@ final class QwenFlashSettingsTests: XCTestCase {
           settings.qwenSparseSDPA = true
           settings.qwenQSAQueryChunk = 32
           settings.qwenQSAIndexed = true
+        }
+        if state == "streaming" {
+          settings.qwenExpertWaveSlots = 0
+          settings.qwenPrefillReadExperts = 4
+          settings.qwenPrefillSeedExperts = 32
+          settings.qwenSharedExpertOverlap = true
         }
         let host = NSHostingView(rootView: QwenFlashSettingsSection(settings: .constant(settings),
           modelKind: qwen, settingsLocked: state == "locked", language: language)
@@ -297,6 +303,70 @@ final class QwenFlashSettingsTests: XCTestCase {
       settings.qwenQSAQueryChunk = valid
       XCTAssertNoThrow(try settings.validateQwenFlashSettings())
     }
+  }
+
+  @MainActor
+  func testStreamingPreferencesAreIndependentAndSurviveCatalogs() throws {
+    var settings = ModelAdvancedSettings.defaults(for: qwen)
+    XCTAssertEqual(settings.qwenPrefillReadExperts, 1)
+    XCTAssertEqual(settings.qwenPrefillSeedExperts, 0)
+    XCTAssertEqual(settings.qwenSharedExpertOverlap, false)
+    settings.qwenPrefillReadExperts = 4
+    settings.qwenPrefillSeedExperts = 32
+    settings.qwenSharedExpertOverlap = true
+    let encoded = try JSONEncoder().encode(settings)
+    let decoded = try JSONDecoder().decode(ModelAdvancedSettings.self, from: encoded).normalized(for: qwen)
+    XCTAssertEqual(decoded.qwenPrefillReadExperts, 4)
+    XCTAssertEqual(decoded.qwenPrefillSeedExperts, 32)
+    XCTAssertEqual(decoded.qwenSharedExpertOverlap, true)
+    for name in ["qwen-streaming", "qwen-streaming-inactive", "qwen-streaming-waves"] {
+      settings.layerMajorPrefill = name != "qwen-streaming-inactive"
+      settings.qwenExpertWaveSlots = name == "qwen-streaming-waves" ? 32 : 0
+      let result = try catalog(settings)
+      let active = name == "qwen-streaming"
+      let runtime = try object(result.models[0].runtime)
+      XCTAssertEqual(runtime["qwen_prefill_read_experts"] as? Int, active ? 4 : 1)
+      XCTAssertEqual(runtime["qwen_prefill_seed_experts"] as? Int, active ? 32 : 0)
+      XCTAssertEqual(runtime["qwen_shared_expert_overlap"] as? Bool, true)
+      XCTAssertEqual(settings.qwenPrefillSeedExperts, 32)
+      if let base = ProcessInfo.processInfo.environment["WHALLM_QWEN_UI_ARTIFACTS"] {
+        let directory = URL(fileURLWithPath: base).appendingPathComponent("catalogs")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try result.encoded().write(to: directory.appendingPathComponent("\(name).json"))
+      }
+    }
+    for kind in [ModelKind.deepSeekV4, .deepSeekV41] {
+      let runtime = try object(catalog(settings, kind: kind).models[0].runtime)
+      XCTAssertEqual(runtime["qwen_prefill_read_experts"] as? Int, 1)
+      XCTAssertEqual(runtime["qwen_prefill_seed_experts"] as? Int, 0)
+      XCTAssertEqual(runtime["qwen_shared_expert_overlap"] as? Bool, false)
+    }
+    settings = .defaults(for: qwen)
+    XCTAssertEqual(settings.qwenPrefillSeedExperts, 0)
+  }
+
+  func testStreamingLegacyPreferencesAndStrictRanges() throws {
+    var settings = ModelAdvancedSettings.defaults(for: qwen)
+    var old = try object(settings)
+    for key in ["qwenPrefillReadExperts", "qwenPrefillSeedExperts", "qwenSharedExpertOverlap"] {
+      old.removeValue(forKey: key)
+    }
+    let restored = try JSONDecoder().decode(ModelAdvancedSettings.self,
+      from: JSONSerialization.data(withJSONObject: old)).normalized(for: qwen)
+    XCTAssertEqual(restored.qwenPrefillReadExperts, 1)
+    XCTAssertEqual(restored.qwenPrefillSeedExperts, 0)
+    XCTAssertEqual(restored.qwenSharedExpertOverlap, false)
+    for invalid in [Int.min, -1, 0, 33, Int.max] {
+      settings.qwenPrefillReadExperts = invalid
+      XCTAssertThrowsError(try settings.validateQwenFlashSettings())
+    }
+    settings.qwenPrefillReadExperts = 32
+    for invalid in [Int.min, -1, 129, Int.max] {
+      settings.qwenPrefillSeedExperts = invalid
+      XCTAssertThrowsError(try settings.validateQwenFlashSettings())
+    }
+    settings.qwenPrefillSeedExperts = 128
+    XCTAssertNoThrow(try settings.validateQwenFlashSettings())
   }
 
   private func object<T: Encodable>(_ value: T) throws -> [String: Any] {

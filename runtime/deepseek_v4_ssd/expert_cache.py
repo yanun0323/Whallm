@@ -76,6 +76,13 @@ class QwenBatchedExperts:
 
 @dataclass
 class CacheMetrics:
+    wait_seconds: float = 0.0
+    prefill_read_batches: int = 0
+    prefill_seeded_experts: int = 0
+    prefill_seed_bytes: int = 0
+    prefill_seed_seconds: float = 0.0
+    prefill_seed_hits: int = 0
+    shared_overlap_submissions: int = 0
     hits: int = 0
     misses: int = 0
     evictions: int = 0
@@ -112,6 +119,13 @@ class CacheMetrics:
 
     def delta(self, before: CacheMetrics) -> CacheMetrics:
         return CacheMetrics(
+            wait_seconds=self.wait_seconds - before.wait_seconds,
+            prefill_read_batches=self.prefill_read_batches - before.prefill_read_batches,
+            prefill_seeded_experts=self.prefill_seeded_experts - before.prefill_seeded_experts,
+            prefill_seed_bytes=self.prefill_seed_bytes - before.prefill_seed_bytes,
+            prefill_seed_seconds=self.prefill_seed_seconds - before.prefill_seed_seconds,
+            prefill_seed_hits=self.prefill_seed_hits - before.prefill_seed_hits,
+            shared_overlap_submissions=self.shared_overlap_submissions - before.shared_overlap_submissions,
             hits=self.hits - before.hits,
             misses=self.misses - before.misses,
             evictions=self.evictions - before.evictions,
@@ -680,6 +694,8 @@ class ExpertCache:
         staged_expert_streaming: bool = False,
         eviction_policy: str = "lfu",
         separate_prefill_io: bool = False,
+        prefill_read_experts: int = 1,
+        prefill_seed_experts: int = 0,
     ) -> None:
         if slots < installed_model.selected_expert_count:
             raise ValueError("slot count must hold at least one token's routed experts")
@@ -693,6 +709,17 @@ class ExpertCache:
             )
         if eviction_policy not in ("lfu", "lru", "route"):
             raise ValueError(f"unknown expert eviction policy: {eviction_policy}")
+        if type(prefill_read_experts) is not int or not 1 <= prefill_read_experts <= 32:
+            raise ValueError("prefill read batch must be an integer from 1 through 32")
+        if type(prefill_seed_experts) is not int or not 0 <= prefill_seed_experts <= 128:
+            raise ValueError("prefill seed count must be an integer from 0 through 128")
+        if ((prefill_read_experts != 1 or prefill_seed_experts)
+                and (installed_model.model_kind != "qwen3.8-flash-next" or staged_expert_streaming)):
+            raise ValueError("prefill read/seed experiments require direct Qwen slots")
+        self.prefill_read_experts = prefill_read_experts
+        self.prefill_seed_experts = prefill_seed_experts
+        self._prefill_seed_routes = None
+        self._seeded_keys: set[tuple[int, int]] = set()
         self.eviction_policy = eviction_policy
         self.model = installed_model
         self.slots = slots
@@ -787,7 +814,7 @@ class ExpertCache:
                 from .prefill_io import PrefillReader
                 self._prefill_reader = PrefillReader(
                     self.expert_directory, self.layer_count,
-                    self.model.expert_blob_size, read_limiter,
+                    self.model.expert_blob_size, read_limiter, batch_experts=prefill_read_experts,
                 )
         except Exception:
             for descriptor in self._descriptors:
@@ -842,6 +869,8 @@ class ExpertCache:
             # Preserve the direct or staged storage layout.
             self._pool = type(self._pool)(self.model, self.slots)
             self._entries.clear()
+            self._seeded_keys.clear()
+            self._prefill_seed_routes = None
             self._free_slots = list(reversed(range(self.slots)))
             self._heap.clear()
             if self._route_policy is not None:
@@ -910,6 +939,7 @@ class ExpertCache:
             removed = [key for key, entry in self._entries.items() if entry.slot >= capacity]
             for key in removed:
                 del self._entries[key]
+                self._seeded_keys.discard(key)
                 self._layer_counts[key[0]] -= 1
             self.metrics.evictions += len(removed)
             self._pool.resize(capacity)
@@ -1241,6 +1271,7 @@ class ExpertCache:
         with self._lock:
             self.metrics.bytes_read += len(job.experts) * self.model.expert_blob_size
             self.metrics.read_seconds += elapsed
+            self.metrics.wait_seconds += future_wait_seconds
             self.metrics.batched_layers += 1
             if was_ready:
                 self.metrics.prefetched_layer_hits += 1
@@ -1252,9 +1283,13 @@ class ExpertCache:
             deadline=deadline,
             future_wait_seconds=future_wait_seconds,
         )
+        self._prefill_seed_routes = None
         try:
             yield batched
+            if self.prefill_seed_experts and self._prefill_seed_routes is not None:
+                self._seed_from_batched_layer(layer, packed, job.experts)
         finally:
+            self._prefill_seed_routes = None
             # Reads into this storage may start as soon as it returns to the
             # pool. Fence GPU consumers even when prefill raises or is cancelled.
             if self._layer_buffers is not None:
@@ -1276,6 +1311,85 @@ class ExpertCache:
             self._active_prefetch_trace = None
             self._batched_layer = None
 
+
+    def capture_prefill_seed_routes(self, layer: int, routes) -> None:
+        # Keep at most 128 token positions across chunks, without a host sync.
+        # Layer-major prefill evaluates each chunk before the next call.
+        if self.prefill_seed_experts and self._batched_layer is not None:
+            if self._batched_layer[0] != layer:
+                raise RuntimeError("prefill seed layer does not own the batched buffer")
+            if routes.ndim != 3 or routes.shape[0] != 1:
+                raise ValueError("prefill retention requires batch-one routing")
+            tail = routes[:, -128:]
+            parts = list(self._prefill_seed_routes or ())
+            parts.append(tail)
+            excess = sum(part.shape[1] for part in parts) - 128
+            while excess > 0:
+                if parts[0].shape[1] <= excess:
+                    excess -= parts.pop(0).shape[1]
+                else:
+                    parts[0] = parts[0][:, excess:]
+                    excess = 0
+            self._prefill_seed_routes = parts
+
+    def _seed_from_batched_layer(self, layer, packed, loaded_experts) -> None:
+        from .qwen_streaming_policy import hot_tail_experts
+        check_cancelled()
+        started = time.perf_counter()
+        # Drain submitted GPU work. Layer-major callers evaluate each chunk output.
+        mx.synchronize()
+        parts = self._prefill_seed_routes
+        routes = np.asarray(parts[0] if len(parts) == 1 else mx.concatenate(parts, axis=1))
+        allowed = set(loaded_experts)
+        quota = min(self.prefill_seed_experts, self.slots // self.layer_count)
+        selected = [e for e in hot_tail_experts(routes, self.model.expert_count, quota)
+                    if e in allowed]
+        with self._lock:
+            selected = [e for e in selected if (layer, e) not in self._entries]
+            # Do not evict demand residents to make room for a prediction.
+            selected = selected[-len(self._free_slots):] if self._free_slots else []
+            if not selected:
+                return
+            try:
+                assigned = self._reserve_slots(layer, selected, Counter({e: 1 for e in selected}), set())
+            except BaseException:
+                partial = {e: self._entries[(layer, e)].slot for e in selected if (layer, e) in self._entries}
+                self._release_slots(layer, partial)
+                raise
+        source = None
+        try:
+            source = memoryview(packed).cast("B")
+            for expert, slot in assigned.items():
+                check_cancelled()
+                regions = self._pool.layer_write_views(source, expert)
+                try:
+                    for descriptor, region in zip(self.model.expert_regions, regions):
+                        destination = self._pool.writable_region(slot, descriptor.name)
+                        try:
+                            destination[:] = region
+                        finally:
+                            destination.release()
+                finally:
+                    for region in regions:
+                        region.release()
+            with self._lock:
+                for expert, slot in assigned.items():
+                    self._pool.mark_loaded(slot)
+                    self._seeded_keys.add((layer, expert))
+                self.metrics.prefill_seeded_experts += len(assigned)
+                self.metrics.prefill_seed_bytes += len(assigned) * self.model.expert_blob_size
+                self.metrics.prefill_seed_seconds += time.perf_counter() - started
+        except BaseException:
+            with self._lock:
+                self._release_slots(layer, assigned)
+            raise
+        finally:
+            if source is not None:
+                source.release()
+
+    def record_shared_overlap(self) -> None:
+        with self._lock:
+            self.metrics.shared_overlap_submissions += 1
 
     @contextmanager
     def pin_layer(self, layer: int):
@@ -1335,14 +1449,17 @@ class ExpertCache:
             )
             for expert in missing
         }
+        wait_started = time.perf_counter()
         try:
             wait_for_futures(futures.values())
         except Exception:
             with self._lock:
                 self._release_slots(layer, assigned)
             raise
+        waited = time.perf_counter() - wait_started if missing else 0.0
         elapsed = time.perf_counter() - started if missing else 0.0
         with self._lock:
+            self.metrics.wait_seconds += waited
             self.metrics.bytes_read += len(missing) * self.model.expert_blob_size
             self.metrics.read_seconds += elapsed
             for slot in assigned.values():
@@ -1419,7 +1536,12 @@ class ExpertCache:
                 with self._lock:
                     self.metrics.pack_seconds += time.perf_counter() - pack_started
                 yield expert, weights
-            for future in as_completed(futures):
+            pending = iter(as_completed(futures))
+            for _ in range(len(futures)):
+                wait_started = time.perf_counter()
+                future = next(pending)
+                with self._lock:
+                    self.metrics.wait_seconds += time.perf_counter() - wait_started
                 expert = futures[future]
                 finished = future.result()
                 ready_at = max(ready_at, finished)
@@ -1615,6 +1737,7 @@ class ExpertCache:
                 self.metrics.eviction_seconds += time.perf_counter() - eviction_started
                 slot = victim.slot
                 del self._entries[victim_key]
+                self._seeded_keys.discard(victim_key)
                 self._layer_counts[victim_key[0]] -= 1
                 self.metrics.evictions += 1
                 self._pool.mark_empty(slot)
@@ -1632,11 +1755,15 @@ class ExpertCache:
             if entry is None or entry.slot != slot:
                 continue
             del self._entries[(layer, expert)]
+            self._seeded_keys.discard((layer, expert))
             self._layer_counts[layer] -= 1
             self._pool.mark_empty(slot)
             self._free_slots.append(slot)
 
     def _touch(self, layer: int, expert: int, entry: _Entry, count: int) -> None:
+        if (layer, expert) in self._seeded_keys:
+            self._seeded_keys.remove((layer, expert))
+            self.metrics.prefill_seed_hits += 1
         self._clock += 1
         entry.frequency += count
         entry.last_access = self._clock
@@ -1828,12 +1955,17 @@ class ExpertCache:
         started = time.perf_counter()
         view = memoryview(packed).cast("B")
         try:
-            for expert in experts:
-                views = self._pool.layer_write_views(view, expert)
+            from .qwen_streaming_policy import contiguous_batches
+            batches = ((e,) for e in experts) if self.prefill_read_experts == 1 else contiguous_batches(experts, self.prefill_read_experts)
+            for batch in batches:
+                check_cancelled()
+                views = [part for expert in batch for part in self._pool.layer_write_views(view, expert)]
                 try:
                     self._pread_views(layer, views,
-                                      expert * self.model.expert_blob_size,
+                                      batch[0] * self.model.expert_blob_size,
                                       prefill=True)
+                    with self._lock:
+                        self.metrics.prefill_read_batches += 1
                 finally:
                     for part in views:
                         part.release()

@@ -90,6 +90,25 @@ class ThroughputTests(unittest.TestCase):
         return Request(self.url, data=json.dumps(payload).encode(), headers={
             "Authorization": "Bearer secret", "Content-Type": "application/json"})
 
+    def test_benchmark_evidence_reports_effective_config_and_unknown_io(self):
+        result = run_trial(self.runtime, GenerationOptions(max_tokens=128), 1024, iter, lambda _: None)
+        diagnostics = result["diagnostics"]
+        self.assertIsNone(diagnostics["request_total"])
+        settings = json.loads(diagnostics["runtime_config_json"])
+        self.assertEqual(settings["prompt_cache_entries"], 0)
+        self.assertEqual(settings["qwen_prefill_read_experts"], 1)
+        self.assertEqual(len(diagnostics["source_files_sha256"]), 64)
+        self.assertEqual(diagnostics["config_sha256"],
+                         hashlib.sha256(diagnostics["runtime_config_json"].encode()).hexdigest())
+        self.assertIs(self.runtime.config, self.original_config)
+
+    def test_evidence_failure_always_preserves_original_configuration(self):
+        for target in ("source_files_hash", "make_report"):
+            with patch("deepseek_v4_ssd.throughput." + target, side_effect=OSError("evidence failed")):
+                with self.assertRaisesRegex(OSError, "evidence failed"):
+                    run_trial(self.runtime, GenerationOptions(max_tokens=128), 1024, iter, lambda _: None)
+            self.assertIs(self.runtime.config, self.original_config)
+
     def test_both_assets_use_original_prefixes_and_match_manifest(self):
         manifest = json.loads((CORPUS_DIRECTORY / "manifest.json").read_text())
         total_bytes = 0

@@ -31,6 +31,9 @@ def _clear_memory_cache() -> None:
 
 @dataclass(frozen=True)
 class RuntimeConfig:
+    qwen_prefill_read_experts: int = 1
+    qwen_prefill_seed_experts: int = 0
+    qwen_shared_expert_overlap: bool = False
     slots: int = 1_152
     read_workers: int = 4
     prefetch_read_workers: int = 2
@@ -1043,6 +1046,10 @@ def _load_qwen_mtp(
             installed_model.mtp.common_tensors,
         )
         model.load_weights(list(model.sanitize(weights).items()), strict=True)
+        for layer in model.layers:
+            mlp = getattr(layer, "mlp", None)
+            if mlp is not None:
+                mlp.shared_overlap = getattr(config, "qwen_shared_expert_overlap", False)
         # New QSA controls also cover the native draft head, not only the target.
         # Preserve its previous defaults when the new experiments are disabled.
         if getattr(config, "qwen_qsa_indexed", False) or getattr(config, "qwen_qsa_query_chunk", 4) != 4:

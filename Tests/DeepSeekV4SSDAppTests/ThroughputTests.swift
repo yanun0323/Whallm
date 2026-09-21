@@ -115,6 +115,41 @@ final class ThroughputTests: XCTestCase {
     XCTAssertFalse(session.isRunning)
   }
 
+  func testDiagnosticsDecodeWithOldServerCompatibilityAndExportRoundTrip() throws {
+    var old = try Self.result(1024)
+    XCTAssertNil(old.diagnostics)
+    let json = #"{"schema_version":1,"runtime_config_json":"{\"qwen_prefill_read_experts\":4}","config_sha256":"config","source_files_sha256":"source","through_first_token":{"bytes_read":200,"wait_seconds":0.5},"after_first_token":{"prefill_seed_hits":2},"request_total":{"bytes_read":200},"initial_resident_experts":0,"final_resident_experts":8,"notes":"synthetic"}"#
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let evidence = try decoder.decode(ThroughputDiagnostics.self, from: Data(json.utf8))
+    XCTAssertEqual(evidence.throughFirstToken?["bytes_read"], 200)
+    XCTAssertEqual(evidence.afterFirstToken?["prefill_seed_hits"], 2)
+    XCTAssertNil(evidence.processDiskBytesRead)
+    old.diagnostics = evidence
+    let exported = try ThroughputOutputFormat.json.render([old])
+    let restored = try decoder.decode([ThroughputResult].self, from: Data(exported.utf8))
+    XCTAssertEqual(restored.first?.diagnostics?.runtimeConfigJson, evidence.runtimeConfigJson)
+    XCTAssertEqual(restored.first?.diagnostics?.throughFirstToken?["wait_seconds"], 0.5)
+    XCTAssertEqual(restored.first?.generationTokens, old.generationTokens)
+  }
+
+  @MainActor
+  func testConfigurationWaitWithNoPendingChangesAndCancellation() async throws {
+    let server = ServerController()
+    try await server.waitForModelConfigurationUpdates("test-model")
+    let entered = expectation(description: "waiting task cancelled")
+    let task = Task { @MainActor in
+      while !Task.isCancelled { await Task.yield() }
+      do {
+        try await server.waitForModelConfigurationUpdates("test-model")
+        XCTFail("Cancelled benchmark preparation must not continue")
+      } catch { XCTAssertTrue(error is CancellationError) }
+      entered.fulfill()
+    }
+    task.cancel()
+    await fulfillment(of: [entered], timeout: 2)
+  }
+
   private struct TestFailure: LocalizedError {
     let message: String
     var errorDescription: String? { message }

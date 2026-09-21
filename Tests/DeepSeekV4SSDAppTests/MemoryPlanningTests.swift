@@ -493,6 +493,34 @@ final class MemoryPlanningTests: XCTestCase {
     XCTAssertNil(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
   }
 
+  func testStreamingStagingAndSeedEstimatesAreSeparateFromDecodeCapacity() throws {
+    let p = try profile()
+    var settings = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    settings.expertCacheGiB = 8
+    settings.readWorkers = 2
+    settings.layerMajorPrefill = true
+    settings.batchedExpertPrefill = true
+    settings.qwenExpertWaveSlots = 0
+    func estimate() throws -> MemoryEstimate {
+      try XCTUnwrap(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
+    }
+    let baseline = try estimate()
+    settings.qwenPrefillReadExperts = 4
+    settings.qwenPrefillSeedExperts = 32
+    let active = try estimate()
+    let scratch = 2_611_200.0 * 3 * 2
+    let seeds = 2_611_200.0 * 32 * 48
+    XCTAssertEqual(active.prefill.temporary - baseline.prefill.temporary, scratch, accuracy: 1)
+    XCTAssertEqual(active.decoding.temporary - baseline.decoding.temporary, scratch, accuracy: 1)
+    XCTAssertEqual(active.prefill.model - baseline.prefill.model, seeds, accuracy: 1)
+    XCTAssertEqual(active.decoding.model, baseline.decoding.model)
+    settings.layerMajorPrefill = false
+    let inactive = try estimate()
+    settings.qwenPrefillReadExperts = 1
+    settings.qwenPrefillSeedExperts = 0
+    XCTAssertEqual(try estimate().total, inactive.total)
+  }
+
   private func profile() throws -> MemoryPlanningProfile {
     let file: (String, UInt64) throws -> InstalledFile = { name, size in
       try JSONDecoder().decode(InstalledFile.self, from: JSONSerialization.data(withJSONObject:

@@ -40,6 +40,7 @@ struct ThroughputResult: Codable, Identifiable, Sendable {
   var minP: Double? = nil
   var presencePenalty: Double? = nil
   var repetitionPenalty: Double? = nil
+  var diagnostics: ThroughputDiagnostics? = nil
 
   static let columns = ["Input / Output", "TTFT (ms)", "TPOT (ms)", "PP tok/s", "TG tok/s", "Total (s)", "Throughput", "Peak Memory"]
 
@@ -273,6 +274,7 @@ final class ThroughputSession: ObservableObject {
         if case .failed(let message) = server.state { throw ThroughputError(message: message) }
         throw ThroughputError(message: L10n.string("The server is not ready. Check Logs and try again."))
       }
+      try await server.waitForModelConfigurationUpdates(modelID)
     }, run: { length, receive in
       try await ThroughputClient.run(
         configuration: configuration, model: model, context: length, generation: generation,
@@ -563,6 +565,14 @@ struct ThroughputView: View {
       }
       .frame(height: 61 + CGFloat(session.results.count) * 34 + 12)
       .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardRadius))
+      ForEach(session.results) { result in
+        if let diagnostics = result.diagnostics {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("\(result.contextTokens) tokens").font(.caption).foregroundStyle(.secondary)
+            ThroughputDiagnosticsView(diagnostics: diagnostics, language: language)
+          }
+        }
+      }
       Text(label("Throughput uses temperature 0 and seed 42. Other model settings still apply. Fixed sampling does not guarantee identical output across acceleration settings."))
         .font(.caption).foregroundStyle(.secondary)
       Text(label("TTFT: first token · TPOT: time per output token · PP: input speed · TG: output speed. Throughput counts input + output tokens per second. Peak Memory samples macOS physical footprint about every 10 ms during loading and generation: Whallm + its inference process, or the inference process alone for a standalone server. Brief peaks may be missed; — means unavailable."))

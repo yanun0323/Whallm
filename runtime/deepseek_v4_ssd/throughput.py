@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from .cancellation import check_cancelled
+from .throughput_diagnostics import cache_counters, make_report, source_files_hash
 
 CONTEXT_LENGTHS = (1024, 4096, 8192, 16384, 32768, 65536, 131072, 204800)
 GENERATION_LENGTHS = (128, 512, 1024, 4096)
@@ -41,13 +42,18 @@ def run_trial(runtime, options, context_length, track, progress, benchmark_conte
     tokens, corpus_hash = prompt_tokens(runtime, context_length, benchmark_context)
     check_cancelled()
     original_config = runtime.config
-    # The manager lock excludes other requests. Restore settings even after disconnects.
-    runtime.config = replace(original_config, prompt_cache_entries=0,
-                             persistent_prompt_cache=False, dspark_prompt_cache=False)
+    cache = getattr(runtime, "expert_cache", None)
+    before = cache_counters(cache)
+    first = None
+    initial_residents = getattr(cache, "resident_count", None)
+    source_files_hash()  # File hashing is outside the timed generation interval.
     generated = 0
     finish = None
     output_hash = hashlib.sha256()
     try:
+        # The manager lock excludes requests; always restore after any failure.
+        runtime.config = replace(original_config, prompt_cache_entries=0,
+                                 persistent_prompt_cache=False, dspark_prompt_cache=False)
         started = time.perf_counter()
         last_progress = started
         pieces = track(runtime.stream(tokens, options))
@@ -55,6 +61,8 @@ def run_trial(runtime, options, context_length, track, progress, benchmark_conte
             for piece in pieces:
                 check_cancelled()
                 generated = piece.generation_tokens
+                if first is None and generated >= 1:
+                    first = cache_counters(cache)
                 finish = piece.finish_reason
                 output_hash.update(f"{piece.token}\n".encode("ascii"))
                 now = time.perf_counter()
@@ -66,7 +74,10 @@ def run_trial(runtime, options, context_length, track, progress, benchmark_conte
         elapsed = time.perf_counter() - started
         metrics = runtime.metrics.snapshot()
         decode_tps = metrics["decode_tokens_per_second"]
+        diagnostics = make_report(runtime.config, before, first, cache_counters(cache),
+                                  metrics, initial_residents, getattr(cache, "resident_count", None))
         return {
+            "diagnostics": diagnostics,
             "slots": original_config.slots,
             "benchmark_context": benchmark_context,
             "corpus_sha256": corpus_hash,

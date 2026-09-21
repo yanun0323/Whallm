@@ -193,10 +193,15 @@ struct MemoryPlanningProfile {
       : min(Double(s.promptCacheEntries) * cache.bytes, max(cache.bytes, Double(s.promptCacheMemoryGiB) * ExpertMemory.gib))
     let conversation = cache.bytes + retained
     let allocator = ExpertMemory.gib // runtime's actual mx.set_cache_limit
-    let reads = Double(blob) * Double(s.readWorkers + (s.prefetchReadWorkers ?? 2))
+    // Aligned prefill staging is retained by reader workers until unload.
+    let extraStaging = qwen && s.qwenWholeLayerExperimentsActive
+      ? Double(blob) * Double((s.qwenPrefillReadExperts ?? 1) - 1) * Double(s.readWorkers) : 0
+    let reads = Double(blob) * Double(s.readWorkers + (s.prefetchReadWorkers ?? 2)) + extraStaging
     // V4 pipelines the next expert layer itself; Qwen/V4.1 expose this as a switch.
     let layerCopies = kind == .deepSeekV4 || s.nextLayerPrefetch == true ? 2.0 : 1.0
-    let prefillExperts = batched ? Double(blob) * Double(manifest.expertCount) * layerCopies : expert
+    let seeded = qwen && batched
+      ? min(expert, Double(blob) * Double(manifest.layerCount) * Double(s.qwenPrefillSeedExperts ?? 0)) : 0
+    let prefillExperts = batched ? Double(blob) * Double(manifest.expertCount) * layerCopies + seeded : expert
 
     func attentionWork(_ queries: Double) -> Double {
       if qwen {

@@ -82,6 +82,34 @@ struct QwenFlashSettingsSection: View {
             .accessibilityHint(text(QwenFlashCopy.indexedHint))
             .accessibilityIdentifier("qwen-qsa-indexed")
           }
+          Divider()
+          numberRow(QwenFlashCopy.readBatch, hint: QwenFlashCopy.readBatchHint,
+            key: \.qwenPrefillReadExperts, identifier: "qwen-prefill-read-experts",
+            limits: 1...32, defaultValue: 1)
+            .disabled(!settings.qwenWholeLayerExperimentsActive)
+          Divider()
+          numberRow(QwenFlashCopy.seeds, hint: QwenFlashCopy.seedsHint,
+            key: \.qwenPrefillSeedExperts, identifier: "qwen-prefill-seed-experts",
+            limits: 0...128, defaultValue: 0)
+            .disabled(!settings.qwenWholeLayerExperimentsActive)
+          if !settings.qwenWholeLayerExperimentsActive {
+            Text(text(QwenFlashCopy.wholeLayerDependency))
+              .font(.caption).foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.bottom, 8)
+          }
+          Divider()
+          SettingRow(QwenFlashCopy.sharedOverlap, hint: text(QwenFlashCopy.sharedOverlapHint), language: language) {
+            Toggle(text(QwenFlashCopy.sharedOverlap), isOn: Binding(
+              get: { settings.qwenSharedExpertOverlap ?? false },
+              set: { settings.qwenSharedExpertOverlap = $0 }
+            ))
+            .labelsHidden()
+            .accessibilityLabel(text(QwenFlashCopy.sharedOverlap))
+            .accessibilityHint(text(QwenFlashCopy.sharedOverlapHint))
+            .accessibilityIdentifier("qwen-shared-expert-overlap")
+          }
         }
         .appCard()
         .disabled(settingsLocked)

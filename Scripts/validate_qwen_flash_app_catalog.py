@@ -40,7 +40,16 @@ def validate(directory: Path) -> int:
         if runtime.qwen_qsa_query_chunk != 32 or runtime.qwen_qsa_indexed != indexed:
             raise ValueError(f"{name}: QSA throughput settings did not survive the catalog")
         print(f"PASS {name}: QSA chunk=32 indexed={indexed}")
-    return len(cases) + 2
+    for name in ("qwen-streaming", "qwen-streaming-inactive", "qwen-streaming-waves"):
+        runtime = load_model_catalog(directory / f"{name}.json")[0].runtime
+        validate_flash_config(runtime)
+        expected = (4, 32, True) if name == "qwen-streaming" else (1, 0, True)
+        actual = (runtime.qwen_prefill_read_experts, runtime.qwen_prefill_seed_experts,
+                  runtime.qwen_shared_expert_overlap)
+        if actual != expected:
+            raise ValueError(f"{name}: {actual!r} != {expected!r}")
+        print(f"PASS {name}: {actual}")
+    return len(cases) + 5
 
 
 def main() -> None:

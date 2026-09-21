@@ -108,7 +108,9 @@ def configure_expert_file_cache_policy(
     if sys.platform != "darwin":
         raise RuntimeError("expert-file cache bypass requires Darwin")
     fcntl.fcntl(descriptor, fcntl.F_NOCACHE, 1)
-    fcntl.fcntl(descriptor, fcntl.F_RDAHEAD, 0)
+    # Darwin bsd/sys/fcntl.h defines F_RDAHEAD as 45. Some supported CPython
+    # builds do not export the constant; this fallback remains Darwin-only.
+    fcntl.fcntl(descriptor, getattr(fcntl, "F_RDAHEAD", 45), 0)
 
 
 class _RUsageInfoV2(ctypes.Structure):

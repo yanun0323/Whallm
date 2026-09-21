@@ -5,6 +5,9 @@ import argparse
 
 
 DEFAULTS = {
+    "qwen_prefill_read_experts": 1,
+    "qwen_prefill_seed_experts": 0,
+    "qwen_shared_expert_overlap": False,
     "qwen_expert_wave_slots": 0,
     "qwen_ngram_io": "mmap",
     "qwen_ngram_cache_bytes": 0,
@@ -15,6 +18,19 @@ DEFAULTS = {
 
 
 def validate_flash_config(config) -> None:
+    for name, minimum, maximum in (("qwen_prefill_read_experts", 1, 32),
+                                   ("qwen_prefill_seed_experts", 0, 128)):
+        value = getattr(config, name, DEFAULTS[name])
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ValueError(f"{name} must be an integer from {minimum} through {maximum}")
+    if type(getattr(config, "qwen_shared_expert_overlap", False)) is not bool:
+        raise ValueError("qwen_shared_expert_overlap must be a boolean")
+    if (getattr(config, "qwen_prefill_read_experts", 1) != 1
+            or getattr(config, "qwen_prefill_seed_experts", 0)):
+        if (not getattr(config, "layer_major_prefill", True)
+                or not getattr(config, "batched_expert_prefill", True)
+                or getattr(config, "qwen_expert_wave_slots", 0)):
+            raise ValueError("Qwen prefill read/seed experiments require whole-layer prefill without waves")
     for name, maximum in (("qwen_expert_wave_slots", 512),
                           ("qwen_ngram_cache_bytes", 512 * 1024**2)):
         value = getattr(config, name, DEFAULTS[name])
@@ -42,6 +58,12 @@ def validate_flash_config(config) -> None:
 
 def add_flash_arguments(parser: argparse.ArgumentParser) -> None:
     _add_qsa_arguments(parser)
+    parser.add_argument("--qwen-prefill-read-experts", type=int, default=1,
+                        help="1..32 consecutive experts per prefill read; 1 keeps old I/O")
+    parser.add_argument("--qwen-prefill-seed-experts", type=int, default=0,
+                        help="0..128 hot prompt-tail experts per layer retained in existing decode slots")
+    parser.add_argument("--qwen-shared-expert-overlap", action=argparse.BooleanOptionalAction,
+                        default=False, help="submit singleton shared-expert work before routed-expert I/O")
     parser.add_argument("--qwen-expert-wave-slots", type=int, default=0,
                         help="experimental exact expert waves; 1..512 experts per wave, 0 disables")
     parser.add_argument("--qwen-ngram-io", choices=("mmap", "pread"), default="mmap",
