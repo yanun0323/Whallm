@@ -1,0 +1,136 @@
+diff --git a/Tests/DeepSeekV4SSDAppTests/MemoryPlanningTests.swift b/Tests/DeepSeekV4SSDAppTests/MemoryPlanningTests.swift
+index ecf9fd7..5f14799 100644
+--- a/Tests/DeepSeekV4SSDAppTests/MemoryPlanningTests.swift
++++ b/Tests/DeepSeekV4SSDAppTests/MemoryPlanningTests.swift
+@@ -493,6 +493,34 @@ final class MemoryPlanningTests: XCTestCase {
+     XCTAssertNil(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
+   }
+ 
++  func testStreamingStagingAndSeedEstimatesAreSeparateFromDecodeCapacity() throws {
++    let p = try profile()
++    var settings = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
++    settings.expertCacheGiB = 8
++    settings.readWorkers = 2
++    settings.layerMajorPrefill = true
++    settings.batchedExpertPrefill = true
++    settings.qwenExpertWaveSlots = 0
++    func estimate() throws -> MemoryEstimate {
++      try XCTUnwrap(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
++    }
++    let baseline = try estimate()
++    settings.qwenPrefillReadExperts = 4
++    settings.qwenPrefillSeedExperts = 32
++    let active = try estimate()
++    let scratch = 2_611_200.0 * 3 * 2
++    let seeds = 2_611_200.0 * 32 * 48
++    XCTAssertEqual(active.prefill.temporary - baseline.prefill.temporary, scratch, accuracy: 1)
++    XCTAssertEqual(active.decoding.temporary - baseline.decoding.temporary, scratch, accuracy: 1)
++    XCTAssertEqual(active.prefill.model - baseline.prefill.model, seeds, accuracy: 1)
++    XCTAssertEqual(active.decoding.model, baseline.decoding.model)
++    settings.layerMajorPrefill = false
++    let inactive = try estimate()
++    settings.qwenPrefillReadExperts = 1
++    settings.qwenPrefillSeedExperts = 0
++    XCTAssertEqual(try estimate().total, inactive.total)
++  }
++
+   private func profile() throws -> MemoryPlanningProfile {
+     let file: (String, UInt64) throws -> InstalledFile = { name, size in
+       try JSONDecoder().decode(InstalledFile.self, from: JSONSerialization.data(withJSONObject:
+diff --git a/runtime/deepseek_v4_ssd/expert_cache.py b/runtime/deepseek_v4_ssd/expert_cache.py
+index bccd53e..eed30fe 100644
+--- a/runtime/deepseek_v4_ssd/expert_cache.py
++++ b/runtime/deepseek_v4_ssd/expert_cache.py
+@@ -1336,7 +1336,7 @@ class ExpertCache:
+         from .qwen_streaming_policy import hot_tail_experts
+         check_cancelled()
+         started = time.perf_counter()
+-        # Fence even research callers which have not evaluated their layer output.
++        # Drain submitted GPU work. Layer-major callers evaluate each chunk output.
+         mx.synchronize()
+         parts = self._prefill_seed_routes
+         routes = np.asarray(parts[0] if len(parts) == 1 else mx.concatenate(parts, axis=1))
+diff --git a/runtime/tests/portable/test_qwen_streaming_policy.py b/runtime/tests/portable/test_qwen_streaming_policy.py
+index 1f0d04f..83f9a6e 100644
+--- a/runtime/tests/portable/test_qwen_streaming_policy.py
++++ b/runtime/tests/portable/test_qwen_streaming_policy.py
+@@ -5,7 +5,10 @@ from types import SimpleNamespace
+ import unittest
+ import numpy as np
+ 
+-from .test_qwen_flash_portable import load_host_module
++if __package__:
++    from .test_qwen_flash_portable import load_host_module
++else:
++    from test_qwen_flash_portable import load_host_module
+ 
+ policy = load_host_module('qwen_streaming_policy')
+ settings = load_host_module('qwen_flash_config')
+diff --git a/runtime/tests/test_qwen_streaming_io.py b/runtime/tests/test_qwen_streaming_io.py
+index 89e767b..a28713a 100644
+--- a/runtime/tests/test_qwen_streaming_io.py
++++ b/runtime/tests/test_qwen_streaming_io.py
+@@ -179,3 +179,63 @@ class StreamingIOTests(unittest.TestCase):
+             np.testing.assert_array_equal(actual,baseline)
+             self.assertEqual(events[0],'submitted' if length==1 else 'read')
+             moe.shared_overlap=False
++
++    def test_shared_overlap_ready_order_is_independent_of_completion_order(self):
++        from deepseek_v4_ssd import qwen4_exp as qwen
++        from runtime.tests.test_qwen_speed import tiny_args, experts_fixture, bits
++        weights,_=experts_fixture()
++        events=[]
++        def ready(layer, ids):
++            events.append('read')
++            for expert in reversed(ids):
++                yield expert, weights[expert]
++        cache=SimpleNamespace(model=SimpleNamespace(expert_count=8),current_batched=lambda _:None,
++                              ready_expert_decode=True,iter_ready=ready,
++                              record_shared_overlap=lambda:events.append('submitted'))
++        mx.random.seed(602)
++        moe=qwen.SparseMoE(tiny_args(),0,cache)
++        value=mx.random.normal((1,1,64)).astype(mx.bfloat16)
++        expected=bits(moe(value)).copy()
++        events.clear()
++        moe.shared_overlap=True
++        np.testing.assert_array_equal(bits(moe(value)),expected)
++        self.assertEqual(events[:2],['submitted','read'])
++
++    def test_seeded_slots_preserve_actual_mxfp4_compute_after_layer_reuse(self):
++        from deepseek_v4_ssd import qwen4_exp as qwen
++        from runtime.tests.test_qwen_speed import experts_fixture, bits
++        weights,_=experts_fixture()
++        names=('gate_up.weight','gate_up.scale','down.weight','down.scale')
++        arrays=lambda w:(w.gate_up,w.gate_up_scales,w.down,w.down_scales)
++        regions=[]
++        offset=0
++        for name,array in zip(names,arrays(weights[0])):
++            length=array.nbytes
++            regions.append(Tensor(name,'U32' if name.endswith('.weight') else 'U8',tuple(array.shape),offset,length))
++            offset+=length
++        with tempfile.TemporaryDirectory() as directory:
++            root=Path(directory)
++            (root/'experts').mkdir()
++            for layer in range(2):
++                with (root/f'experts/layer_{layer:02d}.bin').open('wb') as f:
++                    for expert in range(8):
++                        for array in arrays(weights[(expert+layer)%8]):
++                            f.write(np.asarray(array).tobytes())
++            model=InstalledModel(root,'synthetic','synthetic',2,8,2,offset,(),tuple(regions),model_kind='qwen3.8-flash-next')
++            with ExpertCache(model,slots=8,read_workers=2,prefill_read_experts=4,prefill_seed_experts=2) as cache:
++                value=mx.ones((1,1,64),dtype=mx.bfloat16)*.1
++                indices=mx.array([[[3,5]]],dtype=mx.int32)
++                with cache.reuse_layer_buffers():
++                    for layer in range(2):
++                        with cache.batched_layer(layer):
++                            output=qwen.StreamingExperts(layer,cache)(value,indices)
++                            mx.eval(output)
++                before=cache.metrics_snapshot()
++                for layer in range(2):
++                    module=qwen.StreamingExperts(layer,cache)
++                    actual=bits(module(value,indices)).copy()
++                    expected=mx.stack([module._one(value.reshape(1,64),weights[(expert+layer)%8])
++                                       for expert in (3,5)],axis=-2).reshape(1,1,2,64)
++                    np.testing.assert_array_equal(actual,bits(expected))
++                self.assertEqual(cache.metrics_snapshot().delta(before).misses,0)
++                self.assertEqual(cache.metrics.prefill_seed_hits,4)
