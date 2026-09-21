@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
-      - name: Publish validated refinement and restore read-only checks
+      - name: Publish validated runtime source only
         shell: bash
         env:
           EXPECTED_HEAD: ${{ github.sha }}
@@ -99,9 +99,8 @@ jobs:
           git apply --check .github/qsa-refinement.patch
           git apply .github/qsa-refinement.patch
           test "$(git ls-remote origin refs/heads/feat/qwen-flash-optimize | cut -f1)" = "$EXPECTED_HEAD"
-          git show 7e3ff70e1ba653fa07b106547868607e17fb4404:.github/workflows/qwen-next-throughput.yml > .github/workflows/qwen-next-throughput.yml
           git rm .github/qsa-refinement.patch
-          git add runtime/deepseek_v4_ssd/qwen4_exp.py Scripts/benchmark_qwen_qsa_throughput.py runtime/tests/test_qwen_qsa_throughput.py .github/workflows/qwen-next-throughput.yml
+          git add runtime/deepseek_v4_ssd/qwen4_exp.py Scripts/benchmark_qwen_qsa_throughput.py runtime/tests/test_qwen_qsa_throughput.py
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
