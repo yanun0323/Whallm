@@ -4,7 +4,19 @@ on:
   push:
     branches: [feat/qwen-flash-optimize]
     paths:
-      - '.github/qsa-next-candidate/**'
+      - 'runtime/**'
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Scripts/*qwen*'
+      - 'docs/qwen-next-throughput.md'
+      - '.github/workflows/qwen-next-throughput.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'runtime/**'
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Scripts/*qwen*'
       - '.github/workflows/qwen-next-throughput.yml'
   workflow_dispatch:
 
@@ -16,6 +28,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Record the exact published source
+        run: |
+          git archive --format=tar.gz --prefix=Whallm/ HEAD > Whallm-source.tar.gz
+          git rev-parse HEAD > COMMIT.txt
+          sha256sum Whallm-source.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qwen-next-source
+          path: |
+            Whallm-source.tar.gz
+            COMMIT.txt
+            SHA256SUMS
+          retention-days: 3
+          if-no-files-found: error
+
   validate:
     runs-on: macos-15
     timeout-minutes: 30
@@ -31,8 +65,6 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
-      - name: Apply digest-pinned reviewed candidate
-        run: python .github/qsa-next-candidate/apply.py
       - name: Install pinned runtime
         run: python -m pip install -r requirements.txt
       - name: Validate Qwen and portable paths on Metal
@@ -46,7 +78,7 @@ jobs:
           from pathlib import Path
           from importlib.metadata import version
           import mlx.core as mx
-          metadata = dict(commit=os.environ['GITHUB_SHA'], candidate_applied=True, platform=platform.platform(), mlx=version('mlx'), metal_available=mx.metal.is_available(), device=mx.device_info(), full_model_benchmark=False)
+          metadata = dict(commit=os.environ['GITHUB_SHA'], candidate_applied=False, platform=platform.platform(), mlx=version('mlx'), metal_available=mx.metal.is_available(), device=mx.device_info(), full_model_benchmark=False)
           if not metadata['metal_available']:
               raise RuntimeError('Metal unavailable; no CPU substitution.')
           mx.set_default_device(mx.gpu)
@@ -78,28 +110,4 @@ jobs:
           name: qwen-next-validation
           path: validation/
           retention-days: 14
-
-  publish:
-    needs: validate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/qwen-flash-optimize'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Publish validated source without rewriting history
-        env:
-          EXPECTED_HEAD: ${{ github.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/qsa-next-candidate/apply.py
-          test "$(git ls-remote origin refs/heads/feat/qwen-flash-optimize | cut -f1)" = "$EXPECTED_HEAD"
-          git rm -r .github/qsa-next-candidate
-          git add Makefile Scripts Sources Tests runtime docs
-          git diff --cached --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'perf(qwen): add indexed QSA decode and bounded prefill query scheduling'
-          git push origin HEAD:refs/heads/feat/qwen-flash-optimize
+          if-no-files-found: error
