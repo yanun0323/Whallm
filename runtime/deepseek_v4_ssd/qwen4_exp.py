@@ -19,6 +19,8 @@ from mlx_lm.models.switch_layers import _gather_sort, _scatter_unsort
 
 from .expert_cache import ExpertCache, QwenBatchedExperts, QwenExpertWeights
 from .manifest import InstalledModel, NGram
+# Kept as module-level names for existing callers and checkpoint-contract tests.
+from .qwen_ngram_hash import ngram_ids, shift_right_ignore_eos as _shift_right_ignore_eos
 
 
 @dataclass
@@ -130,6 +132,7 @@ class GatedResidual(nn.Module):
         dimensions = args.hc_count * args.hidden_size
         self.hc_count = args.hc_count
         self.hidden_size = args.hidden_size
+        self.compiled = False
         self.hc_norm = GroupRMSNorm(dimensions, args.hidden_size, args.rms_norm_eps)
         self.input_mix_weight_down = nn.Linear(dimensions, args.hc_lowrank, bias=False)
         self.input_mix_weight_up = nn.Linear(args.hc_lowrank, dimensions, bias=False)
@@ -139,62 +142,36 @@ class GatedResidual(nn.Module):
 
     def __call__(self, hyper_input: mx.array):
         normalized = self.hc_norm(hyper_input)
-        mixing = nn.silu(self.input_mix_weight_down(normalized) / self.hc_count)
-        mixing = mx.sigmoid(self.input_mix_weight_up(mixing))
-        mixing = mixing.reshape(*mixing.shape[:-1], self.hc_count, self.hidden_size)
-        streams = normalized.reshape(
-            *normalized.shape[:-1], self.hc_count, self.hidden_size
-        )
-        mixed = (mixing * streams).mean(axis=-2)
-        if self.block_inject_weight is None:
-            return mixed
-        injection = 2 * mx.sigmoid(self.block_inject_weight(normalized) / self.hc_count)
+        if self.compiled:
+            from .qwen_tensor_ops import (
+                compiled_scaled_silu, compiled_hyper_mix, compiled_injection_gate,
+            )
+            mixing = compiled_scaled_silu(
+                self.input_mix_weight_down(normalized), self.hc_count)
+            mixed = compiled_hyper_mix(
+                normalized, self.input_mix_weight_up(mixing), self.hc_count)
+            if self.block_inject_weight is None:
+                return mixed
+            injection = compiled_injection_gate(
+                self.block_inject_weight(normalized), self.hc_count)
+        else:
+            mixing = nn.silu(self.input_mix_weight_down(normalized) / self.hc_count)
+            mixing = mx.sigmoid(self.input_mix_weight_up(mixing))
+            mixing = mixing.reshape(*mixing.shape[:-1], self.hc_count, self.hidden_size)
+            streams = normalized.reshape(
+                *normalized.shape[:-1], self.hc_count, self.hidden_size
+            )
+            mixed = (mixing * streams).mean(axis=-2)
+            if self.block_inject_weight is None:
+                return mixed
+            injection = 2 * mx.sigmoid(self.block_inject_weight(normalized) / self.hc_count)
         return mixed, hyper_input, injection
 
-
-def _shift_right_ignore_eos(
-    token_ids: np.ndarray,
-    shift: int,
-    eos_token_id: int,
-) -> np.ndarray:
-    if shift == 0:
-        return token_ids
-    result = np.full_like(token_ids, eos_token_id)
-    for batch in range(token_ids.shape[0]):
-        for position in range(token_ids.shape[1]):
-            source = position - shift
-            if source < 0 or eos_token_id in token_ids[batch, source:position]:
-                continue
-            result[batch, position] = token_ids[batch, source]
-    return result
-
-
-def ngram_ids(
-    token_ids: np.ndarray,
-    multipliers: np.ndarray,
-    descriptor: NGram,
-    *,
-    eos_token_id: int,
-) -> np.ndarray:
-    """Return the 16 official Qwen N-gram row IDs for each token."""
-    tokens = np.asarray(token_ids, dtype=np.int64)
-    shifted = [
-        _shift_right_ignore_eos(tokens, shift, eos_token_id) for shift in range(3)
-    ]
-    blocks = []
-    for ngram in (2, 3):
-        with np.errstate(over="ignore"):
-            mixed = shifted[0] * np.int64(multipliers[0])
-            for position in range(1, ngram):
-                mixed = np.bitwise_xor(
-                    mixed,
-                    shifted[position] * np.int64(multipliers[position]),
-                )
-        start = (ngram - 2) * 8
-        sizes = np.asarray(descriptor.head_vocab_sizes[start : start + 8], dtype=np.int64)
-        offsets = np.asarray(descriptor.head_offsets[start : start + 8], dtype=np.int64)
-        blocks.append(np.remainder(mixed[..., None], sizes) + offsets)
-    return np.concatenate(blocks, axis=-1)
+    def inject(self, residual: mx.array, result: mx.array, injection: mx.array) -> mx.array:
+        if self.compiled:
+            from .qwen_tensor_ops import compiled_hyper_inject
+            return compiled_hyper_inject(residual, result, injection)
+        return residual + (result[..., None, :] * injection[..., None]).reshape(residual.shape)
 
 
 def mtp_prefill_pairs(
@@ -539,6 +516,12 @@ class QSAAttention(nn.Module):
     ) -> mx.array:
         if query.shape[0] != 1:
             raise ValueError("Qwen SSD runtime supports batch size one")
+        if self.sparse_sdpa and key.shape[2] <= self.args.indexer_budget:
+            from .qwen_tensor_ops import dense_causal_attention
+            # The selection is every visible key here. Do not duplicate K/V once
+            # per query or build unused index pools. Raw index cache was updated
+            # by __call__, so crossing the sparse threshold remains valid.
+            return dense_causal_attention(query, key, value, offset)
         ratio = self.args.indexer_compress_ratio
         blocks = raw_index_keys.shape[1] // ratio
         def pool_rows(raw, first_block):
@@ -774,6 +757,15 @@ class StreamingExperts(nn.Module):
             return mx.stack([outputs[int(expert)] for expert in selected.reshape(-1)], axis=-2)
         resident = self.cache.get_many(self.layer, selected.reshape(-1).tolist())
         flat = selected.reshape(-1)
+        if value.size // value.shape[-1] == 1:
+            route = flat.tolist()
+            if len(set(route)) == len(route):
+                # Top-k routing has unique experts. Keep each GEMV's [1, H]
+                # shape, but avoid sorting, taking and unsorting one-row groups.
+                source = value.reshape(1, value.shape[-1])
+                output = [self._one(source, resident.individual_weights[resident.slots[expert]])
+                          for expert in route]
+                return mx.stack(output, axis=1).reshape(*selected.shape, -1)
         order = np.argsort(flat, kind="stable")
         boundaries = np.flatnonzero(np.diff(flat[order])) + 1
         flat_value = value.reshape(-1, value.shape[-1])
@@ -854,14 +846,10 @@ class DecoderLayer(nn.Module):
             result = self.linear_attn(mixed, mask, cache)
         else:
             result = self.self_attn(mixed, cache)
-        hidden = residual + (result[..., None, :] * injection[..., None]).reshape(
-            *residual.shape
-        )
+        hidden = self.attn_hyper_connection.inject(residual, result, injection)
         mixed, residual, injection = self.mlp_hyper_connection(hidden)
         result = self.mlp(mixed)
-        return residual + (result[..., None, :] * injection[..., None]).reshape(
-            *residual.shape
-        )
+        return self.mlp_hyper_connection.inject(residual, result, injection)
 
 
 class TextModel(nn.Module):
@@ -1000,6 +988,19 @@ class MTPModel(nn.Module):
         lm_head_weight: mx.array,
         cache: CacheList | None,
     ) -> tuple[mx.array, mx.array]:
+        wide_hidden = self.advance(target_hidden, next_token_ids, embedding_weight, cache)
+        output = self.hyper_connection_mixer(wide_hidden)
+        logits = output @ lm_head_weight.T
+        return logits, wide_hidden
+
+    def advance(
+        self,
+        target_hidden: mx.array,
+        next_token_ids: mx.array,
+        embedding_weight: mx.array,
+        cache: CacheList | None,
+    ) -> mx.array:
+        """Advance native MTP state without unused mixer/vocabulary projection."""
         expected = self.args.hc_count * self.args.hidden_size
         if target_hidden.shape[-1] != expected:
             raise ValueError("Qwen MTP target hidden state has an invalid width")
@@ -1013,9 +1014,7 @@ class MTPModel(nn.Module):
         hidden = self.fc_hidden(hidden)
         mixed = (hidden + embedded[..., None, :]).reshape(*target_hidden.shape)
         wide_hidden = self.layers[0](mixed, next_token_ids, None, cache)
-        output = self.hyper_connection_mixer(wide_hidden)
-        logits = output @ lm_head_weight.T
-        return logits, wide_hidden
+        return wide_hidden
 
     def make_cache(self) -> CacheList:
         return CacheList(KVCache(), KVCache())
@@ -1095,18 +1094,22 @@ def generate_mtp_tokens(
         else prefill_step_size
     )
 
+    def advance_mtp(hidden: mx.array, token_ids: mx.array) -> None:
+        advance = getattr(mtp_model, "advance", None)
+        if callable(advance):
+            state_hidden = advance(hidden, token_ids, embedding_weight, mtp_cache)
+        else:
+            _, state_hidden = mtp_model(
+                hidden, token_ids, embedding_weight, lm_head_weight, mtp_cache)
+        # Evaluate the whole layer before shared expert slots may be recycled;
+        # evaluating only cache arrays would not fence the trailing MoE work.
+        eval_prompt_cache([mtp_cache], state_hidden)
+
     def prefill_mtp(paired_hidden: mx.array, paired_tokens: mx.array) -> None:
         for start in range(0, paired_tokens.shape[1], mtp_prefill_step):
             check_cancelled()
             end = min(start + mtp_prefill_step, paired_tokens.shape[1])
-            mtp_logits, _ = mtp_model(
-                paired_hidden[:, start:end],
-                paired_tokens[:, start:end],
-                embedding_weight,
-                lm_head_weight,
-                mtp_cache,
-            )
-            eval_prompt_cache([mtp_cache], mtp_logits)
+            advance_mtp(paired_hidden[:, start:end], paired_tokens[:, start:end])
 
     if prefilled_hidden is not None:
         if prefilled_hidden.shape[1] != len(prompt) - 1:
@@ -1233,14 +1236,7 @@ def generate_mtp_tokens(
         if accepted == len(draft_tokens):
             target_cache[:] = verified_cache
             predecessor_hidden = verified_hidden[:, -1:]
-            sync_logits, _ = mtp_model(
-                draft_hidden,
-                mx.array([[draft_tokens[-1]]], dtype=mx.int32),
-                embedding_weight,
-                lm_head_weight,
-                mtp_cache,
-            )
-            eval_prompt_cache([mtp_cache], sync_logits)
+            advance_mtp(draft_hidden, mx.array([[draft_tokens[-1]]], dtype=mx.int32))
         else:
             rollback_mtp_cache(mtp_cache, checkpoint + accepted + 1)
             replay_started = time.perf_counter()
@@ -1346,7 +1342,7 @@ def load(
         model.pooled_index_cache = getattr(config, "qwen_pooled_index_cache", False)
         if getattr(config, "qwen_compile_tensor_ops", False):
             for _, module in model.named_modules():
-                if isinstance(module, GroupRMSNorm):
+                if isinstance(module, (GroupRMSNorm, GatedResidual)):
                     module.compiled = True
         grouped_prefill = bool(
             getattr(config, "qwen_grouped_experts", True)

@@ -95,5 +95,11 @@ benchmark-qwen:
 	.venv/bin/python Scripts/benchmark_api.py --model qwen3.8-flash-next-fp8 \
 		--speed-bench-dir "$(SPEED_BENCH_DIR)" --runs 3 $(ARGS)
 
+## benchmark-qwen-speed: compare component latency with the pinned pre-speed branch
+benchmark-qwen-speed:
+	MLX_ENABLE_TF32=0 PYTHONPATH=runtime:. $(PYTHON) Scripts/benchmark_qwen_speed.py \
+		--output "$(QWEN_FLASH_OUTPUT)" $(QWEN_FLASH_ARGS)
+
+
 %:
 	@:

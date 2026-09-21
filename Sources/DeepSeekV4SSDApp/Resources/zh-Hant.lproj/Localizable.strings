@@ -577,3 +577,6 @@
 "Experts per wave must be an integer from 0 to 512." = "每波專家數必須為 0 至 512 的整數。";
 "Choose mmap or pread for the N-gram read backend." = "N-gram 讀取方式請選擇 mmap 或 pread。";
 "N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram 資料列快取必須為 0 至 512 MiB 的整數。";
+
+"Compile Qwen tensor operations" = "編譯 Qwen 張量運算";
+"Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change." = "編譯分組正規化與超連接的混合／注入運算，不編譯整個生成圖。浮點捨入與生成文字可能改變。";

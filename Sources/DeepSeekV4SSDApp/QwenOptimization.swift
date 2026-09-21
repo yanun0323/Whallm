@@ -20,7 +20,7 @@ enum QwenOptimization: String, CaseIterable, Identifiable {
     switch self {
     case .pooledIndex: "Reuse QSA pooled keys"
     case .ngramLookup: "Optimize N-gram reads"
-    case .compiledNorm: "Compile grouped normalization"
+    case .compiledNorm: "Compile Qwen tensor operations"
     case .phaseMemory: "Adjust memory between prompt and answer"
     case .mtpPolicy: "Customize MTP strategy"
     }
@@ -33,7 +33,7 @@ enum QwenOptimization: String, CaseIterable, Identifiable {
     case .ngramLookup:
       "Reads repeated N-gram rows once per lookup and uses a decoding table."
     case .compiledNorm:
-      "Reuses a compiled normalization calculation, not the whole generation graph."
+      "Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change."
     case .phaseMemory:
       "Limits the expert cache to half its capacity while reading a prompt, keeping room for one layer when possible. Restores full capacity for answers. May cause extra SSD reads."
     case .mtpPolicy:
