@@ -1,0 +1,89 @@
+diff --git a/Sources/DeepSeekV4SSDApp/QwenOptimization.swift b/Sources/DeepSeekV4SSDApp/QwenOptimization.swift
+index 9d3c32a..d058295 100644
+--- a/Sources/DeepSeekV4SSDApp/QwenOptimization.swift
++++ b/Sources/DeepSeekV4SSDApp/QwenOptimization.swift
+@@ -33,7 +33,7 @@ enum QwenOptimization: String, CaseIterable, Identifiable {
+     case .ngramLookup:
+       "Reads repeated N-gram rows once per lookup and uses a decoding table."
+     case .compiledNorm:
+-      "Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change."
++      "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change."
+     case .phaseMemory:
+       "Limits the expert cache to half its capacity while reading a prompt, keeping room for one layer when possible. Restores full capacity for answers. May cause extra SSD reads."
+     case .mtpPolicy:
+diff --git a/Sources/DeepSeekV4SSDApp/Resources/en.lproj/Localizable.strings b/Sources/DeepSeekV4SSDApp/Resources/en.lproj/Localizable.strings
+index 8aa9303..c03653f 100644
+--- a/Sources/DeepSeekV4SSDApp/Resources/en.lproj/Localizable.strings
++++ b/Sources/DeepSeekV4SSDApp/Resources/en.lproj/Localizable.strings
+@@ -579,4 +579,4 @@
+ "N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram row cache must be an integer from 0 to 512 MiB.";
+ 
+ "Compile Qwen tensor operations" = "Compile Qwen tensor operations";
+-"Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change." = "Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change.";
++"Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change.";
+diff --git a/Sources/DeepSeekV4SSDApp/Resources/zh-Hans.lproj/Localizable.strings b/Sources/DeepSeekV4SSDApp/Resources/zh-Hans.lproj/Localizable.strings
+index 995882c..f530e4c 100644
+--- a/Sources/DeepSeekV4SSDApp/Resources/zh-Hans.lproj/Localizable.strings
++++ b/Sources/DeepSeekV4SSDApp/Resources/zh-Hans.lproj/Localizable.strings
+@@ -579,4 +579,4 @@
+ "N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram 数据行缓存必须为 0 至 512 MiB 的整数。";
+ 
+ "Compile Qwen tensor operations" = "编译 Qwen 张量运算";
+-"Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change." = "编译分组归一化与超连接的混合／注入运算，不编译整个生成图。浮点舍入与生成文本可能改变。";
++"Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "编译分组归一化与单 token 的超连接运算。多 token 批次保留原本的混合路径。浮点舍入与生成文本可能改变。";
+diff --git a/Sources/DeepSeekV4SSDApp/Resources/zh-Hant.lproj/Localizable.strings b/Sources/DeepSeekV4SSDApp/Resources/zh-Hant.lproj/Localizable.strings
+index 851b7c8..c3b13ee 100644
+--- a/Sources/DeepSeekV4SSDApp/Resources/zh-Hant.lproj/Localizable.strings
++++ b/Sources/DeepSeekV4SSDApp/Resources/zh-Hant.lproj/Localizable.strings
+@@ -579,4 +579,4 @@
+ "N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram 資料列快取必須為 0 至 512 MiB 的整數。";
+ 
+ "Compile Qwen tensor operations" = "編譯 Qwen 張量運算";
+-"Compiles grouped normalization and hyper-connection mixing/injection, not the whole generation graph. Rounding and generated text may change." = "編譯分組正規化與超連接的混合／注入運算，不編譯整個生成圖。浮點捨入與生成文字可能改變。";
++"Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "編譯分組正規化與單 token 的超連接運算。多 token 批次保留原本的混合路徑。浮點捨入與生成文字可能改變。";
+diff --git a/runtime/deepseek_v4_ssd/qwen4_exp.py b/runtime/deepseek_v4_ssd/qwen4_exp.py
+index 2860908..c7af32b 100644
+--- a/runtime/deepseek_v4_ssd/qwen4_exp.py
++++ b/runtime/deepseek_v4_ssd/qwen4_exp.py
+@@ -142,7 +142,9 @@ class GatedResidual(nn.Module):
+ 
+     def __call__(self, hyper_input: mx.array):
+         normalized = self.hc_norm(hyper_input)
+-        if self.compiled:
++        # Multi-token fusion regressed in the interleaved Metal experiment.
++        # Retain the prior norm-only route for prefill and speculative batches.
++        if self.compiled and hyper_input.size // hyper_input.shape[-1] == 1:
+             from .qwen_tensor_ops import (
+                 compiled_scaled_silu, compiled_hyper_mix, compiled_injection_gate,
+             )
+@@ -168,7 +170,7 @@ class GatedResidual(nn.Module):
+         return mixed, hyper_input, injection
+ 
+     def inject(self, residual: mx.array, result: mx.array, injection: mx.array) -> mx.array:
+-        if self.compiled:
++        if self.compiled and residual.size // residual.shape[-1] == 1:
+             from .qwen_tensor_ops import compiled_hyper_inject
+             return compiled_hyper_inject(residual, result, injection)
+         return residual + (result[..., None, :] * injection[..., None]).reshape(residual.shape)
+diff --git a/runtime/tests/test_qwen_speed.py b/runtime/tests/test_qwen_speed.py
+index a058e00..187b613 100644
+--- a/runtime/tests/test_qwen_speed.py
++++ b/runtime/tests/test_qwen_speed.py
+@@ -103,6 +103,17 @@ class DenseQSASpeedTests(unittest.TestCase):
+ 
+ 
+ class HyperCompilationTests(unittest.TestCase):
++    def test_multiple_tokens_keep_norm_only_path(self):
++        from deepseek_v4_ssd import qwen_tensor_ops as ops
++        layer = qwen.GatedResidual(tiny_args())
++        layer.compiled = True
++        layer.hc_norm.compiled = True
++        hidden = mx.ones((1, 3, 256))
++        with patch.object(ops, 'compiled_scaled_silu', side_effect=AssertionError('batched fusion')):
++            with patch.object(ops, 'compiled_hyper_inject', side_effect=AssertionError('batched injection')):
++                mixed, residual, injection = layer(hidden)
++                mx.eval(layer.inject(residual, mixed, injection))
++
+     def test_compiled_hyper_connection_and_live_weights(self):
+         mx.random.seed(12)
+         for dtype, tol in ((mx.float32, 3e-5), (mx.float16, 3e-3), (mx.bfloat16, 2e-2)):
