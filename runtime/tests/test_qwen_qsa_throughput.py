@@ -125,3 +125,37 @@ class IndexedQSATests(unittest.TestCase):
         for kind in ('deepseek-v4','deepseek-v4.1'):
             with self.assertRaises(ValueError): get_support(kind).validate_config(RuntimeConfig(qwen_qsa_query_chunk=32))
         get_support('qwen3.8-flash-next').validate_config(RuntimeConfig(qwen_qsa_query_chunk=32,qwen_sparse_sdpa=True,qwen_qsa_indexed=True))
+
+
+class NativeMTPSettingsTests(unittest.TestCase):
+    def test_new_qsa_controls_reach_native_mtp_without_changing_old_defaults(self):
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        from deepseek_v4_ssd import model as loader
+        installed = SimpleNamespace(root=Path("/synthetic-model"),
+            mtp=SimpleNamespace(common_tensors=()))
+        cases = ((True,4,False,False), (True,16,False,True),
+                 (True,32,True,True), (False,16,False,False))
+        for sdpa,chunk,indexed,expected_sdpa in cases:
+            with self.subTest(sdpa=sdpa,chunk=chunk,indexed=indexed):
+                attention = SimpleNamespace(sparse_sdpa=False, query_chunk=4, indexed_decode=False)
+                draft = MagicMock()
+                draft.layers = [SimpleNamespace(self_attn=attention)]
+                draft.sanitize.return_value = {}
+                draft.parameters.return_value = []
+                cache = MagicMock()
+                config = RuntimeConfig(qwen_sparse_sdpa=sdpa,
+                    qwen_qsa_query_chunk=chunk, qwen_qsa_indexed=indexed)
+                with patch.object(loader,"replace",return_value=installed), \
+                     patch.object(loader,"ExpertCache",return_value=cache), \
+                     patch.object(loader,"_load_tensor_file",return_value={}), \
+                     patch("deepseek_v4_ssd.qwen4_exp.MTPModel",return_value=draft):
+                    actual, actual_cache = loader._load_qwen_mtp(installed,tiny_args(),config,None)
+                self.assertIs(actual,draft)
+                self.assertIs(actual_cache,cache)
+                self.assertEqual(attention.sparse_sdpa,expected_sdpa)
+                self.assertEqual(attention.query_chunk,chunk)
+                self.assertEqual(attention.indexed_decode,indexed)
+                draft.load_weights.assert_called_once_with([],strict=True)
+                cache.close.assert_not_called()

@@ -53,8 +53,10 @@ def main():
     report['source_hashes'] = {str(p):hashlib.sha256(p.read_bytes()).hexdigest()
         for p in (Path('runtime/deepseek_v4_ssd/qwen4_exp.py'),Path('runtime/deepseek_v4_ssd/qwen_qsa_indexed.py'),
                   Path('runtime/deepseek_v4_ssd/qwen_qsa_schedule.py'),Path(__file__))}
-    for kv_length in (8192,32768):
-        for queries in (1,3,128):
+    for kv_length in (8192,32768,131072):
+        # Long-context narrow calls fit hosted validation memory; do not use
+        # a 128-query/128k fixture as a proxy for full-model capacity.
+        for queries in ((1,3) if kv_length > 32768 else (1,3,128)):
             mx.random.seed(628+kv_length+queries)
             q = (mx.random.normal((1,24,queries,256))*.15).astype(mx.bfloat16)
             k = (mx.random.normal((1,2,kv_length,256))*.15).astype(mx.bfloat16)
@@ -68,7 +70,7 @@ def main():
                 attn.query_chunk = 32 if name=='chunk-32' else 16 if name=='chunk-16' else 4
                 attn.indexed_decode = name=='indexed-decode'
                 return attn._bounded_attention(q,k,v,iq,raw,kv_length-queries)
-            names = ['previous-fused-4','stored-axis-4','manual-4']
+            names = ['previous-fused-4','current-fused-4','manual-4']
             names += ['chunk-16','chunk-32'] if queries>8 else ['indexed-decode']
             outputs = {}; samples={name:[] for name in names}
             for name in names:

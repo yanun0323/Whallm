@@ -545,7 +545,8 @@ class QSAAttention(nn.Module):
             pooled = pool_rows(raw_index_keys[:, :blocks * ratio], 0)
         outputs = []
         from .qwen_qsa_schedule import query_chunk_size
-        query_chunk = query_chunk_size(
+        # Keep the legacy scheduling cost when the option is unchanged.
+        query_chunk = 4 if self.query_chunk == 4 else query_chunk_size(
             self.query_chunk, selected_rows=min(key.shape[2], self.args.indexer_budget + ratio),
             kv_heads=key.shape[1], query_heads=query.shape[1], head_dim=query.shape[-1],
             element_bytes=query.itemsize, index_blocks=blocks,
@@ -595,14 +596,10 @@ class QSAAttention(nn.Module):
                 if current is not None:
                     outputs.append(current)
                     continue
-            # Narrow gathers use the existing storage axis: no full-cache
-            # token-major transpose/copy just to read a few selected rows.
-            if end - start <= 8:
-                selected_key = mx.take(key[0], selected, axis=1).transpose(1, 0, 2, 3)
-                selected_value = mx.take(value[0], selected, axis=1).transpose(1, 0, 2, 3)
-            else:
-                selected_key = mx.take(key[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
-                selected_value = mx.take(value[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
+            # Retain the original gather: storage-axis gathering showed no
+            # speed or allocation benefit in the recorded first trial.
+            selected_key = mx.take(key[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
+            selected_value = mx.take(value[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
             if self.args.num_attention_heads % selected_key.shape[1] != 0:
                 raise ValueError("Qwen query heads must be divisible by KV heads")
             repeats = self.args.num_attention_heads // selected_key.shape[1]
