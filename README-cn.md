@@ -126,6 +126,8 @@ API 支持文本流式输出和工具调用，提供以下端点：
 
 工具由客户端执行，再返回结果；推理 API 不会自动执行 MCP 工具。当前开发源码新增 MiMo 静态图片及有界 PCM WAV 音频输入，可通过 Chat／Responses 和 App 附件使用。JSON 请求体仍限 **1 MiB**；经过身份验证的 `/api/assets` 上传接受每个文件最多 **8 MiB** 的 PNG／JPEG／WebP、PCM WAV，以及有限支持的 PDF／DOCX／PPTX／XLSX 文档。音频输入仅接受 24 kHz、16 位 PCM WAV、单声道或立体声，每段最长 30 秒、每次最多两段。音频输出、视频、`logprobs`、`response_format` 和 `stop` 仍不支持。详见 [MiMo 合约与限制](docs/mimo-development.md)。
 
+当前开发源码的所有模型都能通过 `/v1/responses` 接收字符串或由 `input_text` 片段组成的 `function_call_output.output` 数组。文本会按顺序合并，保留原有空白和换行，不额外添加分隔符。请在请求历史中附上具有相同 `call_id` 的 `function_call`。多媒体支持仍取决于模型。v1.1.8 尚未包含这项修复。
+
 推理在你的 Mac 上运行。下载、更新和 API 连接会使用网络。连接的客户端可能将数据发送到其他服务；**Debug** 日志可能包含完整输入和工具结果。
 
 ## 验证与限制
