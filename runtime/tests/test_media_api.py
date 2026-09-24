@@ -61,6 +61,31 @@ class MediaAPITests(unittest.TestCase):
         status, _ = self.request("/v1/chat/completions", data={"model": "mimo-v2.6-flash-rl", "messages": [{"role": "user", "content": parts}]})
         self.assertEqual(status, 400)
 
+    def test_responses_tool_result_preserves_supported_media(self):
+        status, uploaded = self.request("/api/assets", data=png(), mime="image/png")
+        self.assertEqual(status, 201)
+        try:
+            status, result = self.request("/v1/responses", data={
+                "model": "mimo-v2.6-flash-rl",
+                "input": [
+                    {"type": "function_call", "call_id": "call_1", "name": "get_image", "arguments": "{}"},
+                    {"type": "function_call_output", "call_id": "call_1", "output": [
+                        {"type": "input_text", "text": "before"},
+                        {"type": "input_image", "file_id": uploaded["id"]},
+                        {"type": "input_text", "text": "after"},
+                    ]},
+                ],
+            })
+            self.assertEqual(status, 200, result)
+            message = self.runtime.last_messages[-1]
+            self.assertEqual(message["role"], "tool")
+            self.assertEqual(message["tool_call_id"], "call_1")
+            self.assertEqual(message["content"][0], "before")
+            self.assertIsInstance(message["content"][1], ImagePart)
+            self.assertEqual(message["content"][2], "after")
+        finally:
+            self.request("/api/assets/" + uploaded["id"], method="DELETE")
+
     def test_authentication_and_capabilities(self):
         for path, data, method in (("/api/assets", png(), "POST"), ("/api/assets/file-missing", None, "DELETE"),
                                     ("/api/capabilities", None, "GET")):
