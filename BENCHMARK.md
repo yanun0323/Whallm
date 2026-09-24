@@ -67,6 +67,194 @@ this change:
 | layer-major | 4096 | 33614 | 121.9 | 5.20 | 96.05 | 419 GB | 3da271deec0f6e61 |
 | token-major (control) | 1024 | 44091 | 23.2 | 4.65 | 95.87 | 477 GB | de4d738a8356a3ff |
 
+## Runtime profiling
+
+For opt-in Qwen phase, 48-layer and component metrics, see
+[Qwen runtime profiling](docs/qwen-runtime-profiling.md). Normal asynchronous
+measurements and synchronized diagnostic spans are intentionally separate.
+
+### Qwen resident-tail submission candidate: rejected, 2026-09-22
+
+A separate candidate submitted the first ready expert immediately, coalesced
+only the already-resident tail, and flushed pending work before every possible
+expert-read wait. It did not change arithmetic, QMM shapes, routing, slot
+protection or fences. This was not fixed-pair waiting or a grouped GPU kernel.
+Using the refresh configuration below, normal uninstrumented A/B/B/A ran two
+4096/128 requests per process. All eight outputs and integer expert counters
+matched. Baseline runtime hash was `c14dc99194a7050d7cf249d63c4f1ed044774848191bf42fc71dc21015af0b81`;
+candidate hash was `3804cecd4147f5ae78c16dd4fa048edd97699e213db5c855387584f28ab5d3dd`.
+
+Second-request mean Decode **regressed from 13.287 to 13.864 s (+4.34%)**;
+request time rose from 45.443 to 46.023 s (+1.28%). Both Decode pairs regressed;
+first-request mean Decode also regressed 4.56%. System swapin/out deltas were
+zero throughout and second-request Decode process-read spread was only
+0.0122 GiB. Footprint remained about 17.49 GiB and MLX peak about 16.971 GiB.
+Aggregate process CPU fell from 19.081 to 17.934 seconds during Decode, but
+consumer-wait and route-materialization times increased: less CPU work did not
+mean lower latency. These counters are not an additive causal breakdown.
+Both sources passed 560 existing tests, plus ten applicable isolated contract
+checks for the candidate. Submission-count reduction was checked in a small
+real-MXFP4 fixture, not measured as full-model Metal buffers. The candidate is
+**not integrated**; no further batching sweep, setting change or packaging.
+
+### Qwen CPU/GPU handoff investigation: 2026-09-22
+
+Using the same source, environment and 4096/128 configuration as the refresh
+below, control → thin Decode instrumentation → control ran two requests each.
+All six outputs and corresponding integer expert counters matched. No inference
+code, App settings or fences changed. Second-request Decode was
+13.373 / 13.695 / 13.212 s: instrumentation added 3.024% against the control mean,
+with 1.208% control drift. However, system swapins were 0 / 4 / 8 (swapouts zero),
+so the predeclared clean-environment gate **failed**. The first control request
+also read 12.229 GiB during Decode versus about 0.02 GiB in later requests;
+it is retained, not treated as a comparable warm baseline.
+
+In the second instrumented request, 60,960 expert `async_eval` calls consumed
+2.202 owner-CPU seconds; `_one` graph construction consumed 0.223 and weight views
+0.576. The route-materialization boundary took 7.278 wall seconds, including
+1.959 owner-CPU seconds: it is not pure GPU waiting. These are diagnostic costs,
+not additive parent/child totals or a promised speedup.
+
+A new analysis of the **historical** September 21 normally asynchronous Metal
+capture split its 15.524-second Decode into 7.684 s of target GPU activity,
+3.851 s without activity but with observed committed work outstanding, and
+3.988 s without observed committed work. Its native CPU samples also contained
+1.858 sample-weight seconds of main-thread trace logging. Do not interpret the
+historical GPU gaps or driver samples as undisturbed production costs.
+This is evidence to investigate work preparation/submission, not permission to
+remove dependencies or revive the rejected batching candidates. 560 existing
+tests and four isolated diagnostic-tool checks passed; no App was packaged.
+
+### Qwen 48-layer metrics refresh: source tree, 2026-09-22
+
+This is not an App release benchmark or a new inference optimization. M2 Max /
+64 GiB / 30 GPU cores, macOS 27.0, Python 3.14.7, MLX 0.32.2 and mlx-lm 0.31.3;
+Code 4096, greedy seed 42, 3072 slots, LRU, 16 readers, 1024-token layer-major
+non-batched prefill, ready decode, 30 GiB MLX limit, phase memory and compiled
+ops on, optimized N-gram and pooled index on, Prompt Cache/MTP/DSpark off.
+OS cache was not purged. New processes started with empty expert slots; the
+second request below retained slots. All runs used the same source/configuration.
+
+| Normal run | Output | Prefill s | Decode s | Request s | Decode process reads GiB |
+|---|---:|---:|---:|---:|---:|
+| Before observers, request 1 |128|31.611|13.305|44.917|0.022|
+| Same process, request 2 |128|32.127|13.291|45.418|0.015|
+| After observers, new process |128|33.995|15.399|49.395|14.342|
+
+The slower final run is retained: its decode consumer wait increased from
+0.531 to 2.674 s, consistent with different OS-cache conditions, not a changed
+inference algorithm. Normal-run swap deltas were zero; footprint stayed near
+17.49 GiB and decode MLX peak near 16.971 GiB. These memory measures overlap.
+Process disk accounting is not physical SSD traffic.
+
+A matched 4096/32 baseline plus host and sync/Metal diagnostics covered all
+48 layers. Their decode times were 3.388, 4.643 and 9.537 s: neither diagnostic
+is zero-overhead. Sync target GPU active intervals occupied 60.97% of prefill
+and 20.55% of decode scope time; these are **not normal utilization, hardware
+occupancy, bandwidth or recoverable idle time**. Sync recorded four system
+swapins and zero swapouts. Its top-level prefill MoE/QSA/GDN spans were
+17.758/10.245/3.216 s, including synchronization and other host work.
+
+Six requests completed; all 128-token outputs matched, and all 32-token outputs
+matched their prefix. The matched short runs' integer expert counters and the
+first normal requests' counters matched. 560 Python tests passed. No new
+candidate or default was adopted. Tools and interpretation are documented in
+[Qwen runtime profiling](docs/qwen-runtime-profiling.md).
+
+Commit `242fac89c75dae3f58dd373a9bc3086c31296dda` plus working-tree profiling and
+previous bulk-eviction changes; runtime Python source hash
+`c14dc99194a7050d7cf249d63c4f1ed044774848191bf42fc71dc21015af0b81`.
+Input hash: `36ce33df62894de9ce32be48d584e7b2c2568c53b353f2ec0fd819a202ad750f`.
+128-token output hash: `f0e95cc75ccbf0a07dd926dc1488cb0dde8eb081f418cf100f3f73a9548d8dec`.
+32-token output hash: `b0b273c280d3f77117d87f677fb97054897a5e3331c7bd068c2c077bd15f63f8`.
+
+### Qwen bulk eviction: source-tree validation, 2026-09-21
+
+This is not a packaged App or release benchmark. On M2 Max / 64 GiB, macOS 27.0,
+Python 3.14.7 and MLX 0.32.2, the same complete installed Qwen3.8 model ran the
+bundled **4096-token Code input and 128-token output**. Configuration: 3072 slots,
+LRU, 16 readers, ready-expert decode, 1024-token layer-major **non-batched** Prefill,
+30 GiB MLX limit; optimized N-gram, compiled tensor ops, pooled index and phase
+memory enabled. Exact, greedy, seed 42; Prompt Cache, MTP and DSpark off.
+
+The only inference change was the bulk slot-eviction selector described in
+[the profiling guide](docs/qwen-runtime-profiling.md#bulk-eviction-follow-up).
+Before/after/after/before processes each ran two requests. The table separates
+empty initial expert slots from the second request retaining slots; OS file
+cache was **not purged**. Each cell is the mean of two matching requests.
+Load/tokenization are excluded; the normal runs have a half-second nominal
+system sampler but **no model hooks**. Synchronizing diagnostics are excluded.
+
+| Request / metric | Before | After | Time reduction |
+| --- | ---: | ---: | ---: |
+| First / Prefill through first yield | 35.896 s | 31.579 s | 12.0% |
+| First / total request | 49.105 s | 44.791 s | 8.8% |
+| Second / Prefill through first yield | 40.689 s | 32.076 s | 21.2% |
+| Second / total request | 53.944 s | 45.292 s | 16.0% |
+
+Decode remained about 13.2 seconds (9.6 tok/s); no meaningful decode improvement
+is claimed. Prefill eviction fell from 5.482 to 0.992 seconds on first requests,
+and 10.502 to 1.753 seconds on second requests. Logical expert reads, cache
+hits/misses/evictions and output token hashes matched. Process footprint remained
+about 17.49 GiB, Decode MLX peak 16.97 GiB, and system swapin/swapout deltas were zero.
+These are overlapping memory gauges, not additive memory use. This is one workload
+with two observations per request/cache category, not a cross-workload speed guarantee.
+
+Baseline commit: `242fac89c75dae3f58dd373a9bc3086c31296dda` plus the profiler.
+Candidate: the same source with the bulk selector; archived runtime files differ
+only in `expert_cache.py`. Runtime source SHA-256 before/after:
+`8afe87f6b9a579a5442328ab9a587c1e5b251c8c71787d24a5b47a9850fc0114` /
+`3d8433122ea9b2a197ac92025c25508193c02724229f2307282b54234102d339`.
+Installed manifest SHA-256:
+`a71f38985d7b46919e4ba5abd5ca37f209c6864e6a51fe635e48cd45788326dc`.
+Input/output token SHA-256 (newline-delimited decimal IDs):
+`36ce33df62894de9ce32be48d584e7b2c2568c53b353f2ec0fd819a202ad750f` /
+`f0e95cc75ccbf0a07dd926dc1488cb0dde8eb081f418cf100f3f73a9548d8dec`.
+All eight normal requests and the separate diagnostic request produced the same
+128 tokens. Python regression suite: 553 passed. Reproduce the configuration with
+`Scripts/profile_qwen_runtime.py --requests 2` in separate before/after source
+snapshots, following the profiling guide; do not mix synchronized runs into throughput.
+
+### Follow-up diagnosis: same post-eviction runtime, 2026-09-21
+
+The same machine, model, runtime/input hashes and configuration above were used
+for eight new single-request processes. Baseline and shared-expert overlap each
+ran twice; query chunk16, SDPA, SDPA+indexed and whole-layer batched Prefill each
+ran once. OS cache was not purged. No defaults or runtime code were changed.
+
+| Configuration | Prefill | Decode | Request | Same output hash as above |
+| --- | ---: | ---: | ---: | --- |
+| Baseline, mean of two | 31.692 s | 13.426 s | 45.118 s | Yes |
+| Shared overlap, mean of two | 31.488 s | 13.655 s | 45.143 s | Yes |
+| Query chunk16, one trial | 30.539 s | 13.235 s | 43.774 s | Yes |
+
+Chunk16 is only a preliminary 3.0% request-time signal: Prefill MLX peak rose from
+14.832 to 15.456 GiB, despite an unchanged overall peak near 17.49 GiB. Overlap's
+second trial had much higher process disk reads, so its average is not a clean
+cache-controlled estimate. SDPA/indexed changed the generated tokens and routed
+working set; whole-layer batched Prefill regressed. None was promoted.
+
+Baseline Decode issued 41.85 GiB of logical expert reads but only 0.024–0.279 GiB
+of process-accounted disk reads, with 0.447–0.629 s of consumer wait. This cached
+workload does not support treating logical bytes as SSD traffic or identifying
+SSD as the main Decode bottleneck.
+
+A separate same-output Metal System Trace attributed 7.684 s of active-interval
+union to the model during 15.524 s of instrumented Decode (49.5%), across 77,221
+command-buffer IDs. Top-level active intervals had a 35.79 µs median. Fine-grained
+expert submission and host/GPU handoffs therefore warrant controlled follow-up;
+**the inactive fraction is not a promised speedup**. Instrumented Decode was
+15.6% slower than the normal mean and had different OS-cache I/O. Encoder activity
+is not kernel occupancy or memory bandwidth. Normal trials had zero swapin/out
+deltas; the trace had 16 system swapins and zero swapouts. A local cProfile timing
+attempt was rejected after detecting cross-thread capture and inconsistent times.
+
+Subsequent isolated validation of resident weight-view reuse and first-plus-pair
+submissions did not meet the declared complete-model speed and environment gates;
+neither candidate was integrated. Fewer command buffers in a resident component
+probe did not establish an end-to-end speedup. Cache-warming effects and small
+system swap-in deltas were reported explicitly, not hidden or credited as gains.
+
 ## Current Throughput sampling
 
 Throughput fixes **`temperature=0` and `seed=42`** for every trial, regardless
