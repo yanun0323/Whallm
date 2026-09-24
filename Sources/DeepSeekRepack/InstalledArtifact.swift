@@ -106,19 +106,23 @@ struct InstalledArtifactDownloader: Sendable {
   private let repository: String
   private let revision: String
   private let source: any CheckpointSource
+  private let expectedKind: ModelKind
   private let fileConcurrency = 4
 
-  init(repository: String, revision: String, source: any CheckpointSource) {
+  init(repository: String, revision: String, source: any CheckpointSource,
+    expectedKind: ModelKind = .qwen3_8FlashNext)
+  {
     self.repository = repository
     self.revision = revision
     self.source = source
+    self.expectedKind = expectedKind
   }
 
   func manifest() async throws -> (data: Data, manifest: InstalledManifest) {
     let data = try await source.data(path: "manifest.json")
     let manifest = try InstalledModel.decodeManifest(data)
-    guard manifest.modelKind == .qwen3_8FlashNext else {
-      throw RepackError.incompatibleModel("installed artifact is not Qwen3.8-Flash-Next")
+    guard manifest.modelKind == expectedKind else {
+      throw RepackError.incompatibleModel("installed artifact does not match \(expectedKind.rawValue)")
     }
     return (data, manifest)
   }

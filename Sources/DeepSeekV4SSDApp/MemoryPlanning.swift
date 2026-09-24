@@ -14,7 +14,7 @@ enum ExpertMemory {
   // Pinned installation contracts. A loaded manifest is authoritative.
   static func blobBytes(for kind: ModelKind) -> UInt64 {
     switch kind {
-    case .deepSeekV4: 13_369_344
+    case .deepSeekV4, .mimoV26FlashRL: 13_369_344
     case .deepSeekV41: 18_800_640
     case .qwen3_8FlashNext: 2_611_200
     default: 0

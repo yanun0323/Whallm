@@ -308,7 +308,8 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
         settings.dsparkCacheGiB = ExpertMemory.defaultGiB(slots: 768, blobBytes: blob)
       }
     }
-    settings.layerMajorPrefill = descriptor.supports("layerMajorPrefill")
+    // MiMo's bounded layer-major path is opt-in until cross-workload timing is stable.
+    settings.layerMajorPrefill = descriptor.supports("layerMajorPrefill") && modelKind != .mimoV26FlashRL
     settings.readyExpertDecode = descriptor.supports("readyExpertDecode")
     settings.batchedExpertPrefill = descriptor.supports("batchedExpertPrefill")
     settings.nextLayerPrefetch = descriptor.supports("nextLayerPrefetch")

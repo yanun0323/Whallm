@@ -8,7 +8,8 @@ final class ModelSettingsResetTests: XCTestCase {
     for kind in ModelPackages.descriptors.compactMap({ ModelKind(rawValue: $0.kind) }) {
       let defaults = ModelAdvancedSettings.defaults(for: kind)
       XCTAssertEqual(defaults.anePrefillRatio, 0)
-      XCTAssertEqual(defaults.layerMajorPrefill, kind.descriptor.supports("layerMajorPrefill"))
+      XCTAssertEqual(defaults.layerMajorPrefill,
+        kind.descriptor.supports("layerMajorPrefill") && kind != .mimoV26FlashRL)
       XCTAssertEqual(defaults.readyExpertDecode, kind.descriptor.supports("readyExpertDecode"))
       XCTAssertEqual(defaults.batchedExpertPrefill, kind.descriptor.supports("batchedExpertPrefill"))
       XCTAssertEqual(defaults.nextLayerPrefetch, kind.descriptor.supports("nextLayerPrefetch"))
@@ -41,6 +42,18 @@ final class ModelSettingsResetTests: XCTestCase {
       XCTAssertEqual(normalized.packedIndexCache, false)
       XCTAssertEqual(normalized.approximationEnabled, false)
     }
+  }
+
+  func testMiMoLayerMajorPrefillIsOptInAndPersists() throws {
+    let suite = "MiMoPrefillTests.\(UUID().uuidString)"
+    let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { store.removePersistentDomain(forName: suite) }
+    var settings = ModelAdvancedSettings.defaults(for: .mimoV26FlashRL)
+    XCTAssertFalse(settings.layerMajorPrefill)
+    XCTAssertTrue(ModelKind.mimoV26FlashRL.descriptor.supports("layerMajorPrefill"))
+    settings.layerMajorPrefill = true
+    settings.save(for: .mimoV26FlashRL, defaults: store)
+    XCTAssertTrue(ModelAdvancedSettings.loadOrDefault(for: .mimoV26FlashRL, defaults: store).layerMajorPrefill)
   }
 
   func testExplicitAccelerationOptOutsSurviveSaveAndLoad() throws {
@@ -84,14 +97,14 @@ final class ModelSettingsResetTests: XCTestCase {
       custom.qwenMTPZeroAcceptanceLimit = 4
       custom.save(for: kind, defaults: store)
       let saved = try XCTUnwrap(ModelAdvancedSettings.load(for: kind, defaults: store))
-      XCTAssertTrue(saved.layerMajorPrefill)
-      XCTAssertEqual(saved.readyExpertDecode, true)
-      XCTAssertEqual(saved.batchedExpertPrefill, true)
+      XCTAssertEqual(saved.layerMajorPrefill, kind.descriptor.supports("layerMajorPrefill"))
+      XCTAssertEqual(saved.readyExpertDecode, kind.descriptor.supports("readyExpertDecode"))
+      XCTAssertEqual(saved.batchedExpertPrefill, kind.descriptor.supports("batchedExpertPrefill"))
       XCTAssertEqual(saved.expertCacheGiB, 8.25)
       XCTAssertEqual(saved.anePrefillRatio, 0.5)
       XCTAssertEqual(saved.packedKVCache, true)
       XCTAssertEqual(saved.packedIndexCache, true)
-      XCTAssertEqual(saved.approximationEnabled, true)
+      XCTAssertEqual(saved.approximationEnabled, kind.descriptor.supports("approximation"))
       var flow = ModelSettingsResetConfirmation()
       XCTAssertNil(flow.confirm(for: kind, locked: false))
       flow.begin(for: kind, locked: false)

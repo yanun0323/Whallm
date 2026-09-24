@@ -138,6 +138,38 @@
       },
       "automaticMemoryGiB": 48,
       "prefillThreshold": 128
+    },
+    {
+      "kind": "mimo-v2.6-flash-rl",
+      "displayName": "MiMo-V2.6-Flash-RL",
+      "kindLabel": "MiMo V2.6 Flash RL",
+      "assistantName": "MiMo",
+      "apiModelID": "mimo-v2.6-flash-rl",
+      "owner": "XiaomiMiMo",
+      "checkpointModelID": "XiaomiMiMo/MiMo-V2.6-Flash-RL",
+      "checkpointRevision": "5711b268169967567844e1e560e8a3966da959b1",
+      "manifestVersion": 4,
+      "directoryName": "mimo-v2.6-flash-rl.dsv4",
+      "requiredPaths": [
+        "common.bin", "config.json", "tokenizer/tokenizer.json", "checkpoint-map.json",
+        "vision/common.bin", "audio/common.bin", "mtp/common.bin",
+        "checkpoint/audio_tokenizer/model.safetensors",
+        "checkpoint/dflash/dflash_draft_model.safetensors",
+        "checkpoint/dflash/mask_embedding.pt"
+      ],
+      "features": ["readyExpertDecode", "layerMajorPrefill", "imageInput", "documentInput", "audioInput"],
+      "editableSettings": ["sampling"],
+      "defaults": {
+        "slots": 768,
+        "promptCacheEntries": 1,
+        "bf16KVCache": true,
+        "maxTokens": 8192,
+        "temperature": 1.0,
+        "topP": 0.95,
+        "topK": 0
+      },
+      "automaticMemoryGiB": 40,
+      "prefillThreshold": null
     }
   ]
 }

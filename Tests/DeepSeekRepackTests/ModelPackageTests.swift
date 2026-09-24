@@ -9,6 +9,7 @@ final class ModelPackageTests: XCTestCase {
       (ModelKind.deepSeekV4, ModelContract.modelID, ModelContract.revision),
       (.deepSeekV41, DeepSeekV41Contract.modelID, DeepSeekV41Contract.revision),
       (.qwen3_8FlashNext, QwenContract.modelID, QwenContract.revision),
+      (.mimoV26FlashRL, MiMoContract.modelID, MiMoContract.revision),
     ]
     XCTAssertEqual(ModelPackages.descriptors.count, expected.count)
     for (kind, modelID, revision) in expected {
@@ -34,10 +35,10 @@ final class ModelPackageTests: XCTestCase {
     models.append(fourth)
     var catalog = original
     catalog["models"] = models
-    XCTAssertEqual(try ModelPackages.decodeDescriptors(JSONSerialization.data(withJSONObject: catalog)).count, 4)
+    XCTAssertEqual(try ModelPackages.decodeDescriptors(JSONSerialization.data(withJSONObject: catalog)).count, models.count)
     for (field, value) in [("kind", "deepseek-v4"), ("directoryName", "../outside")] {
       var invalid = models
-      invalid[3][field] = value
+      invalid[invalid.count - 1][field] = value
       catalog["models"] = invalid
       XCTAssertThrowsError(try ModelPackages.decodeDescriptors(JSONSerialization.data(withJSONObject: catalog)))
     }
