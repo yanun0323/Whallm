@@ -30,6 +30,8 @@ struct ChatMessage: Encodable, Identifiable, Sendable {
   var reasoningContent: String
   var toolCalls: [ChatToolCall]
   var modelName: String?
+  var attachments: [ChatAttachment]
+  var uploadedFileIDs: [String] = []
 
   init(
     id: UUID = UUID(),
@@ -37,7 +39,8 @@ struct ChatMessage: Encodable, Identifiable, Sendable {
     content: String,
     reasoningContent: String = "",
     toolCalls: [ChatToolCall] = [],
-    modelName: String? = nil
+    modelName: String? = nil,
+    attachments: [ChatAttachment] = []
   ) {
     self.id = id
     self.role = role
@@ -45,6 +48,7 @@ struct ChatMessage: Encodable, Identifiable, Sendable {
     self.reasoningContent = reasoningContent
     self.toolCalls = toolCalls
     self.modelName = modelName
+    self.attachments = attachments
   }
 
   enum CodingKeys: String, CodingKey {
@@ -55,7 +59,16 @@ struct ChatMessage: Encodable, Identifiable, Sendable {
   func encode(to encoder: Encoder) throws {
     var values = encoder.container(keyedBy: CodingKeys.self)
     try values.encode(role, forKey: .role)
-    try values.encode(content, forKey: .content)
+    if attachments.isEmpty {
+      try values.encode(content, forKey: .content)
+    } else {
+      guard uploadedFileIDs.count == attachments.count else {
+        throw AttachmentError(L10n.string("Upload every attachment before sending the message."))
+      }
+      var parts = [["type": "text", "text": content]]
+      parts += zip(attachments, uploadedFileIDs).map { ["type": $0.0.isImage ? "image" : $0.0.isAudio ? "input_audio" : "file", "file_id": $0.1] }
+      try values.encode(parts, forKey: .content)
+    }
     if !toolCalls.isEmpty {
       try values.encode(toolCalls, forKey: .toolCalls)
     }
@@ -99,6 +112,7 @@ enum ChatHistory {
     let reasoningContent: String
     let toolCalls: [ChatToolCall]
     let modelName: String?
+    let attachments: [ChatAttachment]?
 
     init(_ message: ChatMessage) {
       id = message.id
@@ -107,6 +121,7 @@ enum ChatHistory {
       reasoningContent = message.reasoningContent
       toolCalls = message.toolCalls
       modelName = message.modelName
+      attachments = message.attachments
     }
 
     var message: ChatMessage {
@@ -116,7 +131,8 @@ enum ChatHistory {
         content: content,
         reasoningContent: reasoningContent,
         toolCalls: toolCalls,
-        modelName: modelName
+        modelName: modelName,
+        attachments: attachments ?? []
       )
     }
   }
@@ -217,6 +233,21 @@ struct ChatMetrics: Equatable, Sendable {
   var tokensPerSecond: Double {
     let generationSeconds = elapsedSeconds - firstTokenSeconds
     return generationSeconds > 0 ? Double(completionTokens) / generationSeconds : 0
+  }
+}
+
+enum ChatRequestStage: Equatable, Sendable {
+  case uploading(completed: Int, total: Int)
+  case preparing
+  case generating
+
+  func label(language: AppLanguage) -> String {
+    switch self {
+    case let .uploading(completed, total):
+      return L10n.string("Uploading attachments: %lld / %lld", language: language, Int64(completed), Int64(total))
+    case .preparing: return L10n.string("Preparing response…", language: language)
+    case .generating: return L10n.string("Generating", language: language)
+    }
   }
 }
 
@@ -327,10 +358,18 @@ enum ChatClient {
     thinkingMode: String,
     seed: UInt32? = nil,
     enableTestTool: Bool,
+    progress: @MainActor @escaping (ChatRequestStage) -> Void = { _ in },
     receive: @MainActor @escaping (ChatDelta) -> Void
   ) async throws -> ChatMetrics {
+    let prepared = try await uploadAttachments(messages, baseURL: baseURL, apiKey: apiKey, progress: progress)
+    defer {
+      let files = prepared.flatMap(\.uploadedFileIDs)
+      Task { await deleteAssets(files, baseURL: baseURL, apiKey: apiKey) }
+    }
+    try Task.checkCancellation()
+    await progress(.preparing)
     let request = try makeRequest(
-      messages: messages, baseURL: baseURL, apiKey: apiKey, model: model,
+      messages: prepared, baseURL: baseURL, apiKey: apiKey, model: model,
       thinkingMode: thinkingMode, seed: seed, enableTestTool: enableTestTool)
     let clock = ContinuousClock()
     let start = clock.now
@@ -355,6 +394,7 @@ enum ChatClient {
       switch event {
       case .delta(let delta):
         if !delta.content.isEmpty || !delta.reasoningContent.isEmpty || !delta.toolCalls.isEmpty {
+          if firstDelta == nil { await progress(.generating) }
           firstDelta = firstDelta ?? clock.now
           await receive(delta)
         }
@@ -372,6 +412,91 @@ enum ChatClient {
       }
     }
     throw ChatError(L10n.string("The streaming response ended before [DONE]."))
+  }
+
+  static func uploadAttachments(_ messages: [ChatMessage], baseURL: URL, apiKey: String,
+    progress: @MainActor @escaping (ChatRequestStage) -> Void = { _ in }
+  ) async throws -> [ChatMessage] {
+    let attachments = messages.flatMap(\.attachments)
+    guard !attachments.isEmpty else { return messages }
+    let total = Set(attachments.map(\.id)).count
+    await progress(.uploading(completed: 0, total: total))
+    func request(_ path: String) -> URLRequest {
+      var request = URLRequest(url: baseURL.appending(path: path))
+      request.timeoutInterval = 60
+      if !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+      return request
+    }
+    let (capData, capResponse) = try await URLSession.shared.data(for: request("api/capabilities"))
+    guard (capResponse as? HTTPURLResponse)?.statusCode == 200,
+      let capabilities = try JSONSerialization.jsonObject(with: capData) as? [String: Any],
+      let limits = capabilities["media"] as? [String: Any],
+      let maxImages = limits["max_images"] as? Int,
+      let maxBytes = limits["max_request_bytes"] as? Int,
+      let maxAsset = limits["max_asset_bytes"] as? Int,
+      attachments.filter(\.isImage).count <= maxImages,
+      attachments.filter(\.isDocument).count <= (limits["max_documents"] as? Int ?? 0),
+      attachments.filter(\.isAudio).count <= (limits["max_audios"] as? Int ?? 0) else {
+      throw AttachmentError(L10n.string("Attachments exceed the server limits. Remove pending files or start a new chat."))
+    }
+    let types = (limits["image_mime_types"] as? [String] ?? []) + (limits["document_mime_types"] as? [String] ?? [])
+      + (limits["audio_mime_types"] as? [String] ?? [])
+    guard attachments.allSatisfy({ types.contains($0.mime) }) else {
+      throw AttachmentError(L10n.string("The server does not support this attachment type."))
+    }
+    var prepared = messages
+    var uploaded: [UUID: String] = [:]
+    var complete = false
+    defer {
+      if !complete {
+        let files = Array(uploaded.values)
+        Task { await deleteAssets(files, baseURL: baseURL, apiKey: apiKey) }
+      }
+    }
+    var bytes = 0
+    for attachment in attachments {
+      try Task.checkCancellation()
+      let data = try attachment.data()
+      bytes += data.count
+      guard bytes <= maxBytes, data.count <= maxAsset else {
+        throw AttachmentError(L10n.string("Attachments exceed the server limits. Remove pending files or start a new chat."))
+      }
+      if uploaded[attachment.id] != nil { continue }
+      var upload = request("api/assets")
+      upload.httpMethod = "POST"
+      upload.setValue(attachment.mime, forHTTPHeaderField: "Content-Type")
+      upload.httpBody = data
+      let (body, response) = try await URLSession.shared.data(for: upload)
+      guard (response as? HTTPURLResponse)?.statusCode == 201,
+        let file = try JSONSerialization.jsonObject(with: body) as? [String: Any], let id = file["id"] as? String else {
+        let detail = try? JSONDecoder().decode(ErrorResponse.self, from: body)
+        throw AttachmentError(detail?.error.message ?? L10n.string("The attachment upload failed. Try again."))
+      }
+      guard id.range(of: "^file-[0-9a-f]{48}$", options: .regularExpression) != nil else {
+        throw AttachmentError(L10n.string("The attachment upload failed. Try again."))
+      }
+      uploaded[attachment.id] = id
+      guard file["sha256"] as? String == attachment.sha256, file["bytes"] as? Int == data.count else {
+        throw AttachmentError(L10n.string("The attachment upload failed. Try again."))
+      }
+      await progress(.uploading(completed: uploaded.count, total: total))
+    }
+    for i in prepared.indices {
+      prepared[i].uploadedFileIDs = prepared[i].attachments.compactMap { uploaded[$0.id] }
+    }
+    complete = true
+    return prepared
+  }
+
+  private static func deleteAssets(_ files: [String], baseURL: URL, apiKey: String) async {
+    for id in Set(files) {
+      guard id.range(of: "^file-[0-9a-f]{48}$", options: .regularExpression) != nil else { continue }
+      var request = URLRequest(url: baseURL.appending(path: "api/assets/\(id)"))
+      request.httpMethod = "DELETE"
+      request.timeoutInterval = 10
+      if !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+      _ = try? await URLSession.shared.data(for: request)
+    }
   }
 
   private static func seconds(from duration: Duration) -> Double {

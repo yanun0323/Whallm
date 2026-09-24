@@ -31,7 +31,7 @@ final class ChatStreamDecoderTests: XCTestCase {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     var seeds: [UInt32?] = []
-    let session = ChatSession(defaults: defaults, stream: { _, _, _, _, _, seed, receive in
+    let session = ChatSession(defaults: defaults, stream: { _, _, _, _, _, seed, _, receive in
       seeds.append(seed)
       receive(ChatDelta(content: "answer", reasoningContent: ""))
     })
@@ -273,7 +273,7 @@ final class ChatStreamDecoderTests: XCTestCase {
     defer { gate.continuation.finish() }
     let session = ChatSession(
       defaults: defaults,
-      stream: { _, _, _, _, _, _, receive in
+      stream: { _, _, _, _, _, _, _, receive in
         receive(ChatDelta(content: "first", reasoningContent: ""))
         var iterator = gate.stream.makeAsyncIterator()
         _ = await iterator.next()
@@ -337,7 +337,7 @@ final class ChatStreamDecoderTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suite) }
     let session = ChatSession(
       defaults: defaults,
-      stream: { _, _, _, _, _, _, receive in
+      stream: { _, _, _, _, _, _, _, receive in
         for _ in 0..<80 {
           receive(ChatDelta(content: "x", reasoningContent: ""))
         }
@@ -373,7 +373,7 @@ final class ChatStreamDecoderTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suite) }
     let session = ChatSession(
       defaults: defaults,
-      stream: { _, _, _, _, _, _, receive in
+      stream: { _, _, _, _, _, _, _, receive in
         receive(ChatDelta(content: "partial", reasoningContent: ""))
         throw NSError(domain: "ChatStreamDecoderTests", code: 1)
       }

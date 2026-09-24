@@ -1,6 +1,7 @@
 import AppKit
 import DeepSeekRepack
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
   @ObservedObject var server: ServerController
@@ -3008,11 +3009,13 @@ final class ChatSession: ObservableObject {
     _ model: String,
     _ thinkingMode: String,
     _ seed: UInt32?,
+    _ progress: @MainActor @escaping (ChatRequestStage) -> Void,
     _ receive: @MainActor @escaping (ChatDelta) -> Void
   ) async throws -> Void
 
   @Published private(set) var messages: [ChatMessage]
   @Published private(set) var isSending = false
+  @Published private(set) var requestStage: ChatRequestStage?
   @Published private(set) var errorMessage: String?
 
   private let defaults: UserDefaults
@@ -3023,7 +3026,7 @@ final class ChatSession: ObservableObject {
 
   init(
     defaults: UserDefaults = .standard,
-    stream: @escaping Stream = { messages, baseURL, apiKey, model, thinkingMode, seed, receive in
+    stream: @escaping Stream = { messages, baseURL, apiKey, model, thinkingMode, seed, progress, receive in
       _ = try await ChatClient.stream(
         messages: messages,
         baseURL: baseURL,
@@ -3032,6 +3035,7 @@ final class ChatSession: ObservableObject {
         thinkingMode: thinkingMode,
         seed: seed,
         enableTestTool: false,
+        progress: progress,
         receive: receive
       )
     }
@@ -3048,16 +3052,19 @@ final class ChatSession: ObservableObject {
     model: String,
     thinkingMode: String,
     language: AppLanguage,
-    seed: UInt32? = nil
+    seed: UInt32? = nil,
+    attachments: [ChatAttachment] = []
   ) -> Bool {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, !isSending, let baseURL = configuration.baseURL else { return false }
+    guard (!text.isEmpty || !attachments.isEmpty), !isSending, let baseURL = configuration.baseURL else { return false }
 
-    let userMessage = ChatMessage(role: "user", content: text)
+    let userMessage = ChatMessage(role: "user", content: text, attachments: attachments)
     messages.append(userMessage)
     errorMessage = nil
     isSending = true
     let requestMessages = messages
+    let fileCount = Set(requestMessages.flatMap(\.attachments).map(\.id)).count
+    requestStage = fileCount == 0 ? .preparing : .uploading(completed: 0, total: fileCount)
     let assistantID = UUID()
     messages.append(
       ChatMessage(id: assistantID, role: "assistant", content: "", modelName: model))
@@ -3068,6 +3075,7 @@ final class ChatSession: ObservableObject {
         flushPendingDeltas(for: assistantID)
         save()
         isSending = false
+        requestStage = nil
         generationTask = nil
       }
       do {
@@ -3077,7 +3085,8 @@ final class ChatSession: ObservableObject {
           configuration.apiKey,
           model,
           thinkingMode,
-          seed
+          seed,
+          { self.requestStage = $0 }
         ) { delta in
           self.enqueue(delta, for: assistantID)
         }
@@ -3107,6 +3116,7 @@ final class ChatSession: ObservableObject {
 
   func clear() {
     guard !isSending else { return }
+    for attachment in messages.flatMap(\.attachments) { attachment.remove() }
     messages.removeAll()
     errorMessage = nil
     save()
@@ -3168,6 +3178,10 @@ struct ChatView: View {
   @State private var seedError: String?
   @FocusState private var seedFocused: Bool
   @State private var showingClearConfirmation = false
+  @State private var attachments: [ChatAttachment] = []
+  @State private var attachmentError: String?
+  @State private var attachmentPanel: NSOpenPanel?
+  @AccessibilityFocusState private var attachmentErrorFocused: Bool
 
   var body: some View {
     // Do not propagate the transcript's ideal height to the window. The page
@@ -3196,7 +3210,7 @@ struct ChatView: View {
         }
         .pickerStyle(.menu)
         .frame(width: 300)
-        .disabled(server.catalogModels.isEmpty)
+        .disabled(server.catalogModels.isEmpty || isSending || choosingFiles)
         .accessibilityLabel(localized("Model"))
         Picker(localized("Mode"), selection: $thinkingMode) {
           Text(localized("Chat")).tag("chat")
@@ -3248,6 +3262,9 @@ struct ChatView: View {
                       Text(message.content)
                         .textSelection(.enabled)
                     }
+                    ForEach(message.attachments) { attachment in
+                      ChatAttachmentPreview(attachment: attachment, language: language)
+                    }
                     ForEach(message.toolCalls) { toolCall in
                       GroupBox(localized("Tool call")) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -3270,7 +3287,7 @@ struct ChatView: View {
                     if message.role == "assistant" && message.content.isEmpty
                       && message.reasoningContent.isEmpty && message.toolCalls.isEmpty
                     {
-                      ProgressView(localized("Generating"))
+                      ProgressView(session.requestStage?.label(language: language) ?? localized("Generating"))
                         .controlSize(.small)
                     }
                   }
@@ -3324,6 +3341,24 @@ struct ChatView: View {
             .foregroundStyle(.red)
             .accessibilityLabel(L10n.string("Error: %@", language: language, seedError))
         }
+        ChatAttachmentsView(attachments: attachments, history: messages.flatMap(\.attachments),
+          allowedKinds: attachmentKinds, hasSelectedModel: selectedCatalogModel != nil,
+          language: language, disabled: isSending || choosingFiles,
+          choose: chooseAttachments, addFiles: addAttachments, remove: { attachment in
+            attachment.remove()
+            attachments.removeAll { $0.id == attachment.id }
+            attachmentError = nil
+          })
+        if hasUnsupportedAttachments {
+          Label(localized("Choose a model that supports these attachments, or clear chat history."), systemImage: "exclamationmark.triangle")
+            .font(.callout).foregroundStyle(.secondary)
+        }
+        if let attachmentError {
+          Label(attachmentError, systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(.red)
+            .accessibilityLabel(L10n.string("Error: %@", language: language, attachmentError))
+            .accessibilityFocused($attachmentErrorFocused)
+        }
         ZStack(alignment: .topLeading) {
           if input.isEmpty {
             Text(localized("Enter a message…"))
@@ -3360,10 +3395,10 @@ struct ChatView: View {
           } label: {
             Label(localized("Clear Chat"), systemImage: "trash")
           }
-          .disabled(messages.isEmpty || isSending)
+          .disabled((messages.isEmpty && attachments.isEmpty) || isSending || choosingFiles)
           if isSending {
             Button(action: stopGenerating) {
-              Label(localized("Stop Generating"), systemImage: "stop.fill")
+              Label(localized("Cancel request"), systemImage: "stop.fill")
             }
             .controlSize(.large)
           } else {
@@ -3375,7 +3410,7 @@ struct ChatView: View {
             .buttonStyle(.borderedProminent)
             .tint(.blue)
             .controlSize(.large)
-            .disabled(server.state != .running || selectedCatalogModel == nil)
+            .disabled(server.state != .running || selectedCatalogModel == nil || choosingFiles)
             .keyboardShortcut(.return, modifiers: .command)
           }
         }
@@ -3388,8 +3423,15 @@ struct ChatView: View {
     .padding(.vertical, 24)
     .background(AppTheme.pageBackground)
     .environment(\.locale, language.locale)
+    .onChange(of: attachmentError) { attachmentErrorFocused = attachmentError != nil }
     .onChange(of: server.catalogModels) { selectAvailableModel() }
     .onAppear { selectAvailableModel() }
+    .onDisappear {
+      attachmentPanel?.cancel(nil)
+      attachmentPanel = nil
+      for attachment in attachments { attachment.remove() }
+      attachments.removeAll()
+    }
     .confirmationDialog(
       localized("Clear the test chat?"),
       isPresented: $showingClearConfirmation,
@@ -3397,6 +3439,9 @@ struct ChatView: View {
     ) {
       Button(localized("Clear Chat"), role: .destructive) {
         session.clear()
+        for attachment in attachments { attachment.remove() }
+        attachments.removeAll()
+        attachmentError = nil
         input = ""
         seedText = ""
         seedError = nil
@@ -3453,8 +3498,63 @@ struct ChatView: View {
     selectedModelName = resolved
   }
 
+  private var choosingFiles: Bool { attachmentPanel != nil }
+
+  private var attachmentKinds: Set<ChatAttachmentKind> {
+    ChatAttachmentKind.supported(modelID: selectedCatalogModel?.id)
+  }
+
+  private var hasUnsupportedAttachments: Bool {
+    (attachments + messages.flatMap(\.attachments)).contains { $0.kind.map(attachmentKinds.contains) != true }
+  }
+
+  private func chooseAttachments(_ kinds: Set<ChatAttachmentKind>) {
+    guard !isSending, !choosingFiles, !kinds.isEmpty else { return }
+    let panel = NSOpenPanel()
+    panel.allowedContentTypes = ChatAttachmentKind.allCases.filter(kinds.contains).flatMap(\.contentTypes)
+    panel.message = kinds == [.audio]
+      ? localized(ChatAttachmentKind.audio.limitKey)
+      : localized("Up to 8 files and 32 MiB per request, including chat history. Each file: 8 MiB.")
+    panel.allowsMultipleSelection = true
+    panel.canChooseDirectories = false
+    attachmentPanel = panel
+    let completion: (NSApplication.ModalResponse) -> Void = { response in
+      guard attachmentPanel === panel else { return }
+      attachmentPanel = nil
+      guard response == .OK else { return }
+      _ = addAttachments(panel.urls)
+    }
+    if let window = NSApp.keyWindow {
+      panel.beginSheetModal(for: window, completionHandler: completion)
+    } else {
+      panel.begin(completionHandler: completion)
+    }
+  }
+
+  @discardableResult
+  private func addAttachments(_ urls: [URL]) -> Bool {
+    guard !isSending else { return false }
+    do {
+      attachments += try ChatAttachment.importFiles(urls, existing: messages.flatMap(\.attachments) + attachments,
+        allowedKinds: attachmentKinds, language: language)
+      attachmentError = nil
+      return true
+    } catch {
+      attachmentError = error.localizedDescription
+      return false
+    }
+  }
+
   private func send() {
     guard let model = selectedCatalogModel?.requestName else { return }
+    guard !choosingFiles else { return }
+    do {
+      try ChatAttachment.validateSelection(attachments + messages.flatMap(\.attachments),
+        allowedKinds: attachmentKinds, language: language)
+    } catch {
+      attachmentError = error.localizedDescription
+      return
+    }
     let seed: UInt32?
     do {
       seed = try ChatClient.parseSeed(seedText, language: language)
@@ -3469,8 +3569,11 @@ struct ChatView: View {
       model: model,
       thinkingMode: thinkingMode,
       language: language,
-      seed: seed
+      seed: seed,
+      attachments: attachments
     ) {
+      attachments.removeAll()
+      attachmentError = nil
       input = ""
       seedText = ""
       seedError = nil
