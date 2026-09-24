@@ -8,3 +8,6 @@ transformers==5.12.1
 # Bounded PNG/JPEG/WebP decoding for MiMo image input; no remote processor code.
 pillow==12.3.0
 pypdfium2==5.10.1
+# Opt-in MCP client; never automatically invoked by compatible inference APIs.
+mcp==1.30.0
+jsonschema==4.26.0
