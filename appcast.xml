@@ -6,54 +6,54 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Whallm</title>
         <item>
-            <title>1.1.8</title>
-            <pubDate>Fri, 18 Sep 2026 05:25:26 +0800</pubDate>
-            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.8</link>
-            <sparkle:version>1.1.8</sparkle:version>
-            <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
+            <title>1.1.9</title>
+            <pubDate>Thu, 24 Sep 2026 16:11:14 +0800</pubDate>
+            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.9</link>
+            <sparkle:version>1.1.9</sparkle:version>
+            <sparkle:shortVersionString>1.1.9</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.8
+            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.9
 
-Changes since v1.1.7.
+Changes since v1.1.8. Built from [`ba9e126`](https://github.com/yanun0323/Whallm/commit/ba9e12612fdb26378ec0557c1c7326fa20b3e728).
 
-## Chat and sampling
+## Tool calls and prompt caching
 
-- Keep long Chat responses inside a scrollable viewport instead of letting the transcript expand the app window. The message composer stays outside the response scroll area.
-- Add a per-message Seed field to Chat and optional unsigned 32-bit `seed` support to all three generation endpoints. Omitting the seed now uses a fresh random seed for each request rather than reusing a fixed request seed.
+- Fix `/v1/responses` tool results that contain an array of `input_text` parts. All models now accept these arrays as well as strings, preserving text order and whitespace. The matching `function_call` and `call_id` are still required. Addresses [#13](https://github.com/yanun0323/Whallm/issues/13).
+- Reuse DeepSeek V4.1 prompt caches across tool calls, including DSpark target and draft state in memory and disk modes. Keep a request's prompt snapshot alongside its final state instead of immediately evicting it. Includes [#12](https://github.com/yanun0323/Whallm/pull/12).
+- Fix cache positions after the end-of-response token. Older ordinary disk caches are ignored and rebuilt on demand; model files are unchanged. The first request after updating may need to process the prompt again.
+- Update the app's memory estimate to include the extra saved states, V4.1 DSpark snapshots, and temporary snapshots. The estimate is not a hard memory limit.
 
-## Runtime and model settings
+## Qwen runtime and diagnostics
 
-- Improve DeepSeek V4.1 layer-major prefill with contiguous expert layer buffers, request-scoped buffer reuse, and batched expert processing. Enable V4.1 layer-major prefill and next-layer prefetch by default in the runtime and CLI.
-- Support V4.1 DSpark with layer-major prefill and next-layer prefetch, while retaining the restrictions on CED, DSpark prompt caching, and sequential verification.
-- Add separate Prefill/Decode I/O policies and an optional route-aware expert cache eviction policy alongside LRU and LFU.
-- Enable supported layer-major processing, ready-expert computation, expert batching, and next-layer prefetch in new or reset App settings. Explicitly saved disabled settings are preserved.
-- Add Qwen pooled index caching, optimized N-gram lookup, compiled tensor operations, and phase-aware expert cache sizing, enabled in new or reset Qwen App settings. Add optional MTP draft-depth and zero-acceptance retry controls; MTP and its custom strategy remain off by default.
-- Add memory budgets and peak estimates to model settings, GiB cache sliders, a persistent slots-editing preference, and a two-step reset for the selected model's advanced settings. Slots editing is enabled by default.
-- Update new/reset App defaults, including LRU expert eviction, in-memory prompt caching, an 8,192-token output limit, and GPU-only ANE allocation. Saved settings are retained.
+- Reduce redundant attention, routing, N-gram, and MTP work, and batch large expert-cache evictions.
+- Add opt-in Qwen controls for bounded expert processing, N-gram caching, attention paths, prefill reads, and expert reuse between input processing and generation. Experimental options retain their existing defaults.
+- Make Throughput wait for pending model-setting changes and include additional runtime diagnostics in exported results.
+- Add opt-in Qwen and MiMo profiling tools. Profiling results and experimental presets are not release-wide speed guarantees.
 
-## Throughput and memory reporting
+## MiMo and attachments — preview
 
-- Add a 512-token output option alongside 128, 1,024, and 4,096 tokens, with matching server validation.
-- Fix Throughput sampling to `temperature=0` and `seed=42` for every trial and include sampling settings in exported results. Chat sampling is unaffected.
-- Report Whallm plus its Python inference process's physical memory footprint in Throughput and Status instead of MLX allocation or RSS. Retain sampled Status peaks between UI updates and reset them with Clear metric history.
-- Use nominal 10 ms memory sampling during model work and 1-second sampling while idle. Unavailable memory readings remain unavailable rather than falling back to a different metric.
+- Add the pinned MiMo-V2.6-Flash-RL installed model, native text/image processing, limited PCM WAV input, and bounded PDF/DOCX/PPTX/XLSX input.
+- Add Chat attachment pickers, drag-and-drop, quota indicators, upload progress, and cancellation. API media support remains model-specific.
+- Add optional bounded layer-major text prefill for MiMo; its App default remains off.
+- Include an opt-in MCP client with explicit, single-use tool approvals. Inference APIs do not execute MCP tools automatically; an integrated App Agent and approval UI are not included.
 
-## Packaging and documentation
+MiMo remains preview support, not completed full-model or end-to-end acceptance. Audio is limited to 24 kHz, 16-bit PCM WAV, up to 30 seconds per clip and two clips per request. Asset uploads are limited to 8 MiB per file; document and combined media limits also apply. Video, audio output, and full Office-format fidelity are not supported. See the [MiMo input limits and validation status](https://github.com/yanun0323/Whallm/blob/v1.1.9/docs/mimo-development.md).
 
-- Validate framework-based Python environments and restore required Python framework symlinks when packaging.
-- Update multilingual documentation, preserve historical benchmark context, and keep local research archives out of the public checkout.
-- Expand regression coverage to 135 Swift tests and 464 Python tests.
+## Validation and upgrade notes
 
-## Notes
+- 645 Python tests passed with `MLX_ENABLE_TF32=0`.
+- 169 Swift tests passed; four optional installed-model checks were skipped.
+- The local App and extracted ZIP passed strict signature checks and English, Simplified Chinese, and Traditional Chinese startup with access to the project build directory and Swift resource bundle denied.
+- The release workflow repeats these checks on the signed, notarized package and the downloaded GitHub ZIP before publishing the Sparkle update feed.
 
-Acceleration changes have component and regression coverage, but this release does not claim a new full-model speedup or a completed DeepSeek V4.1 quality validation. Historical PR measurements are not measurements of this release. The previously observed Qwen MTP/non-MTP output difference remains unresolved. Fixed seeds do not guarantee identical output across versions, cache states, or acceleration settings.
+No new full-model performance benchmark was run for this release. Historical measurements retain their original workloads and limitations. The previously observed Qwen MTP/non-MTP output difference remains unresolved; fixed seeds do not guarantee identical output across acceleration settings.
 
 Requires Apple Silicon and macOS 15 or later. Model weights are downloaded separately. This is a distribution build; local-only debug and Dry run features are not included.
 
-[Full changelog](https://github.com/yanun0323/Whallm/compare/v1.1.7...v1.1.8)
+[Full changelog](https://github.com/yanun0323/Whallm/compare/v1.1.8...v1.1.9)
 ]]></description>
-            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.8/Whallm-macOS-arm64.zip" length="187049638" type="application/octet-stream" sparkle:edSignature="kxR6Jz6h1QAz2u0KVhc+mwCKDH2v39D/Zf0WfWdolcz10jM8pf2Zx6qBc7eViKSQ7gQhwSVGudBLMZ4f9QHKCg=="/>
+            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.9/Whallm-macOS-arm64.zip" length="201755188" type="application/octet-stream" sparkle:edSignature="EuO+OejqPSxqehKGmjWWsI7kCwyYfaFXgLwIJGoJ8TkeFl5yY6gcEJA8bMepCV4RDxOJhy63WMZ70ImfvwBYDw=="/>
         </item>
         <item>
             <title>1.1.7</title>
@@ -94,6 +94,6 @@ This alpha adds a Throughput benchmark page and updates model defaults. Select *
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 44s5Nq8mmmKKi1SkycZLOzL1lMi8aPSih4Qm2vnvoaPeLmhOk3IT6zb7MTAy7JA/Qr9TEtEHdvjhclrl13VTAA==
-length: 8012
+edSignature: MSxQoyIOqPiqUKj5cfa4eAOVOzkrfDnc2t2lqDgLS78jfwNKY4Iwp6tgg+jOTb3vcupkx6VO7+08DIbMWcyqAQ==
+length: 8262
 -->
