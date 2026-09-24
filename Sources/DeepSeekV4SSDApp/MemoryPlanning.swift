@@ -186,11 +186,20 @@ struct MemoryPlanningProfile {
       auxiliaryState = Double(descriptor.layerCount) * window * dim * (v41 ? 4 : 2 * activationBytes)
     }
     let auxiliary = auxiliaryWeights + auxiliaryExperts + auxiliaryState
-    // App disables ordinary Prompt Cache reuse for MTP/DSpark. Otherwise reserve
-    // only snapshots that fit the entry count and budget, not an empty 8 GiB arena.
-    // Runtime always keeps its newest entry, even when that entry exceeds the budget.
-    let retained = s.promptCacheMode == .off || mtp || dspark ? 0
-      : min(Double(s.promptCacheEntries) * cache.bytes, max(cache.bytes, Double(s.promptCacheMemoryGiB) * ExpertMemory.gib))
+    // V4.1 DSpark retains one target + draft snapshot per request. The App still
+    // disables reuse for V4 DSpark and Qwen MTP.
+    let promptCacheEnabled = s.promptCacheMode != .off && !mtp && (!dspark || v41)
+    let snapshotBytes = cache.bytes + (dspark ? auxiliaryState : 0)
+    // Ordinary entries count requests, each retaining up to three states: first
+    // prefill checkpoint, prompt end, and final output. A prefix hit can send a
+    // short suffix through chunked prefill even when layer-major is enabled;
+    // that first checkpoint can already contain nearly the entire context.
+    let statesPerRequest = dspark ? 1.0 : 3.0
+    // Reserve only retained states that fit the budget, not an empty arena.
+    // Runtime always keeps one newest state, even when it exceeds the budget.
+    let retained = !promptCacheEnabled ? 0
+      : min(Double(s.promptCacheEntries) * statesPerRequest * snapshotBytes,
+        max(snapshotBytes, Double(s.promptCacheMemoryGiB) * ExpertMemory.gib))
     let conversation = cache.bytes + retained
     let allocator = ExpertMemory.gib // runtime's actual mx.set_cache_limit
     // Aligned prefill staging is retained by reader workers until unload.
@@ -269,9 +278,11 @@ struct MemoryPlanningProfile {
     // Verification forks main state only in speculative generation, not all phases.
     let verification = mtp || dspark ? cache.bytes : 0
     let decodeWork = max(attentionWork(decodeQueries), moeWork(decodeQueries), decodeQueries * vocab * 4) + cache.growth
-    // Plain chunked prefill retains a first-chunk and a last-chunk checkpoint.
-    // One full snapshot is included in retained; keep only the small first one here.
-    let checkpoint = retained > 0 && !layerMajor ? min(cache.bytes, cache.bytes * step / tokens) : 0
+    // Ordinary chunked prefill holds two in-flight checkpoints until generation
+    // completes, before retention/eviction runs. Budget them separately from old
+    // retained requests, including a short-suffix hit with layer-major enabled.
+    // DSpark stores its snapshot immediately, so it is already in retained.
+    let checkpoint = promptCacheEnabled && !dspark ? 2 * cache.bytes : 0
     let auxiliaryTensor = mtp ? manifest.mtp?.commonTensors : dspark ? manifest.dspark?.commonTensors : nil
     let loadingCopy = max(largestTensor, auxiliaryTensor?.map { Double($0.length) }.max() ?? 0)
     let loading = MemoryStageEstimate(model: weights, conversation: 0, auxiliary: auxiliaryWeights,

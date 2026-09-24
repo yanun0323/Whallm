@@ -191,6 +191,25 @@ class BlockPromptCacheTests(unittest.TestCase):
         self.assertEqual(first_identity[1][1]["length"], 1)
         self.assertEqual(first_identity[1][1]["parent"], first_identity[1][0]["key"])
 
+    def test_previous_contract_cannot_reuse_or_shadow_new_prefix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            # Contract 1 writers could omit a consumed EOS from the token list.
+            with patch('deepseek_v4_ssd.generation._PROMPT_CACHE_CONTRACT_FORMAT', 1):
+                legacy = _runtime(directory)
+                legacy._persist_prompt_cache(_PromptCacheEntry([_FixtureCache(99)], [1, 2]))
+                old_path = legacy._persistent_prompt_caches[0].path
+            current = _runtime(directory)
+            self.assertEqual(current._scan_persistent_prompt_caches(), [])
+            current._persist_prompt_cache(_PromptCacheEntry([_FixtureCache(2)], [1, 2]))
+            saved = current._scan_persistent_prompt_caches()
+            self.assertEqual(len(saved), 1)
+            self.assertNotEqual(saved[0].path, old_path)
+            with patch.object(current.support, 'new_cache', side_effect=lambda _: [_FixtureCache()]):
+                acquired = current._acquire_prompt_cache([1, 2, 3])
+            self.assertEqual(acquired.tokens, [1, 2])
+            self.assertEqual(acquired.cache[0].state[0].tolist(), [2])
+
     def test_identical_prefixes_share_one_immutable_payload(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

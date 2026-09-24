@@ -101,6 +101,8 @@ class V41DSparkTests(unittest.TestCase):
         support = get_support('deepseek-v4.1')
         support.validate_config(RuntimeConfig(dspark_enabled=True, v41_layer_major_prefill=True,
                                              v41_next_layer_prefetch=True))
-        for setting in ('v41_ced_prefill', 'dspark_prompt_cache', 'dspark_sequential_verification'):
+        # V4.1 DSpark always reuses the prompt cache, so the experimental flag is accepted.
+        support.validate_config(RuntimeConfig(dspark_enabled=True, dspark_prompt_cache=True))
+        for setting in ('v41_ced_prefill', 'dspark_sequential_verification'):
             with self.assertRaises(ValueError):
                 support.validate_config(RuntimeConfig(dspark_enabled=True, **{setting: True}))

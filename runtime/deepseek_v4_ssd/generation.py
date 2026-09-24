@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib
+import itertools
 import json
 import os
 import secrets
@@ -138,6 +139,9 @@ class _PromptCacheEntry:
     cache: Any
     tokens: list[int]
     approximation_mode: str = EXACT_APPROXIMATION_MODE
+    # Entries stored by one request share a number. The entry limit counts
+    # requests, so a prompt-end snapshot survives next to its final state.
+    request: int | None = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +171,12 @@ class _DSparkPromptCacheEntry:
     target_layers: tuple[int, ...]
 
 
+def _dspark_context_count(dspark) -> int:
+    # V4 DSpark keeps one draft context per layer; V4.1 keeps one per MTP stage.
+    stages = getattr(dspark, "layers", None) or getattr(dspark, "mtp", None)
+    return len(stages or ())
+
+
 @dataclass(frozen=True)
 class _PersistentDSparkPromptCacheEntry:
     tokens: list[int]
@@ -176,10 +186,14 @@ class _PersistentDSparkPromptCacheEntry:
     target_layers: tuple[int, ...]
 
 
+_PROMPT_CACHE_REQUESTS = itertools.count(1)
 _PROMPT_CACHE_FORMAT = 5
 _SUPPORTED_PROMPT_CACHE_FORMATS = frozenset((_PROMPT_CACHE_FORMAT,))
 _PROMPT_CACHE_BLOCK_SIZE = 128
-_PROMPT_CACHE_CONTRACT_FORMAT = 1
+# Contract 1 final states could consume EOS without listing it in their tokens.
+# Changing the identity rejects those disk entries and prevents immutable old
+# payloads from shadowing correctly rebuilt prefixes. DSpark is unaffected.
+_PROMPT_CACHE_CONTRACT_FORMAT = 2
 _DSPARK_PROMPT_CACHE_FORMAT = 3
 
 
@@ -1240,9 +1254,7 @@ class ModelRuntime:
         if self._prompt_cache_directory is not None:
             dspark = getattr(self.model, "dspark", None)
             mtp = getattr(self.model, "mtp", None)
-            if dspark is not None and getattr(
-                self.config, "dspark_prompt_cache", False
-            ):
+            if self._dspark_prompt_cache_enabled(dspark):
                 self._persistent_dspark_prompt_caches = (
                     self._scan_persistent_dspark_prompt_caches(dspark)
                 )
@@ -1355,11 +1367,7 @@ class ModelRuntime:
                     begin_request = getattr(cache, "begin_route_request", None)
                     if callable(begin_request):
                         begin_request()
-                dspark_prompt_cache_enabled = bool(
-                    dspark is not None
-                    and getattr(self.config, "dspark_prompt_cache", False)
-                    and self._prompt_cache_enabled()
-                )
+                dspark_prompt_cache_enabled = self._dspark_prompt_cache_enabled(dspark)
                 dspark_prompt_cache_source = "disabled"
                 if dspark_prompt_cache_enabled:
                     dspark_entry, dspark_prompt_cache_source = (
@@ -1390,6 +1398,7 @@ class ModelRuntime:
                             options.approximation_mode,
                         )
                     )
+                request = entry.request = next(_PROMPT_CACHE_REQUESTS)
                 prompt_cache = entry.cache
                 cache_tokens = entry.tokens
                 reused_tokens = len(cache_tokens)
@@ -1468,6 +1477,11 @@ class ModelRuntime:
                                     dspark.prefill_context(hidden, reused_tokens)
                                     del hidden
                             dspark_prefilled = len(prompt_tokens) - 1
+                            if dspark_prompt_cache_enabled and dspark_prefilled > reused_tokens:
+                                self._snapshot_dspark_prompt_cache(
+                                    prompt_tokens, dspark_prefilled, prompt_cache,
+                                    dspark.cache_state(), dspark,
+                                )
                         yield from self._stream_dspark(
                             prompt_tokens,
                             prompt_cache,
@@ -1510,6 +1524,7 @@ class ModelRuntime:
                                 self.support.clone_cache(prompt_cache),
                                 list(prompt_tokens[:-1]),
                                 options.approximation_mode,
+                                request,
                             )
                             self.metrics.record_prompt_cache_snapshot(
                                 time.perf_counter() - snapshot_started
@@ -1552,8 +1567,9 @@ class ModelRuntime:
                                 self.support.evaluate_cache(prompt_cache)
                                 cache_seconds = time.perf_counter() - cache_started
                                 self.metrics.record(response, step_seconds, cache_seconds)
-                                if response.finish_reason != "stop":
-                                    cache_tokens.append(int(response.token))
+                                # mlx_lm feeds each token, EOS included, to the
+                                # cache before yielding it.
+                                cache_tokens.append(int(response.token))
                                 if response.finish_reason is not None:
                                     completed = True
                                 yield GeneratedPiece(
@@ -1585,7 +1601,7 @@ class ModelRuntime:
                                 cache = self.support.new_cache(self.model)
                                 self.support.restore_cache(cache, snapshot.state)
                                 self._store_prompt_cache(_PromptCacheEntry(
-                                    cache, list(snapshot.tokens),
+                                    cache, list(snapshot.tokens), request=request,
                                 ))
                         self._store_prompt_cache(entry, persist=True)
 
@@ -1814,6 +1830,16 @@ class ModelRuntime:
             and getattr(self.config, "prompt_cache_entries", 2) > 0
         )
 
+    def _dspark_prompt_cache_enabled(self, dspark) -> bool:
+        return bool(
+            dspark is not None
+            and self._prompt_cache_enabled()
+            and (
+                self.support.dspark_reuses_prompt_cache
+                or getattr(self.config, "dspark_prompt_cache", False)
+            )
+        )
+
     def _acquire_prompt_cache(
         self,
         prompt_tokens: list[int],
@@ -1872,13 +1898,15 @@ class ModelRuntime:
         entry: _DSparkPromptCacheEntry,
         dspark,
     ) -> bool:
-        context_count = len(getattr(dspark, "layers", ()))
         return bool(
             entry.tokens
             and entry.revision == str(getattr(self.installed, "revision", ""))
             and entry.target_layers == tuple(dspark.target_layers)
-            and len(entry.context_state) == context_count
-            and all(state is not None for state in entry.context_state)
+            and len(entry.context_state) == _dspark_context_count(dspark)
+            and all(
+                state is not None and _cache_state_arrays(state)
+                for state in entry.context_state
+            )
         )
 
     def _clone_dspark_prompt_cache_entry(
@@ -1935,7 +1963,7 @@ class ModelRuntime:
         return (
             _DSparkPromptCacheEntry(
                 self.support.new_cache(self.model),
-                tuple(None for _ in getattr(dspark, "layers", ())),
+                (None,) * _dspark_context_count(dspark),
                 [],
                 str(getattr(self.installed, "revision", "")),
                 tuple(dspark.target_layers),
@@ -2034,8 +2062,14 @@ class ModelRuntime:
             1,
             int(getattr(self.config, "prompt_cache_memory_gib", 8)),
         ) * 1024**3
-        while len(self._prompt_caches) > maximum:
-            self._prompt_caches.pop()
+
+        def request(cached: _PromptCacheEntry) -> int:
+            return cached.request if cached.request is not None else id(cached)
+
+        recent = list(dict.fromkeys(map(request, self._prompt_caches)))[:maximum]
+        self._prompt_caches = [
+            cached for cached in self._prompt_caches if request(cached) in recent
+        ]
         while len(self._prompt_caches) > 1 and self._prompt_cache_bytes() > memory_limit:
             self._prompt_caches.pop()
         if persist and entry.approximation_mode == EXACT_APPROXIMATION_MODE:
