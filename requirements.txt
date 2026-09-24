@@ -5,3 +5,6 @@ numpy==2.3.5
 sentencepiece==0.2.2
 tiktoken==0.13.0
 transformers==5.12.1
+# Bounded PNG/JPEG/WebP decoding for MiMo image input; no remote processor code.
+pillow==12.3.0
+pypdfium2==5.10.1

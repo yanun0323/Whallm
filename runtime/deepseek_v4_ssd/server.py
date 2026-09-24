@@ -34,6 +34,8 @@ from .generation import (
 )
 from .io_metrics import EXPERT_FILE_CACHE_POLICIES
 from .manifest import InstalledModel
+from .media import (AssetStore, MediaError, ordered_content, IMAGE_TYPES, MAX_ASSET_BYTES,
+                    MAX_REQUEST_MEDIA_BYTES, MAX_IMAGES, MAX_IMAGE_PIXELS, MAX_MEDIA_TOKENS)
 from .model_support import get_support, support_for_installed, support_for_runtime
 from .model_manager import (
     MODEL_IDS,
@@ -147,8 +149,10 @@ class OpenAIServer(ThreadingHTTPServer):
         self.log_level = log_level
         self.metrics = GenerationMetrics()
         self.status_memory = None
+        self.assets = None
         super().__init__(address, OpenAIHandler)
         try:
+            self.assets = AssetStore()
             self.status_memory = StatusMemorySampler()
             self.status_memory.start()
         except BaseException:
@@ -156,6 +160,8 @@ class OpenAIServer(ThreadingHTTPServer):
             raise
 
     def server_close(self):
+        if self.assets is not None:
+            self.assets.close()
         if self.status_memory is not None:
             self.status_memory.close()
         super().server_close()
@@ -308,11 +314,16 @@ class OpenAIHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         self._run(self._put)
 
+    def do_DELETE(self) -> None:
+        self._run(self._delete)
+
     def _run(self, action) -> None:
         try:
             action()
         except APIError as error:
             self._json(error.status, error.body())
+        except MediaError as error:
+            self._json(400, APIError(str(error), param="content", code="invalid_media").body())
         except ModelCatalogError as error:
             self._json(
                 400,
@@ -373,6 +384,25 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         elif path == "/api/status":
             self._authorize()
             self._json(200, self._status())
+        elif path == "/api/capabilities":
+            self._authorize()
+            from .model_support.catalog import DESCRIPTORS
+            from .documents import DOCUMENT_TYPES, MAX_DOCUMENTS, MAX_PAGES, MAX_TEXT_BYTES
+            from .mimo.audio_processor import AUDIO_TYPES, MAX_AUDIOS, MAX_AUDIO_SECONDS, SAMPLE_RATE
+            self._json(200, {"version": 1, "models": {
+                d.api_model_id: {"input": ["text"] + (["image"] if d.supports("imageInput") else [])
+                    + (["document"] if d.supports("documentInput") else [])
+                    + (["audio"] if d.supports("audioInput") else [])}
+                for d in DESCRIPTORS}, "media": {"image_mime_types": sorted(IMAGE_TYPES),
+                "document_mime_types": sorted(DOCUMENT_TYPES), "max_documents": MAX_DOCUMENTS,
+                "audio_mime_types": sorted(AUDIO_TYPES), "max_audios": MAX_AUDIOS,
+                "max_audio_seconds": MAX_AUDIO_SECONDS, "audio_sample_rate": SAMPLE_RATE,
+                "audio_pcm_bits": 16, "audio_channels": [1, 2],
+                "max_document_pages_slides_sheets": MAX_PAGES, "max_document_text_bytes": MAX_TEXT_BYTES,
+                "max_asset_bytes": MAX_ASSET_BYTES, "max_request_bytes": MAX_REQUEST_MEDIA_BYTES,
+                "max_images": MAX_IMAGES, "max_decoded_pixels": MAX_IMAGE_PIXELS,
+                "max_media_tokens": MAX_MEDIA_TOKENS, "asset_ttl_seconds": 900,
+                "remote_urls": False, "upload_path": "/api/assets"}})
         elif path == "/v1/models":
             self._authorize()
             self._json(
@@ -388,7 +418,9 @@ class OpenAIHandler(BaseHTTPRequestHandler):
 
     def _post(self) -> None:
         path = urlsplit(self.path).path
-        if path == "/v1/chat/completions":
+        if path == "/api/assets":
+            self._upload_asset()
+        elif path == "/v1/chat/completions":
             self._authorize()
             payload = self._request_json()
             with ClientConnection(self.connection), self.app.status_memory.activity(), self.app.model_manager.request(payload.get("model")) as model:
@@ -479,11 +511,41 @@ class OpenAIHandler(BaseHTTPRequestHandler):
     def _put(self) -> None:
         raise APIError("Route not found.", status=404, code="not_found")
 
+    def _asset_owner(self):
+        return hashlib.sha256((self.app.api_key or "anonymous").encode()).hexdigest()
+
+    def _content(self, value, param):
+        try:
+            return ordered_content(value, asset_store=self.app.assets, owner=self._asset_owner())
+        except MediaError as error:
+            raise APIError(str(error), param=param, code="invalid_media") from error
+
+    def _upload_asset(self):
+        self._authorize()
+        self.close_connection = True
+        lengths = self.headers.get_all("Content-Length", [])
+        if (len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit()
+                or self.headers.get("Transfer-Encoding") or self.headers.get("Content-Encoding")):
+            raise APIError("Upload requires one Content-Length and an uncompressed body.", param="file")
+        self.connection.settimeout(30)
+        result = self.app.assets.put(self.rfile, int(lengths[0]), self.headers.get_content_type(), self._asset_owner())
+        self._json(201, result)
+
+    def _delete(self):
+        self._authorize()
+        path = urlsplit(self.path).path
+        if not path.startswith("/api/assets/"):
+            raise APIError("Route not found.", status=404, code="not_found")
+        key = path.removeprefix("/api/assets/")
+        self.app.assets.delete(key, self._asset_owner())
+        self._json(200, {"id": key, "deleted": True})
+
     def _chat(self, payload: dict[str, Any], model: ModelRequest) -> None:
         runtime = model.runtime
         tools, tool_choice = _tool_request(payload)
-        messages = _messages(payload.get("messages"))
         support = support_for_runtime(runtime)
+        messages = _messages(payload.get("messages"), content_parser=(
+            self._content if any(support.descriptor.supports(f) for f in ("imageInput", "documentInput", "audioInput")) else None))
         thinking_mode, reasoning_effort = _reasoning_settings(
             payload,
             support=support,
@@ -600,9 +662,10 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         request = dict(payload)
         if "max_output_tokens" in request:
             request["max_tokens"] = request["max_output_tokens"]
-        messages = _response_messages(payload)
-        tools, tool_choice, response_tools = _response_tool_request(payload)
         support = support_for_runtime(runtime)
+        messages = _response_messages(payload, content_parser=(
+            self._content if any(support.descriptor.supports(f) for f in ("imageInput", "documentInput", "audioInput")) else None))
+        tools, tool_choice, response_tools = _response_tool_request(payload)
         if support.prefer_tool_first(messages, tool_choice, response_tools):
             tool_choice = ToolChoice("required")
         thinking_mode, reasoning_effort = _reasoning_settings(
@@ -1555,7 +1618,7 @@ def _reasoning_settings(
     return support.reasoning_settings(thinking_mode, effort)
 
 
-def _response_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _response_messages(payload: dict[str, Any], *, content_parser=None) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     instructions = payload.get("instructions")
     if instructions is not None:
@@ -1566,7 +1629,7 @@ def _response_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
     value = payload.get("input")
     if isinstance(value, str):
         messages.append({"role": "user", "content": value})
-        return _messages(messages, allow_assistant_final=True)
+        return _messages(messages, allow_assistant_final=True, content_parser=content_parser)
     if not isinstance(value, list) or not value:
         raise APIError("input must be a string or a non-empty array.", param="input")
 
@@ -1613,8 +1676,8 @@ def _response_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
             output = raw.get("output")
             if not isinstance(call_id, str) or not call_id:
                 raise APIError("call_id must be a non-empty string.", param=f"{param}.call_id")
-            if not isinstance(output, str):
-                raise APIError("output must be a string.", param=f"{param}.output")
+            if not isinstance(output, str) and not (content_parser is not None and isinstance(output, list)):
+                raise APIError("output must be text or supported content parts.", param=f"{param}.output")
             messages.append(
                 {"role": "tool", "tool_call_id": call_id, "content": output}
             )
@@ -1623,7 +1686,7 @@ def _response_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:
             raise APIError("Only text messages and function calls are supported.", param=param)
         messages.append({"role": raw.get("role"), "content": raw.get("content")})
     flush_calls()
-    return _messages(messages, allow_assistant_final=True)
+    return _messages(messages, allow_assistant_final=True, content_parser=content_parser)
 
 
 def _response_tool_request(
@@ -2092,6 +2155,7 @@ def _messages(
     value: Any,
     *,
     allow_assistant_final: bool = False,
+    content_parser=None,
 ) -> list[dict[str, Any]]:
     if not isinstance(value, list) or not value:
         raise APIError("messages must be a non-empty array.", param="messages")
@@ -2114,7 +2178,7 @@ def _messages(
         content = (
             ""
             if role == "assistant" and content_value is None and tool_calls
-            else _message_text(content_value, f"messages.{index}.content")
+            else (content_parser or _message_text)(content_value, f"messages.{index}.content")
         )
         message: dict[str, Any] = {"role": role, "content": content}
         if tool_calls:

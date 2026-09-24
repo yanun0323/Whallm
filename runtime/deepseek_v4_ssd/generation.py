@@ -28,6 +28,7 @@ from .expert_cache import CacheMetrics
 from .fp8_cache import MXFP8PoolingCache
 from .io_metrics import ProcessDiskIO, process_disk_io_snapshot
 from .manifest import InstalledModel
+from .media import MediaRequest, PreparedPrompt, MediaError, media_request, expand_documents
 from .model_support import get_support, support_for_installed, support_for_runtime
 from .model_support.state import (
     _RawEvalCacheList,
@@ -1271,9 +1272,20 @@ class ModelRuntime:
         tools: list[dict[str, Any]] | None = None,
         tool_choice: ToolChoice = ToolChoice(),
         reasoning_effort: str = "low",
-    ) -> str:
+    ) -> str | MediaRequest:
         if self._codec is None:
             self._codec = self.support.open_codec(self.installed.root, self.tokenizer)
+        messages = expand_documents(messages, enabled=self.support.descriptor.supports("documentInput"))
+        request = media_request(messages, thinking_mode, tools, tool_choice, reasoning_effort)
+        if request is not None:
+            from .media import ImagePart, AudioPart
+            for message in request.messages:
+                if isinstance(message.get("content"), tuple):
+                    for part in message["content"]:
+                        feature = "audioInput" if isinstance(part, AudioPart) else "imageInput" if isinstance(part, ImagePart) else None
+                        if feature and not self.support.descriptor.supports(feature):
+                            raise MediaError("This model does not support these media inputs.")
+            return self.support.validate_media(request)
         return self._codec.encode(
             messages,
             thinking_mode,
@@ -1292,7 +1304,7 @@ class ModelRuntime:
 
     def stream(
         self,
-        prompt: str | list[int],
+        prompt: str | list[int] | MediaRequest | PreparedPrompt,
         options: GenerationOptions,
     ) -> Iterator[GeneratedPiece]:
         check_cancelled()
@@ -1318,8 +1330,17 @@ class ModelRuntime:
                 # MLX gives fresh request threads the same initial random state.
                 # Reset on the generating thread, after model loading and before
                 # any normal, DSpark, or MTP sampling (including cached prompts).
+                prepared = self.support.prepare_input(self, prompt) if isinstance(prompt, MediaRequest) else (
+                    prompt if isinstance(prompt, PreparedPrompt) else None)
+                has_media = prepared is not None
+                if has_media:
+                    if getattr(self.model, "mtp", None) is not None or getattr(self.model, "dspark", None) is not None:
+                        raise MediaError("Media inputs do not support speculative decoding.")
+                    prepared.validate(self.model.args.hidden_size)
+                # Encoder initialization may consume the MLX RNG; seed sampling afterwards.
                 mx.random.seed(options.seed if options.seed is not None else secrets.randbits(32))
-                prompt_tokens = list(prompt) if isinstance(prompt, list) else self._encode_prompt(prompt)
+                prompt_tokens = list(prepared.token_ids) if has_media else (
+                    list(prompt) if isinstance(prompt, list) else self._encode_prompt(prompt))
                 available_tokens = getattr(
                     self.installed, "maximum_context", 1_048_576
                 ) - len(prompt_tokens)
@@ -1363,7 +1384,7 @@ class ModelRuntime:
                             [],
                             options.approximation_mode,
                         )
-                        if dspark is not None
+                        if dspark is not None or has_media
                         else self._acquire_prompt_cache(
                             prompt_tokens,
                             options.approximation_mode,
@@ -1379,7 +1400,7 @@ class ModelRuntime:
                     getattr(self.config, "prefill_step_size", 128),
                     len(generation_prompt),
                 )
-                use_layer_major = self.support.uses_layer_major_prefill(
+                use_layer_major = not has_media and self.support.uses_layer_major_prefill(
                     self.config, len(generation_prompt),
                 )
                 self.metrics.start(
@@ -1402,7 +1423,8 @@ class ModelRuntime:
                 def record_prefill_checkpoint(processed: int, total: int) -> None:
                     check_cancelled()
                     if (
-                        not self._prompt_cache_enabled()
+                        has_media
+                        or not self._prompt_cache_enabled()
                         or options.approximation_mode != EXACT_APPROXIMATION_MODE
                         or use_layer_major
                         or processed <= 0
@@ -1509,6 +1531,7 @@ class ModelRuntime:
                                 prompt_cache=prompt_cache,
                                 prefill_step_size=step_size,
                                 prompt_progress_callback=record_prefill_checkpoint,
+                                **({"input_embeddings": prepared.input_embeddings} if has_media else {}),
                             )
                         )
                         with closing(responses):
@@ -1549,7 +1572,7 @@ class ModelRuntime:
                         # expert buffers. Never run MLX cleanup on the observer.
                         mx.synchronize(self._generation_stream)
                     self.metrics.finish(self._expert_metrics())
-                    if completed and dspark is None and mtp is None:
+                    if completed and not has_media and dspark is None and mtp is None:
                         if (
                             options.approximation_mode == EXACT_APPROXIMATION_MODE
                             and prefill_persist_entry is not None
