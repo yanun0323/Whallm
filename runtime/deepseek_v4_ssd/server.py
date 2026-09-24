@@ -1676,7 +1676,7 @@ def _response_messages(payload: dict[str, Any], *, content_parser=None) -> list[
             output = raw.get("output")
             if not isinstance(call_id, str) or not call_id:
                 raise APIError("call_id must be a non-empty string.", param=f"{param}.call_id")
-            if not isinstance(output, str) and not (content_parser is not None and isinstance(output, list)):
+            if not isinstance(output, (str, list)):
                 raise APIError("output must be text or supported content parts.", param=f"{param}.output")
             messages.append(
                 {"role": "tool", "tool_call_id": call_id, "content": output}
