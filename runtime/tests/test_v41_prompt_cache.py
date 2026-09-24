@@ -18,7 +18,7 @@ from deepseek_v4_ssd.deepseek_v41.config import ModelArgs
 from deepseek_v4_ssd.deepseek_v41.model import Model
 from deepseek_v4_ssd.deepseek_v41_ssd import DeepSeekV41ForCausalLM, DeepSeekV41PromptCache
 from deepseek_v4_ssd.expert_cache import CacheMetrics
-from deepseek_v4_ssd.generation import ModelRuntime, GenerationOptions
+from deepseek_v4_ssd.generation import ModelRuntime, GenerationOptions, _PromptCacheEntry
 from deepseek_v4_ssd.model import RuntimeConfig
 from deepseek_v4_ssd.model_support import get_support
 from deepseek_v4_ssd.model_support.state import _encode_cache_state, _decode_cache_state
@@ -240,6 +240,43 @@ class V41PromptCacheTests(unittest.TestCase):
             self.assertEqual(actual, expected)
             self.assertEqual(metrics['prompt_cache_reused_tokens'], len(prompt + greedy))
             runtime.close()
+
+    def test_upgrade_ignores_legacy_eos_state_and_rebuilds_reusable_disk_cache(self):
+        prompt = [1, 2, 3, 4, 5, 6, 7, 8]
+        cache = self.model.make_cache()
+        logits = self.model(mx.array([prompt]), cache=cache)
+        greedy = []
+        for _ in range(3):
+            greedy.append(int(mx.argmax(logits[:, -1], axis=-1).item()))
+            logits = self.model(mx.array([[greedy[-1]]]), cache=cache)
+        mx.eval(logits)
+        eos = greedy[-1]
+        self.assertNotIn(eos, greedy[:-1])
+        follow_up = prompt + greedy + [9, 10]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = dict(prompt_cache_entries=1, persistent_prompt_cache=True,
+                          prompt_cache_directory=str(root / 'cache'))
+            # Reproduce the pre-fix disk contract: state consumed EOS, tokens did not.
+            with patch('deepseek_v4_ssd.generation._PROMPT_CACHE_CONTRACT_FORMAT', 1):
+                with self._runtime(root, self._tokenizer(eos), **config) as legacy:
+                    legacy._persist_prompt_cache(_PromptCacheEntry(cache, prompt + greedy[:-1]))
+                    self.assertEqual(len(legacy._persistent_prompt_caches), 1)
+            with self._runtime(root, self._tokenizer(eos), prompt_cache_entries=0) as cold:
+                expected, _ = self._generate(cold, follow_up)
+            with self._runtime(root, self._tokenizer(eos), **config) as upgraded:
+                self.assertEqual(upgraded._persistent_prompt_caches, [])
+                actual, metrics = self._generate(upgraded, follow_up)
+                self.assertEqual(actual, expected)
+                self.assertEqual(metrics['prompt_cache_reused_tokens'], 0)
+                for entry in upgraded._prompt_caches:
+                    self.assertEqual(entry.cache[0].offset, len(entry.tokens))
+            with self._runtime(root, self._tokenizer(eos), **config) as reopened:
+                actual, metrics = self._generate(reopened, follow_up)
+                self.assertEqual(actual, expected)
+                self.assertGreater(metrics['prompt_cache_reused_tokens'], 0)
+                for entry in reopened._prompt_caches:
+                    self.assertEqual(entry.cache[0].offset, len(entry.tokens))
 
     def test_dspark_requests_reuse_the_target_and_draft_prompt_snapshot(self):
         from deepseek_v4_ssd.deepseek_v41.dspark import DSpark

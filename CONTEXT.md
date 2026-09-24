@@ -27,3 +27,19 @@ This project builds a memory-bounded Apple Silicon runtime for
 - **model kind**: The stable identity that selects a model support package.
 - **model support package**: The installation rules, model loading, conversation format,
   and state operations needed to support one model kind.
+
+## Prompt cache compatibility and memory
+
+Ordinary disk prompt caches use compatibility contract 2. Earlier caches are
+ignored and rebuilt on demand because their saved token lists could omit an EOS
+that the main model had already consumed. The installed model is unchanged;
+DSpark uses a separate cache contract and is unaffected by this invalidation.
+
+The in-memory entry limit counts requests. An ordinary request can retain up to
+three target states; a V4.1 DSpark request retains one target-and-draft snapshot.
+The App estimates these retained states within the configured cache budget,
+except that the runtime always keeps the newest state even if it exceeds that
+budget. It also allows for two in-flight ordinary snapshots before eviction.
+A reused prefix can make the first snapshot nearly full-sized, even when
+layer-major prefill is enabled. These are conservative capacity estimates, not
+measured peaks or a process-wide memory limit.

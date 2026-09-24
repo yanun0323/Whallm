@@ -190,7 +190,10 @@ _PROMPT_CACHE_REQUESTS = itertools.count(1)
 _PROMPT_CACHE_FORMAT = 5
 _SUPPORTED_PROMPT_CACHE_FORMATS = frozenset((_PROMPT_CACHE_FORMAT,))
 _PROMPT_CACHE_BLOCK_SIZE = 128
-_PROMPT_CACHE_CONTRACT_FORMAT = 1
+# Contract 1 final states could consume EOS without listing it in their tokens.
+# Changing the identity rejects those disk entries and prevents immutable old
+# payloads from shadowing correctly rebuilt prefixes. DSpark is unaffected.
+_PROMPT_CACHE_CONTRACT_FORMAT = 2
 _DSPARK_PROMPT_CACHE_FORMAT = 3
 
 

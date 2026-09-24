@@ -93,7 +93,7 @@ final class MemoryPlanningTests: XCTestCase {
     let off = try estimate(s)
     s.promptCacheMode = .memory
     XCTAssertEqual(try estimate(s).conversation - off.conversation,
-      min(Double(s.promptCacheEntries) * off.conversation,
+      min(3 * Double(s.promptCacheEntries) * off.conversation,
         max(off.conversation, 8 * ExpertMemory.gib)), accuracy: 1)
     s.estimateInputTokens = 262_144
     XCTAssertNil(p.estimate(s, mtpAvailable: true, dsparkAvailable: false))
@@ -170,7 +170,7 @@ final class MemoryPlanningTests: XCTestCase {
     }
   }
 
-  func testPromptCacheUsesActualSnapshotSizeAndIsDisabledForMTP() throws {
+  func testPromptCacheCountsGroupedSnapshotsAndIsDisabledForMTP() throws {
     let p = try profile()
     var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
     s.promptCacheMode = .off
@@ -178,7 +178,7 @@ final class MemoryPlanningTests: XCTestCase {
     s.promptCacheMode = .memory
     s.promptCacheEntries = 1
     let one = try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 1_024))
-    XCTAssertEqual(one.decoding.conversation, off.decoding.conversation * 2, accuracy: 1)
+    XCTAssertEqual(one.decoding.conversation, off.decoding.conversation * 4, accuracy: 1)
     s.promptCacheMemoryGiB = 16
     XCTAssertEqual(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 1_024)?.total, one.total)
     s.mtpEnabled = true
@@ -186,6 +186,48 @@ final class MemoryPlanningTests: XCTestCase {
     XCTAssertEqual(mtp.decoding.conversation, off.decoding.conversation)
     XCTAssertGreaterThan(mtp.decoding.auxiliary, mtp.prefill.auxiliary)
     XCTAssertEqual(mtp.decoding.auxiliary - mtp.prefill.auxiliary, off.decoding.conversation, accuracy: 1)
+  }
+
+  func testGroupedPromptCacheBudgetAndInFlightSnapshots() throws {
+    for kind in [ModelKind.deepSeekV4, .deepSeekV41, .qwen3_8FlashNext] {
+      let p = try kind == .qwen3_8FlashNext ? profile() : deepSeekProfile(kind)
+      for layerMajor in [false, true] {
+        var s = ModelAdvancedSettings.defaults(for: kind)
+        s.layerMajorPrefill = layerMajor
+        s.promptCacheMode = .off
+        let off = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 1_024))
+        let state = off.decoding.conversation
+        s.promptCacheMode = .memory
+        s.promptCacheEntries = 2
+        s.promptCacheMemoryGiB = 16
+        let enabled = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 1_024))
+        XCTAssertEqual(enabled.decoding.conversation - state, 6 * state, accuracy: 1)
+        // A short suffix after a prefix hit can use chunks even with layer-major enabled.
+        // Its two in-flight checkpoints are separate from the retained-cache budget.
+        XCTAssertEqual(enabled.prefill.temporary - off.prefill.temporary, 2 * state, accuracy: 1)
+        XCTAssertEqual(enabled.decoding.temporary - off.decoding.temporary, 2 * state, accuracy: 1)
+        s.promptCacheMode = .disk
+        XCTAssertEqual(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 1_024)?.total,
+          enabled.total)
+        s.promptCacheEntries = 128
+        s.promptCacheMemoryGiB = 1
+        let capped = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 32_768))
+        s.promptCacheMode = .off
+        let uncached = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 32_768))
+        XCTAssertEqual(capped.decoding.conversation - uncached.decoding.conversation,
+          max(uncached.decoding.conversation, ExpertMemory.gib), accuracy: 1)
+      }
+    }
+    let p = try profile()
+    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    s.promptCacheMode = .off
+    let off = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 262_144))
+    XCTAssertGreaterThan(off.decoding.conversation, ExpertMemory.gib)
+    s.promptCacheMode = .memory
+    s.promptCacheMemoryGiB = 1
+    let overBudget = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 262_144))
+    // Runtime keeps one newest state even when it exceeds the memory budget.
+    XCTAssertEqual(overBudget.decoding.conversation, 2 * off.decoding.conversation, accuracy: 1)
   }
 
   func testV41CountsCacheOwnersAndNativePackedByteWidths() throws {
@@ -264,7 +306,34 @@ final class MemoryPlanningTests: XCTestCase {
       }
       XCTAssertGreaterThan(a.decoding.auxiliary, a.prefill.auxiliary)
       s.promptCacheMode = .off
-      XCTAssertEqual(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768)?.total, b.total)
+      let off = try XCTUnwrap(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768))
+      if kind == .deepSeekV41 {
+        let draftState = 3.0 * 128 * 64 * 4
+        let bundle = off.decoding.conversation + draftState
+        XCTAssertEqual(b.decoding.conversation - off.decoding.conversation,
+          Double(s.promptCacheEntries) * bundle, accuracy: 1)
+        XCTAssertEqual(b.prefill.temporary, off.prefill.temporary)
+        XCTAssertEqual(b.decoding.temporary, off.decoding.temporary)
+        s.promptCacheMode = .disk
+        XCTAssertEqual(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768)?.total,
+          b.total)
+        s.promptCacheEntries = 128
+        s.promptCacheMemoryGiB = 1
+        let capped = try XCTUnwrap(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768))
+        XCTAssertEqual(capped.decoding.conversation - off.decoding.conversation, ExpertMemory.gib, accuracy: 1)
+        var largeConfig = p.config
+        largeConfig["head_dim"] = 512
+        let large = MemoryPlanningProfile(kind: kind, manifest: manifest, config: largeConfig)
+        s.promptCacheMode = .off
+        let largeOff = try XCTUnwrap(large.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 1_048_576))
+        let largeBundle = largeOff.decoding.conversation + 3 * 128 * 512 * 4
+        XCTAssertGreaterThan(largeBundle, ExpertMemory.gib)
+        s.promptCacheMode = .memory
+        let overBudget = try XCTUnwrap(large.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 1_048_576))
+        XCTAssertEqual(overBudget.decoding.conversation - largeOff.decoding.conversation, largeBundle, accuracy: 1)
+      } else {
+        XCTAssertEqual(off.total, b.total)
+      }
     }
   }
 
