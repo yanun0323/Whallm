@@ -1728,12 +1728,21 @@ class ExpertCache:
         protected: set[tuple[int, int]],
     ) -> dict[int, int]:
         assigned = {}
+        # Large reservations otherwise rescan the same reserved/pinned heap
+        # entries for every victim. Keep small decode requests on the heap.
+        batch = (
+            self._evict_batch(protected)
+            if self._route_policy is None
+            and len(missing) - len(self._free_slots) > max(32, self.layer_count)
+            and all((layer, expert) in protected for expert in missing)
+            else None
+        )
         for expert in missing:
             if self._free_slots:
                 slot = self._free_slots.pop()
             else:
                 eviction_started = time.perf_counter()
-                victim_key, victim = self._evict(protected, layer)
+                victim_key, victim = next(batch) if batch is not None else self._evict(protected, layer)
                 self.metrics.eviction_seconds += time.perf_counter() - eviction_started
                 slot = victim.slot
                 del self._entries[victim_key]
@@ -1748,6 +1757,34 @@ class ExpertCache:
             assigned[expert] = slot
         self._pool.prepare(list(assigned.values()))
         return assigned
+
+    def _evict_batch(self, protected: set[tuple[int, int]]):
+        """Same victims as repeated _evict; caller holds _lock throughout.
+
+        Only incoming protected entries are inserted/touched during reservation,
+        so the remaining per-layer rank order is stable. Counts are NOT stable:
+        recheck reserve eligibility after every insertion/eviction, including the
+        incoming layer. Hard pins stay excluded; layer pins remain a last resort.
+        """
+        candidates = [[] for _ in range(self.layer_count)]
+        for (layer, expert), entry in self._entries.items():
+            if (layer, expert) not in protected and (layer, expert) not in self._pinned_expert_keys:
+                candidates[layer].append((self._eviction_rank(entry), entry.last_access,
+                                          entry.version, layer, expert))
+        for items in candidates:
+            items.sort(reverse=True)
+        while True:
+            heads = [(2 if layer in self._pinned_layers else
+                      0 if self._layer_counts[layer] > self._layer_reserve else 1, items[-1])
+                     for layer, items in enumerate(candidates) if items]
+            if not heads:
+                raise RuntimeError("no expert cache slot can be evicted")
+            _, item = min(heads)
+            layer, expert = item[3:]
+            candidates[layer].pop()
+            # The global heap's old record becomes stale when the caller removes
+            # this entry, and is discarded by its existing lazy cleanup/rebuild.
+            yield (layer, expert), self._entries[(layer, expert)]
 
     def _release_slots(self, layer: int, assigned: dict[int, int]) -> None:
         for expert, slot in assigned.items():
