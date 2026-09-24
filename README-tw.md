@@ -126,6 +126,8 @@ API 支援文字串流與工具呼叫，提供以下端點：
 
 工具由用戶端執行，再回傳結果；推論 API 不會自動執行 MCP 工具。目前開發原始碼新增 MiMo 靜態圖片及有界 PCM WAV 音訊輸入，可透過 Chat／Responses 與 App 附件使用。JSON 本文仍限 **1 MiB**；經驗證的 `/api/assets` 上傳接受每檔最多 **8 MiB** 的 PNG／JPEG／WebP、PCM WAV，以及有範圍限制的 PDF／DOCX／PPTX／XLSX 文件。音訊輸入僅接受 24 kHz、16 位元 PCM WAV、單聲道或立體聲，每段最長 30 秒、每次最多兩段。音訊輸出、影片、`logprobs`、`response_format` 與 `stop` 仍不支援。詳見 [MiMo 合約與限制](docs/mimo-development.md)。
 
+目前開發原始碼的所有模型都能透過 `/v1/responses` 接收字串或由 `input_text` 段落組成的 `function_call_output.output` 陣列。文字會依序合併，保留原有空白與換行，不另外加入分隔符號。請在請求歷史中附上具有相同 `call_id` 的 `function_call`。多媒體支援仍依模型而定。v1.1.8 尚未包含這項修正。
+
 推論在你的 Mac 上執行。下載、更新與 API 連線會使用網路。連接的用戶端可能將資料傳往其他服務；**Debug** 記錄可能包含完整輸入與工具結果。
 
 ## 驗證與限制

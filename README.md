@@ -126,6 +126,8 @@ Current source supports an optional `seed` integer from `0` to `4294967295` on a
 
 The client executes tools and sends their results back; inference APIs never run MCP tools automatically. Current development source adds still-image and bounded PCM WAV input for MiMo through Chat/Responses and App attachments. JSON bodies remain limited to **1 MiB**; authenticated `/api/assets` uploads accept PNG/JPEG/WebP, PCM WAV and bounded PDF/DOCX/PPTX/XLSX documents up to **8 MiB** per file. Audio input is limited to 24 kHz, 16-bit PCM WAV, mono/stereo, 30 seconds per clip and two clips per request. Audio output, video, `logprobs`, `response_format`, and `stop` remain unsupported. See the [MiMo contract and limits](docs/mimo-development.md).
 
+Current development source accepts `function_call_output.output` as a string or an array of `input_text` parts for every model through `/v1/responses`. Text parts are joined in order without adding separators; existing whitespace is preserved. Include the matching `function_call` with the same `call_id` in the request history. Media support still depends on the model. This fix is not included in v1.1.8.
+
 Inference runs on your Mac. Network access is used for downloads, updates, and API connections. Connected clients may send data elsewhere; **Debug** logs can contain complete prompts and tool results.
 
 ## Validation and limits
