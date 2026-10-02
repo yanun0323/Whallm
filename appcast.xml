@@ -6,54 +6,64 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Whallm</title>
         <item>
-            <title>1.1.9</title>
-            <pubDate>Thu, 24 Sep 2026 16:11:14 +0800</pubDate>
-            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.9</link>
-            <sparkle:version>1.1.9</sparkle:version>
-            <sparkle:shortVersionString>1.1.9</sparkle:shortVersionString>
+            <title>1.1.10</title>
+            <pubDate>Sat, 03 Oct 2026 00:13:01 +0800</pubDate>
+            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.10</link>
+            <sparkle:version>1.1.10</sparkle:version>
+            <sparkle:shortVersionString>1.1.10</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.9
+            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.10
 
-Changes since v1.1.8. Built from [`ba9e126`](https://github.com/yanun0323/Whallm/commit/ba9e12612fdb26378ec0557c1c7326fa20b3e728).
+Changes since v1.1.9.
 
-## Tool calls and prompt caching
+## New model: Swift1.5 Qwen
 
-- Fix `/v1/responses` tool results that contain an array of `input_text` parts. All models now accept these arrays as well as strings, preserving text order and whitespace. The matching `function_call` and `call_id` are still required. Addresses [#13](https://github.com/yanun0323/Whallm/issues/13).
-- Reuse DeepSeek V4.1 prompt caches across tool calls, including DSpark target and draft state in memory and disk modes. Keep a request's prompt snapshot alongside its final state instead of immediately evicting it. Includes [#12](https://github.com/yanun0323/Whallm/pull/12).
-- Fix cache positions after the end-of-response token. Older ordinary disk caches are ignored and rebuilt on demand; model files are unchanged. The first request after updating may need to process the prompt again.
-- Update the app's memory estimate to include the extra saved states, V4.1 DSpark snapshots, and temporary snapshots. The estimate is not a hard memory limit.
+- Add `Swift1.5-Qwen3.8-Flash-Next`, including download, verification, repair, Chat, and API support.
+- Download a pinned, prepared MXFP4 artifact without converting the original FP8 checkpoint. The API model ID is `swift1.5-qwen3.8-flash-next-mxfp4`.
+- Reuse the existing Qwen inference engine while keeping installation folders, settings, Aliases, and prompt caches separate from the original Qwen model. The new model includes its own MTP weights; MTP remains off by default.
 
-## Qwen runtime and diagnostics
+## Still images for both Qwen models
 
-- Reduce redundant attention, routing, N-gram, and MTP work, and batch large expert-cache evictions.
-- Add opt-in Qwen controls for bounded expert processing, N-gram caching, attention paths, prefill reads, and expert reuse between input processing and generation. Experimental options retain their existing defaults.
-- Make Throughput wait for pending model-setting changes and include additional runtime diagnostics in exported results.
-- Add opt-in Qwen and MiMo profiling tools. Profiling results and experimental presets are not release-wide speed guarantees.
+- Accept PNG, JPEG, and WebP images in App Chat, `/v1/chat/completions`, and `/v1/responses` for both Qwen3.8-Flash-Next and Swift1.5 Qwen.
+- Include pinned image weights in new installations. Existing installations can fetch only missing or damaged files through **Model → Verify and Repair**, without redownloading intact text weights.
+- Keep image processing separate from text prompt caches and load image weights only for image requests. Check missing or damaged image files and incompatible MTP settings before starting the response stream.
 
-## MiMo and attachments — preview
+**Upgrade note:** Run **Verify and Repair** for an existing Qwen installation to add its approximately 0.90 GB image-weight file. Turn off MTP and reload the model before sending images. Image requests bypass prompt caching. The total installed payload is about 117.52 GiB for the original Qwen model and 118.94 GiB for Swift1.5 Qwen.
 
-- Add the pinned MiMo-V2.6-Flash-RL installed model, native text/image processing, limited PCM WAV input, and bounded PDF/DOCX/PPTX/XLSX input.
-- Add Chat attachment pickers, drag-and-drop, quota indicators, upload progress, and cancellation. API media support remains model-specific.
-- Add optional bounded layer-major text prefill for MiMo; its App default remains off.
-- Include an opt-in MCP client with explicit, single-use tool approvals. Inference APIs do not execute MCP tools automatically; an integrated App Agent and approval UI are not included.
+Image limits are 8 images per request, 8 MiB per file, 32 MiB combined, 1,048,576 pixels per decoded/resized image, and 2,048 image tokens per request. Qwen video, audio, and document input are not supported.
 
-MiMo remains preview support, not completed full-model or end-to-end acceptance. Audio is limited to 24 kHz, 16-bit PCM WAV, up to 30 seconds per clip and two clips per request. Asset uploads are limited to 8 MiB per file; document and combined media limits also apply. Video, audio output, and full Office-format fidelity are not supported. See the [MiMo input limits and validation status](https://github.com/yanun0323/Whallm/blob/v1.1.9/docs/mimo-development.md).
+## Qwen MTP improvements
 
-## Validation and upgrade notes
+- Fill the draft layer's attention cache from the whole prompt after layer-major input processing, rather than only a short tail. Read the draft layer's experts once for this step.
+- Allow Prefill acceleration to remain enabled with MTP for text requests.
+- Restore state after rejected drafts without replaying accepted tokens through routed experts. Retain unaffected pooled attention blocks.
+- Wait for recurrent, convolution, and N-gram state calculations before recording rewind time, avoiding understated timing results.
 
-- 645 Python tests passed with `MLX_ENABLE_TF32=0`.
-- 169 Swift tests passed; four optional installed-model checks were skipped.
-- The local App and extracted ZIP passed strict signature checks and English, Simplified Chinese, and Traditional Chinese startup with access to the project build directory and Swift resource bundle denied.
-- The release workflow repeats these checks on the signed, notarized package and the downloaded GitHub ZIP before publishing the Sparkle update feed.
+## Tool calls and model names
 
-No new full-model performance benchmark was run for this release. Historical measurements retain their original workloads and limitations. The previously observed Qwen MTP/non-MTP output difference remains unresolved; fixed seeds do not guarantee identical output across acceleration settings.
+- Fix Qwen streamed tool calls being rejected when whitespace between consecutive calls arrives in a later chunk. This could stop clients such as Pi with `The streamed tool call failed validation.` Invalid or incomplete calls are still rejected.
+- Keep the Responses API's complete-output validation and event format unchanged. Add regression coverage for multiple Codex-style tool calls, tool results, and the following answer.
+- Use consistent model display names in Model, Chat, Status, Throughput, and text/Markdown result tables. New Chat records retain the stable model ID so changing an Alias does not change their model identity. Existing API IDs, Alias routing, and benchmark JSON identifiers are unchanged.
+
+## Packaging and validation
+
+- Bundle and verify both Qwen image definitions alongside the model catalog. Extend packaged startup checks to verify that image resources are available without the source checkout or Swift build resources.
+- Update all five README languages and clarify the limits of historical performance measurements.
+- Source regression coverage: **674 Python tests passed**; **196 Swift tests ran, with 4 skipped and no failures**. An additional **126 packaged Python tests** passed with access to the project and Homebrew denied.
+
+## Known limits
+
+- Swift-model image checks cover short red/blue recognition, image-token limits, cancellation, and text consistency. They do not establish broad image quality or performance. Full original-Qwen image generation remains unvalidated.
+- Tool-call API tests use fixed model output, not a complete Pi or Codex client session.
+- MTP performance depends on the workload. Historical measurements predate the final timing correction and are not measurements of this release. MTP and non-MTP output can differ; no universal speedup or output-equivalence guarantee is claimed.
+- MiMo remains a preview. This release does not include the separate Qwen Native engine from the development branch.
 
 Requires Apple Silicon and macOS 15 or later. Model weights are downloaded separately. This is a distribution build; local-only debug and Dry run features are not included.
 
-[Full changelog](https://github.com/yanun0323/Whallm/compare/v1.1.8...v1.1.9)
+[Full changelog](https://github.com/yanun0323/Whallm/compare/v1.1.9...v1.1.10)
 ]]></description>
-            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.9/Whallm-macOS-arm64.zip" length="201755188" type="application/octet-stream" sparkle:edSignature="EuO+OejqPSxqehKGmjWWsI7kCwyYfaFXgLwIJGoJ8TkeFl5yY6gcEJA8bMepCV4RDxOJhy63WMZ70ImfvwBYDw=="/>
+            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.10/Whallm-macOS-arm64.zip" length="201859130" type="application/octet-stream" sparkle:edSignature="Ec2zy18WEwDVr5upeoM5uqIBg6UT1518WPx7ToNqELcseGXNxvWzGtL539WeOiE9xo7Tf1LfX7wBKy72qm/UBg=="/>
         </item>
         <item>
             <title>1.1.7</title>
@@ -94,6 +104,6 @@ This alpha adds a Throughput benchmark page and updates model defaults. Select *
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: MSxQoyIOqPiqUKj5cfa4eAOVOzkrfDnc2t2lqDgLS78jfwNKY4Iwp6tgg+jOTb3vcupkx6VO7+08DIbMWcyqAQ==
-length: 8262
+edSignature: eYABvC/xFrCoHKs8USyt6JHpJCV2mgh1vopIcha2ZlP6vTieDWXdxI6bduFR+u86ZfLVBV7a7/PkTE3XciEIAg==
+length: 8893
 -->
