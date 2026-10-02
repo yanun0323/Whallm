@@ -1,21 +1,7 @@
 name: Qwen speed experiments
 
+# Research runs are opt-in; PRs and pushes must not start these jobs.
 on:
-  push:
-    branches: [feat/qwen-flash-optimize]
-    paths:
-      - 'runtime/**'
-      - 'Scripts/benchmark_qwen_speed.py'
-      - 'Sources/**'
-      - 'Tests/**'
-      - 'requirements.txt'
-      - '.github/workflows/qwen-speed.yml'
-  pull_request:
-    branches: [master]
-    paths:
-      - 'runtime/**'
-      - 'Scripts/benchmark_qwen_speed.py'
-      - '.github/workflows/qwen-speed.yml'
   workflow_dispatch:
 
 permissions:

@@ -1,24 +1,7 @@
 name: Qwen streaming review
 
+# Research runs are opt-in; PRs and pushes must not start these jobs.
 on:
-  push:
-    branches: [feat/qwen-flash-optimize]
-    paths:
-      - 'runtime/**'
-      - 'Sources/**'
-      - 'Tests/**'
-      - 'Scripts/*qwen*'
-      - 'docs/qwen-streaming-review.md'
-      - 'docs/validation/qwen-streaming-review-20260921.json'
-      - '.github/workflows/qwen-streaming-review.yml'
-  pull_request:
-    branches: [master]
-    paths:
-      - 'runtime/**'
-      - 'Sources/**'
-      - 'Tests/**'
-      - 'Scripts/*qwen*'
-      - '.github/workflows/qwen-streaming-review.yml'
   workflow_dispatch:
 
 permissions:
