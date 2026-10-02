@@ -108,6 +108,9 @@ ditto "$project_root/runtime" "$app_path/Contents/Resources/runtime"
 model_packages=$project_root/Sources/DeepSeekRepack/Resources/ModelPackages.json
 ditto "$model_packages" "$app_path/Contents/Resources/ModelPackages.json"
 ditto "$model_packages" "$app_path/Contents/Resources/runtime/deepseek_v4_ssd/model_support/ModelPackages.json"
+qwen_vision=$project_root/Sources/DeepSeekRepack/Resources/QwenVision.json
+ditto "$qwen_vision" "$app_path/Contents/Resources/QwenVision.json"
+ditto "$qwen_vision" "$app_path/Contents/Resources/runtime/deepseek_v4_ssd/qwen_vision/QwenVision.json"
 PYTHONPATH="$app_path/Contents/Resources/runtime" \
   $python_executable -m deepseek_v4_ssd.model_support
 for localization in "$project_root/Sources/DeepSeekV4SSDApp/Resources"/*.lproj; do

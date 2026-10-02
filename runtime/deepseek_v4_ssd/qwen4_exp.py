@@ -421,6 +421,7 @@ class QSAIndexer(nn.Module):
         hidden: mx.array,
         cache: KVCache | None,
         offset: int,
+        rope_positions=None,
     ) -> tuple[mx.array, mx.array]:
         projected = self.index_qk_proj(hidden)
         split = self.args.indexer_n_heads * self.args.indexer_head_dim
@@ -431,12 +432,10 @@ class QSAIndexer(nn.Module):
         )
         key = key.reshape(hidden.shape[0], hidden.shape[1], self.args.indexer_head_dim)
         positions = mx.arange(hidden.shape[1]) + offset
-        query = _apply_partial_rope(
-            self.q_layernorm(query),
-            positions[None, :, None],
-            int(self.args.head_dim * self.args.partial_rotary_factor),
-            self.args.rope_theta,
-        )
+        query = (_apply_partial_rope(
+            self.q_layernorm(query), positions[None, :, None],
+            int(self.args.head_dim * self.args.partial_rotary_factor), self.args.rope_theta,
+        ) if rope_positions is None else rope_positions.rotate(self.q_layernorm(query), positions, 1))
         raw = key[:, None]
         if cache is not None:
             raw, _ = cache.update_and_fetch(raw, raw)
@@ -480,7 +479,7 @@ class QSAAttention(nn.Module):
             max_position_embeddings=args.max_position_embeddings,
         )
 
-    def __call__(self, hidden: mx.array, cache: CacheList | None) -> mx.array:
+    def __call__(self, hidden: mx.array, cache: CacheList | None, rope_positions=None) -> mx.array:
         batch, length, _ = hidden.shape
         main_cache = None if cache is None else cache[0]
         index_cache = None if cache is None else cache[1]
@@ -496,14 +495,19 @@ class QSAAttention(nn.Module):
         value = self.v_proj(hidden).reshape(
             batch, length, self.args.num_key_value_heads, self.args.head_dim
         )
-        query = self.rope(self.q_norm(query).transpose(0, 2, 1, 3), offset=offset)
-        key = self.rope(self.k_norm(key).transpose(0, 2, 1, 3), offset=offset)
+        if rope_positions is None:
+            query = self.rope(self.q_norm(query).transpose(0, 2, 1, 3), offset=offset)
+            key = self.rope(self.k_norm(key).transpose(0, 2, 1, 3), offset=offset)
+        else:
+            positions = mx.arange(length) + offset
+            query = rope_positions.rotate(self.q_norm(query).transpose(0, 2, 1, 3), positions, 2)
+            key = rope_positions.rotate(self.k_norm(key).transpose(0, 2, 1, 3), positions, 2)
         value = value.transpose(0, 2, 1, 3)
-        index_query, raw_index_keys = self.indexer.project(hidden, index_cache, offset)
+        index_query, raw_index_keys = self.indexer.project(hidden, index_cache, offset, rope_positions)
         if main_cache is not None:
             key, value = main_cache.update_and_fetch(key, value)
         output = self._bounded_attention(
-            query, key, value, index_query, raw_index_keys, offset, index_cache
+            query, key, value, index_query, raw_index_keys, offset, index_cache, rope_positions
         )
         output = output.transpose(0, 2, 1, 3).reshape(batch, length, -1)
         return self.o_proj(output * mx.sigmoid(gate))
@@ -517,6 +521,7 @@ class QSAAttention(nn.Module):
         raw_index_keys: mx.array,
         offset: int,
         index_cache=None,
+        rope_positions=None,
     ) -> mx.array:
         if query.shape[0] != 1:
             raise ValueError("Qwen SSD runtime supports batch size one")
@@ -535,8 +540,9 @@ class QSAAttention(nn.Module):
             pooled = self.indexer.k_layernorm(pooled)
             if count:
                 positions = (mx.arange(count) + first_block) * ratio
-                pooled = _apply_partial_rope(pooled, positions[None],
+                pooled = (_apply_partial_rope(pooled, positions[None],
                     int(self.args.head_dim * self.args.partial_rotary_factor), self.args.rope_theta)
+                    if rope_positions is None else rope_positions.rotate(pooled, positions, 1))
             return pooled
 
         if callable(getattr(index_cache, "pooled", None)):
@@ -886,6 +892,7 @@ class DecoderLayer(nn.Module):
         input_ids: mx.array,
         mask: mx.array | None,
         cache,
+        rope_positions=None,
     ) -> mx.array:
         if self.ple is not None:
             hidden = hidden + self.ple(hidden, input_ids, cache)
@@ -893,7 +900,7 @@ class DecoderLayer(nn.Module):
         if self.layer_type == "linear_attention":
             result = self.linear_attn(mixed, mask, cache)
         else:
-            result = self.self_attn(mixed, cache)
+            result = self.self_attn(mixed, cache, rope_positions)
         hidden = self.attn_hyper_connection.inject(residual, result, injection)
         mixed, residual, injection = self.mlp_hyper_connection(hidden)
         result = self.mlp(mixed)
@@ -920,8 +927,11 @@ class TextModel(nn.Module):
         ]
         self.hyper_connection_mixer = GatedResidual(args, combine=False)
 
-    def hidden_states(self, input_ids: mx.array, cache=None, capture: list | None = None) -> mx.array:
-        hidden = self.embed_tokens(input_ids)
+    def hidden_states(self, input_ids: mx.array, cache=None, capture: list | None = None,
+                      *, input_embeddings=None, rope_positions=None) -> mx.array:
+        if input_embeddings is not None and input_embeddings.shape != (*input_ids.shape, self.args.hidden_size):
+            raise ValueError("Qwen image embeddings do not align with input tokens")
+        hidden = self.embed_tokens(input_ids) if input_embeddings is None else input_embeddings
         hidden = mx.tile(hidden, (1, 1, self.args.hc_count))
         if cache is None:
             cache = [None] * len(self.layers)
@@ -930,11 +940,12 @@ class TextModel(nn.Module):
             check_cancelled()
             if capture is not None:
                 capture.append(hidden)
-            hidden = layer(hidden, input_ids, mask, layer_cache)
+            hidden = layer(hidden, input_ids, mask, layer_cache, rope_positions)
         return hidden
 
-    def __call__(self, input_ids: mx.array, cache=None) -> mx.array:
-        return self.hyper_connection_mixer(self.hidden_states(input_ids, cache))
+    def __call__(self, input_ids: mx.array, cache=None, *, input_embeddings=None, rope_positions=None) -> mx.array:
+        return self.hyper_connection_mixer(self.hidden_states(input_ids, cache,
+            input_embeddings=input_embeddings, rope_positions=rope_positions))
 
 
 class Model(nn.Module):
@@ -950,8 +961,9 @@ class Model(nn.Module):
         self.pooled_index_cache = False
         self.lm_head = nn.Linear(args.hidden_size, args.vocab_size, bias=False)
 
-    def __call__(self, input_ids: mx.array, cache=None) -> mx.array:
-        return self.lm_head(self.model(input_ids, cache))
+    def __call__(self, input_ids: mx.array, cache=None, *, input_embeddings=None, rope_positions=None) -> mx.array:
+        return self.lm_head(self.model(input_ids, cache,
+            input_embeddings=input_embeddings, rope_positions=rope_positions))
 
     def forward_with_hidden(
         self, input_ids: mx.array, cache=None, capture: list | None = None

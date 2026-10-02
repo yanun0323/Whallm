@@ -559,7 +559,10 @@ final class DeepSeekRepackTests: XCTestCase {
 
     let repaired = try await Repacker(source: source).repair(
       plan: plan, output: output, invalidFiles: ["experts/layer_00.bin"], progress: nil)
-    XCTAssertTrue(try InstalledModel.audit(manifest: repaired, at: output).isValid)
+    // This tiny conversion fixture has no vision payload; the repaired text
+    // files pass, while complete-model verification still requests that file.
+    XCTAssertEqual(try InstalledModel.audit(manifest: repaired, at: output).issues.map(\.path),
+      ["vision/common.bin"])
   }
 
   func testQwenConversionRejectsPlanWithoutConversionVersion() async throws {

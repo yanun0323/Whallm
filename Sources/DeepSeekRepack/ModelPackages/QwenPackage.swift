@@ -23,13 +23,13 @@ struct QwenPackage: ModelPackage {
 }
 
 extension QwenContract {
-  static func validate(_ manifest: InstalledManifest) throws
+  static func validate(_ manifest: InstalledManifest, kind: ModelKind = .qwen3_8FlashNext) throws
     -> InstalledManifest
   {
-    guard manifest.formatVersion == 2,
-      manifest.modelKind == .qwen3_8FlashNext,
-      manifest.modelID == QwenContract.modelID,
-      manifest.revision == QwenContract.revision,
+    guard kind.usesQwenEngine, manifest.formatVersion == 2,
+      manifest.modelKind == kind,
+      manifest.modelID == kind.descriptor.checkpointModelID,
+      manifest.revision == kind.descriptor.checkpointRevision,
       manifest.layerCount == QwenContract.layerCount,
       manifest.expertCount == QwenContract.expertCount,
       manifest.selectedExpertCount == QwenContract.selectedExpertCount,

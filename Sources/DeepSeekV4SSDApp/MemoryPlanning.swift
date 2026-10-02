@@ -16,7 +16,7 @@ enum ExpertMemory {
     switch kind {
     case .deepSeekV4, .mimoV26FlashRL: 13_369_344
     case .deepSeekV41: 18_800_640
-    case .qwen3_8FlashNext: 2_611_200
+    case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 2_611_200
     default: 0
     }
   }
@@ -94,7 +94,7 @@ struct MemoryPlanningProfile {
     let output = contextTokens == nil ? s.defaultMaxTokens : 0
     let maximum = manifest.maximumContext ?? Int(number("max_position_embeddings", 1_048_576))
     let ratio = s.anePrefillRatio ?? 0
-    guard [.deepSeekV4, .deepSeekV41, .qwen3_8FlashNext].contains(kind),
+    guard (kind.usesQwenEngine || [.deepSeekV4, .deepSeekV41].contains(kind)),
       input > 0, output >= 0, (contextTokens != nil || output > 0),
       input <= maximum, output <= maximum - input,
       s.readWorkers > 0, (s.prefetchReadWorkers ?? 2) > 0,
@@ -110,7 +110,7 @@ struct MemoryPlanningProfile {
     }
     func file(_ name: String) -> Double { Double(manifest.files.first { $0.path == name }?.size ?? 0) }
     guard let expert = payload(s.expertCacheGiB, s.slots, manifest.selectedExpertCount), file("common.bin") > 0 else { return nil }
-    let qwen = kind == .qwen3_8FlashNext
+    let qwen = kind.usesQwenEngine
     if qwen {
       do { try s.validateQwenFlashSettings() } catch { return nil }
     }
@@ -304,7 +304,7 @@ struct MemoryPlanningProfile {
     layerMajor: Bool, dim: Double, hidden: Double, window: Double, indexDim: Double
   ) -> CacheFootprint? {
     let layers = Double(manifest.layerCount)
-    if kind == .qwen3_8FlashNext {
+    if kind.usesQwenEngine {
       let types = config["layer_types"] as? [String]
       let full = types.map { Double($0.filter { $0 == "full_attention" }.count) }
         ?? ceil(layers / number("full_attention_interval", 4))

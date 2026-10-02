@@ -28,6 +28,8 @@ struct DeepSeekV4SSDApp: App {
       }
       let packageMarker = "WHALLM_MODEL_PACKAGES_READY:\(packages.count)\n"
       FileHandle.standardOutput.write(Data(packageMarker.utf8))
+      let visionMarker = "WHALLM_VISION_PACKAGES_READY:\(QwenVisionArtifact.modelKinds.count)\n"
+      FileHandle.standardOutput.write(Data(visionMarker.utf8))
     }
     NSApplication.shared.setActivationPolicy(.regular)
   }

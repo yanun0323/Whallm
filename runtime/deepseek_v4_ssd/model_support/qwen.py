@@ -13,7 +13,7 @@ class QwenSupport(ModelSupport):
     expert_layout = GateUpMXFP4Layout()
 
     def manifest_contract(self, raw):
-        return _qwen_contract(raw)
+        return _qwen_contract(raw, self.descriptor)
 
     def load(self, installed, config, raw_config, weights, read_limiter):
         from ..qwen4_exp import load
@@ -38,6 +38,22 @@ class QwenSupport(ModelSupport):
             (getattr(config, "batched_expert_prefill", True)
              and not getattr(config, "qwen_expert_wave_slots", 0)),
         )
+
+    def validate_media_runtime(self, runtime):
+        from ..qwen_vision.artifact import validate_runtime
+        validate_runtime(runtime)
+
+    def validate_media(self, request):
+        from ..qwen_vision.processor import validate_media
+        return validate_media(request)
+
+    def prepare_input(self, runtime, request):
+        from ..qwen_vision.inputs import prepare
+        return prepare(runtime, request)
+
+    def model_for_prompt(self, model, prepared):
+        from ..qwen_vision.inputs import generation_model
+        return generation_model(model, prepared)
 
     def open_codec(self, root, tokenizer):
         from ..tool_codec import QwenToolCodec
@@ -78,14 +94,21 @@ class QwenSupport(ModelSupport):
     def cli_sampling_defaults(self):
         return self.sampling_defaults(None, "thinking")
 
-def _qwen_contract(raw: dict) -> dict:
-    from ..manifest import (QWEN_MODEL_ID, QWEN_REVISION, QWEN_NGRAM_HEAD_OFFSETS, QWEN_NGRAM_HEAD_VOCAB_SIZES, QWEN_EXPERT_REGIONS, ExpertQuantization, NGram)
+def _qwen_contract(raw: dict, descriptor) -> dict:
+    from ..manifest import (QWEN_NGRAM_HEAD_OFFSETS, QWEN_NGRAM_HEAD_VOCAB_SIZES, QWEN_EXPERT_REGIONS, ExpertQuantization, NGram)
+    # Swift's published artifact uses the original Qwen schema label, but only
+    # its own pinned checkpoint identity is accepted by this support instance.
+    accepted_kinds = {descriptor.kind}
+    if descriptor.kind == "swift1.5-qwen3.8-flash-next":
+        accepted_kinds.add("qwen3.8-flash-next")
+        if raw.get("mtp") is None:
+            raise ValueError("the Swift Qwen artifact must include its own MTP weights")
     quantization = raw.get("expertQuantization") or {}
     ngram = raw.get("ngram") or {}
     expected = (
-        raw.get("modelKind") == "qwen3.8-flash-next"
-        and raw.get("modelID") == QWEN_MODEL_ID
-        and raw.get("revision") == QWEN_REVISION
+        raw.get("modelKind") in accepted_kinds
+        and raw.get("modelID") == descriptor.checkpoint_model_id
+        and raw.get("revision") == descriptor.checkpoint_revision
         and raw.get("layerCount") == 48
         and raw.get("expertCount") == 512
         and raw.get("selectedExpertCount") == 10
@@ -139,7 +162,7 @@ def _qwen_contract(raw: dict) -> dict:
     return {
         "required": required,
         "allowed": required,
-        "model_kind": "qwen3.8-flash-next",
+        "model_kind": descriptor.kind,
         "layer_count": 48,
         "expert_count": 512,
         "selected_expert_count": 10,

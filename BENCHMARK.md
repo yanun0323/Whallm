@@ -1,7 +1,24 @@
 # Benchmark
 
 Recorded measurements for the Qwen MTP draft-context change (2026-09-29), the V4.1 prefill change, v1.1.7, v1.1.4,
-and v1.1.0. No new full-model performance measurements are claimed for v1.1.8. Each section states its workload and measurement conditions.
+and v1.1.0. No new full-model performance measurements are claimed for v1.1.8. Measurement conditions and evidence gaps are stated below; these are not controlled speed comparisons of v1.1.10.
+
+## Swift1.5 Qwen3.8 Flash Next
+
+These retained M5 Pro rows record the displayed workload, slot count, output limit,
+temperature and seed. They do not include a source commit, full environment and
+configuration, cache state, raw run artifact or output token hash. Treat them as
+reference observations, not reproducible release validation or evidence of a
+speedup over another model or version.
+
+### M5 Pro
+
+| Model | Context | Slots | Output limit | Input / Output | TTFT (ms) | TPOT (ms) | PP tok/s | TG tok/s | Total (s) | Throughput | Peak Memory | Temperature | Seed |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| swift1.5-qwen3.8-flash-next-mxfp4 | Code | 3084 | 128 | 1024 / 128 | 7208.6 | 96.3 | 142.1 | 10.4 | 19.4 | 59.2 | 17.57 GiB | 0.0 | 42 |
+| swift1.5-qwen3.8-flash-next-mxfp4 | Code | 3084 | 128 | 4096 / 128 | 26232.5 | 93.6 | 156.1 | 10.7 | 38.1 | 110.8 | 17.64 GiB | 0.0 | 42 |
+| swift1.5-qwen3.8-flash-next-mxfp4 | Code | 3084 | 128 | 8192 / 128 | 50188.0 | 95.5 | 163.2 | 10.5 | 62.3 | 133.5 | 17.92 GiB | 0.0 | 42 |
+| swift1.5-qwen3.8-flash-next-mxfp4 | Code | 3084 | 128 | 16384 / 128 | 104258.4 | 111.3 | 157.1 | 9.0 | 118.4 | 139.5 | 18.37 GiB | 0.0 | 42 |
 
 ## Historical PR measurements: DeepSeek V4.1 prefill on M5 Max
 

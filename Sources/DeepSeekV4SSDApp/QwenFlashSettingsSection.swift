@@ -10,7 +10,7 @@ struct QwenFlashSettingsSection: View {
   private func text(_ key: String) -> String { L10n.string(key, language: language) }
 
   var body: some View {
-    if modelKind == .qwen3_8FlashNext {
+    if modelKind.usesQwenEngine {
       VStack(alignment: .leading, spacing: 12) {
         Text(text(QwenFlashCopy.title))
           .font(.headline)

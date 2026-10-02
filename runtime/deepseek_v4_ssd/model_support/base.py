@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from .catalog import ModelDescriptor
+from .catalog import ModelDescriptor, QWEN_MODEL_KINDS
 
 
 class ModelSupport:
@@ -25,8 +25,8 @@ class ModelSupport:
         validate_flash_config(config)
         for name, default in DEFAULTS.items():
             if (getattr(config, name, default) != default
-                    and self.descriptor.kind != "qwen3.8-flash-next"):
-                raise ValueError(f"{name} is supported only by qwen3.8-flash-next")
+                    and self.descriptor.kind not in QWEN_MODEL_KINDS):
+                raise ValueError(f"{name} requires a Qwen inference model")
         if self.descriptor.kind == "deepseek-v4.1" and getattr(config, "dspark_enabled", False):
             for name in ("v41_ced_prefill", "dspark_sequential_verification"):
                 if getattr(config, name, False):
@@ -35,9 +35,9 @@ class ModelSupport:
         # They must not prevent a default RuntimeConfig from loading V4 or Qwen.
         for name in ("qwen_quantized_kv", "qwen_quantized_index", "v41_packed_kv", "v41_packed_index",
                      "v41_candidate_index", "v41_ced_prefill"):
-            expected = "qwen3.8-flash-next" if name.startswith("qwen_") else "deepseek-v4.1"
-            if getattr(config, name, False) and self.descriptor.kind != expected:
-                raise ValueError(f"{name} is supported only by {expected}")
+            allowed = QWEN_MODEL_KINDS if name.startswith("qwen_") else {"deepseek-v4.1"}
+            if getattr(config, name, False) and self.descriptor.kind not in allowed:
+                raise ValueError(f"{name} is not supported by {self.descriptor.kind}")
         if getattr(config, "deepseek_ane_prefill", False) and self.descriptor.kind not in ("deepseek-v4", "deepseek-v4.1"):
             raise ValueError("DeepSeek ANE prefill requires a DeepSeek model")
         if getattr(config, "v41_ced_prefill", False) and not (config.layer_major_prefill and config.v41_layer_major_prefill):
@@ -73,6 +73,12 @@ class ModelSupport:
 
     def prefill(self, model, tokens, cache, step_size, expert_cache, config):
         raise NotImplementedError
+
+    def validate_media_runtime(self, runtime):
+        pass
+
+    def model_for_prompt(self, model, prepared):
+        return model
 
     def open_codec(self, root, tokenizer):
         raise NotImplementedError

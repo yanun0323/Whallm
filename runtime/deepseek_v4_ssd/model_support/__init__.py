@@ -16,6 +16,7 @@ def support_types():
         "deepseek-v4.1": DeepSeekV41Support,
         "qwen3.8-flash-next": QwenSupport,
         "mimo-v2.6-flash-rl": MiMoSupport,
+        "swift1.5-qwen3.8-flash-next": QwenSupport,
     }
 
 
@@ -32,6 +33,12 @@ def support_for_manifest(raw: dict):
     if type(version) is not int:
         raise ValueError("installed model has an unsupported manifest format")
     kind = raw.get("modelKind")
+    # Preserve the artifact's bytes while assigning its own runtime identity.
+    swift = BY_KIND["swift1.5-qwen3.8-flash-next"]
+    if (kind == "qwen3.8-flash-next"
+            and raw.get("modelID") == swift.checkpoint_model_id
+            and raw.get("revision") == swift.checkpoint_revision):
+        kind = swift.kind
     if kind is None:
         # Only old manifests may omit modelKind. New packages share schema versions.
         kind = {1: "deepseek-v4", 2: "qwen3.8-flash-next", 3: "deepseek-v4.1"}.get(version)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import unittest
@@ -798,6 +799,85 @@ class QwenTests(unittest.TestCase):
         self.assertEqual(turn.tool_calls, (ToolCall("weather", '{"city":"Taipei","days":2}'),))
         self.assertTrue(parser.matches((call,)))
         self.assertTrue(parser.matches(turn.tool_calls))
+
+    def test_qwen_stream_parser_multiple_calls_at_all_chunk_boundaries(self):
+        command = "  printf '繁中'\n  "
+        first = (
+            "<tool_call><function=bash><parameter=command>"
+            + json.dumps(command, ensure_ascii=False)
+            + "</parameter></function></tool_call>"
+        )
+        second = (
+            "<tool_call><function=read><parameter=path>README.md"
+            "</parameter></function></tool_call>"
+        )
+        expected = (
+            ToolCall("bash", json.dumps({"command": command}, ensure_ascii=False, separators=(",", ":"))),
+            ToolCall("read", '{"path":"README.md"}'),
+        )
+        for mode in ("chat", "thinking"):
+            prefix = "plan</think>Checking files.\n" if mode == "thinking" else "Checking files.\n"
+            for separator in ("", "\n", "\r\n \t", "\u2003"):
+                raw = prefix + first + separator + second + "\n"
+                turn = QwenToolCodec(None).parse(raw, mode)
+                self.assertEqual(turn.tool_calls, expected)
+                chunkings = [[raw], list(raw)]
+                chunkings.extend([raw[:split], raw[split:]] for split in range(len(raw) + 1))
+                for case, chunks in enumerate(chunkings):
+                    with self.subTest(mode=mode, separator=repr(separator), case=case):
+                        parser = QwenToolStreamParser(mode)
+                        deltas = [delta for chunk in chunks for delta in parser.feed(chunk)]
+                        deltas.extend(parser.finish())
+                        self.assertFalse(parser.failed)
+                        self.assertTrue(parser.matches(turn.tool_calls))
+                        self.assertEqual(parser.streamed_tool_count, 2)
+                        for index, call in enumerate(expected):
+                            self.assertEqual(
+                                [d.tool_name for d in deltas if d.tool_index == index and d.tool_name],
+                                [call.name],
+                            )
+                            self.assertEqual(
+                                json.loads("".join(d.arguments for d in deltas if d.tool_index == index)),
+                                json.loads(call.arguments),
+                            )
+
+    def test_qwen_stream_parser_emits_each_call_before_the_next(self):
+        call = "<tool_call><function=bash><parameter=command>pwd</parameter></function></tool_call>"
+        parser = QwenToolStreamParser("chat")
+        first = parser.feed(call)
+        self.assertEqual([d.tool_name for d in first if d.tool_name], ["bash"])
+        self.assertEqual(parser.streamed_tool_count, 1)
+        self.assertEqual(parser.feed("\n \t"), ())
+        second = parser.feed(call)
+        self.assertEqual([d.tool_name for d in second if d.tool_name], ["bash"])
+        self.assertEqual([d.tool_index for d in second], [1, 1])
+        parser.finish()
+        self.assertTrue(parser.matches(QwenToolCodec(None).parse(call + "\n \t" + call, "chat").tool_calls))
+
+    def test_qwen_stream_parser_rejects_invalid_suffix_after_separator(self):
+        first = "<tool_call><function=bash><parameter=command>pwd</parameter></function></tool_call>"
+        invalid_suffixes = (
+            "unexpected text",
+            "<tool_call><function=read>",
+            "<tool_call><function=read></tool_call>",
+            "<tool_call><function=read><parameter=path>a</parameter>"
+            "<parameter=path>b</parameter></function></tool_call>",
+        )
+        for mode in ("chat", "thinking"):
+            prefix = "plan</think>" if mode == "thinking" else ""
+            for suffix in invalid_suffixes:
+                with self.subTest(mode=mode, suffix=suffix):
+                    codec = QwenToolCodec(None)
+                    turn = codec.parse(prefix + first, mode)
+                    parser = QwenToolStreamParser(mode)
+                    parser.feed(prefix + first)
+                    for character in "\n \t" + suffix:
+                        parser.feed(character)
+                    parser.finish()
+                    self.assertTrue(parser.failed)
+                    self.assertFalse(parser.matches(turn.tool_calls))
+                    with self.assertRaises(ValueError):
+                        codec.parse(prefix + first + "\n \t" + suffix, mode)
 
     def test_qwen_codec_adds_forced_function_instruction(self):
         tokenizer = FakeTokenizer()

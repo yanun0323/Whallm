@@ -11,6 +11,9 @@ from pathlib import Path
 from types import MappingProxyType
 
 
+QWEN_MODEL_KINDS = frozenset({"qwen3.8-flash-next", "swift1.5-qwen3.8-flash-next"})
+
+
 @dataclass(frozen=True)
 class ModelDescriptor:
     kind: str

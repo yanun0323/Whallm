@@ -1198,7 +1198,7 @@ private struct ServerView: View {
         HStack(alignment: .top, spacing: 12) {
           Label(
             L10n.string(
-              "%@: %lld files are missing or have the wrong size", model.name,
+              "%@: %lld files are missing or have the wrong size", model.modelKind.displayName,
               Int64(model.quickIssues.count)),
             systemImage: "exclamationmark.triangle.fill"
           )
@@ -1797,7 +1797,7 @@ struct ModelAdvancedView: View {
           ModelSettingsResetRow(settings: $settings, modelKind: modelKind,
             settingsLocked: settingsLocked, language: language)
           Divider()
-          cacheMemoryField(.expert, minimum: modelKind == .qwen3_8FlashNext ? 10 : 6)
+          cacheMemoryField(.expert, minimum: modelKind.usesQwenEngine ? 10 : 6)
           Divider()
           SettingRow(
             "Expert cache eviction",
@@ -1982,7 +1982,7 @@ struct ModelAdvancedView: View {
             )
             .appInput(width: 340)
           }
-          if modelKind == .qwen3_8FlashNext {
+          if modelKind.usesQwenEngine {
             ForEach(QwenOptimization.allCases.filter { $0 != .mtpPolicy }) { feature in
               Divider()
               toggleField(feature.title, hint: feature.hint,
@@ -2071,7 +2071,7 @@ struct ModelAdvancedView: View {
   }
 
   private var qwenFlashWavesActive: Bool {
-    modelKind == .qwen3_8FlashNext && settings.qwenFlashWavesEnabled
+    modelKind.usesQwenEngine && settings.qwenFlashWavesEnabled
   }
 
   private func impactHint(_ label: String, _ hint: String) -> String {
@@ -2757,7 +2757,7 @@ private struct MetricView: View {
         .frame(width: 9, height: 9)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 3) {
-        Text(activeModelLabel)
+        Text(performance.modelDisplayLabel(language: language))
           .font(.headline)
           .lineLimit(1)
         Text(localizedStateLabel)
@@ -2862,14 +2862,6 @@ private struct MetricView: View {
     case .stopping: localized("Stopping")
     case .failed: localized("Start failed")
     }
-  }
-
-  private var activeModelLabel: String {
-    if let loadedModel = performance.loadedModel { return loadedModel }
-    if let loadingModel = performance.loadingModel {
-      return L10n.string("Loading %@", language: language, loadingModel)
-    }
-    return localized("No model loaded")
   }
 
   private func metricTitle(_ metric: PerformanceMetric) -> String {
@@ -3050,6 +3042,7 @@ final class ChatSession: ObservableObject {
     text: String,
     configuration: ServerConfiguration,
     model: String,
+    modelID: String? = nil,
     thinkingMode: String,
     language: AppLanguage,
     seed: UInt32? = nil,
@@ -3067,7 +3060,8 @@ final class ChatSession: ObservableObject {
     requestStage = fileCount == 0 ? .preparing : .uploading(completed: 0, total: fileCount)
     let assistantID = UUID()
     messages.append(
-      ChatMessage(id: assistantID, role: "assistant", content: "", modelName: model))
+      // Store the stable identity locally, even when the request uses an Alias.
+      ChatMessage(id: assistantID, role: "assistant", content: "", modelName: modelID ?? model))
     save()
 
     generationTask = Task {
@@ -3205,7 +3199,7 @@ struct ChatView: View {
         Spacer()
         Picker(localized("Model"), selection: $selectedModelName) {
           ForEach(server.catalogModels) { model in
-            Text(modelPickerLabel(model)).tag(model.requestName)
+            Text(model.displayName).tag(model.requestName)
           }
         }
         .pickerStyle(.menu)
@@ -3234,7 +3228,7 @@ struct ChatView: View {
                     L10n.string(
                       "Start the server. Then send a message to %@.",
                       language: language,
-                      selectedCatalogModel?.requestName ?? localized("Assistant")
+                      selectedCatalogModel?.displayName ?? localized("Assistant")
                     )
                   )
                 )
@@ -3244,7 +3238,7 @@ struct ChatView: View {
                   VStack(alignment: .leading, spacing: 6) {
                     Text(
                       message.role == "user"
-                        ? localized("You") : message.modelName ?? localized("Assistant")
+                        ? localized("You") : message.modelDisplayName(models: server.catalogModels) ?? localized("Assistant")
                     )
                       .font(.callout.bold())
                       .foregroundStyle(.secondary)
@@ -3485,11 +3479,6 @@ struct ChatView: View {
     }
   }
 
-  private func modelPickerLabel(_ model: CatalogModel) -> String {
-    guard let alias = model.alias, alias != model.id else { return model.id }
-    return "\(alias) — \(model.id)"
-  }
-
   private func selectAvailableModel() {
     guard let resolved = resolvedChatModelName(
       savedName: selectedModelName,
@@ -3546,7 +3535,7 @@ struct ChatView: View {
   }
 
   private func send() {
-    guard let model = selectedCatalogModel?.requestName else { return }
+    guard let model = selectedCatalogModel else { return }
     guard !choosingFiles else { return }
     do {
       try ChatAttachment.validateSelection(attachments + messages.flatMap(\.attachments),
@@ -3566,7 +3555,8 @@ struct ChatView: View {
     if session.send(
       text: input,
       configuration: configuration,
-      model: model,
+      model: model.requestName,
+      modelID: model.id,
       thinkingMode: thinkingMode,
       language: language,
       seed: seed,

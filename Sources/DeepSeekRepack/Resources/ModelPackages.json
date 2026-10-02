@@ -122,7 +122,8 @@
         "batchedExpertPrefill",
         "packedKVCache",
         "packedIndexCache",
-        "nextLayerPrefetch"
+        "nextLayerPrefetch",
+        "imageInput"
       ],
       "editableSettings": [
         "sampling"
@@ -170,6 +171,39 @@
       },
       "automaticMemoryGiB": 40,
       "prefillThreshold": null
+    },
+    {
+      "kind": "swift1.5-qwen3.8-flash-next",
+      "displayName": "Swift1.5-Qwen3.8-Flash-Next",
+      "kindLabel": "Swift1.5 Qwen3.8 Flash Next",
+      "assistantName": "Swift",
+      "apiModelID": "swift1.5-qwen3.8-flash-next-mxfp4",
+      "owner": "ukisai",
+      "checkpointModelID": "ukisai/Swift1.5-Qwen3.8-Flash-Next",
+      "checkpointRevision": "0bd4fe22431372cdad1979267d3ab45aa7e6150a",
+      "manifestVersion": 2,
+      "directoryName": "swift1.5-qwen3.8-flash-next-mxfp4.dsv4",
+      "requiredPaths": [
+        "common.bin", "ngram.bin", "config.json", "tokenizer/tokenizer.json",
+        "mtp/common.bin", "mtp/experts/layer_00.bin"
+      ],
+      "features": [
+        "layerMajorPrefill", "promptCache", "mtp", "anePrefill", "groupedExperts",
+        "adaptiveSampling", "approximation", "readyExpertDecode", "batchedExpertPrefill",
+        "packedKVCache", "packedIndexCache", "nextLayerPrefetch", "imageInput"
+      ],
+      "editableSettings": ["sampling"],
+      "defaults": {
+        "slots": 3072,
+        "promptCacheEntries": 2,
+        "bf16KVCache": false,
+        "maxTokens": 8192,
+        "temperature": 0.7,
+        "topP": 0.8,
+        "topK": 20
+      },
+      "automaticMemoryGiB": 48,
+      "prefillThreshold": 128
     }
   ]
 }

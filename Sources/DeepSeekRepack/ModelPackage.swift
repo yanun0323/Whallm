@@ -93,6 +93,7 @@ public enum ModelPackages {
     "deepseek-v4.1": DeepSeekV41Package(),
     "qwen3.8-flash-next": QwenPackage(),
     "mimo-v2.6-flash-rl": MiMoPackage(),
+    "swift1.5-qwen3.8-flash-next": SwiftQwenPackage(),
   ]
 
   static func companions(for kind: ModelKind) -> [CompanionFile] {

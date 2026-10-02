@@ -63,6 +63,8 @@ verify_model_packages() {
     exit 1
   }
   cmp "$catalog" "$runtime_catalog"
+  cmp "$target/Contents/Resources/QwenVision.json" \
+    "$target/Contents/Resources/runtime/deepseek_v4_ssd/qwen_vision/QwenVision.json"
   local profile="(version 1)(allow default)"
   profile+="(deny file-read* (subpath \"$project_root/.build\"))"
   profile+="(deny file-read* (subpath \"$project_root/.venv\"))"
@@ -118,7 +120,13 @@ launch_without_module_bundle_access() {
       sed -n '1,160p' "$log_path" >&2
       exit 1
     fi
-    print "Localization initialized without Keychain: $language"
+    if ! /usr/bin/grep -Fxq 'WHALLM_VISION_PACKAGES_READY:2' "$log_path"; then
+      kill -TERM "$app_pid"
+      wait "$app_pid" || true
+      print -u2 "Packaged App did not load its Qwen image packages."
+      exit 1
+    fi
+    print "Localization and model resources initialized without Keychain: $language"
     if [[ -n $expected_local_build ]]; then
       if ! /usr/bin/grep -Fxq "WHALLM_LOCAL_BUILD:$expected_local_build" "$log_path"; then
         kill -TERM "$app_pid"

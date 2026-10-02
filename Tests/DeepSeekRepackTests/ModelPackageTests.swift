@@ -10,6 +10,8 @@ final class ModelPackageTests: XCTestCase {
       (.deepSeekV41, DeepSeekV41Contract.modelID, DeepSeekV41Contract.revision),
       (.qwen3_8FlashNext, QwenContract.modelID, QwenContract.revision),
       (.mimoV26FlashRL, MiMoContract.modelID, MiMoContract.revision),
+      (.swift1_5Qwen3_8FlashNext, "ukisai/Swift1.5-Qwen3.8-Flash-Next",
+        "0bd4fe22431372cdad1979267d3ab45aa7e6150a"),
     ]
     XCTAssertEqual(ModelPackages.descriptors.count, expected.count)
     for (kind, modelID, revision) in expected {

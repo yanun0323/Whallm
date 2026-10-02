@@ -319,7 +319,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.defaultTemperature = descriptor.defaults.temperature
     settings.defaultTopP = descriptor.defaults.topP
     settings.defaultTopK = descriptor.defaults.topK
-    if modelKind == .qwen3_8FlashNext {
+    if modelKind.usesQwenEngine {
       // Adopt the 4K input / 1024 output speed profile; keep cache budgets unchanged.
       settings.readWorkers = 16
       settings.prefillStepSize = 1_024
@@ -366,7 +366,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
       ? (settings.qwenGroupedExperts ?? true) : false
     settings.mtpEnabled = descriptor.supports("mtp") ? (settings.mtpEnabled ?? false) : false
     settings.mtpSlots = settings.mtpSlots ?? 32
-    let qwen = modelKind == .qwen3_8FlashNext
+    let qwen = modelKind.usesQwenEngine
     settings.qwenExpertWaveSlots = qwen ? (settings.qwenExpertWaveSlots ?? 0) : 0
     settings.qwenNgramIO = qwen ? (settings.qwenNgramIO ?? "mmap") : "mmap"
     settings.qwenNgramCacheMiB = qwen ? (settings.qwenNgramCacheMiB ?? 0) : 0
@@ -409,8 +409,8 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var effectiveQwenMTPZeroAcceptanceLimit: Int { qwenMTPPolicy == true ? (qwenMTPZeroAcceptanceLimit ?? 2) : 1 }
 
   func validate(for modelKind: ModelKind) throws {
-    if modelKind == .qwen3_8FlashNext { try validateQwenFlashSettings() }
-    if modelKind == .qwen3_8FlashNext && qwenMTPPolicy == true {
+    if modelKind.usesQwenEngine { try validateQwenFlashSettings() }
+    if modelKind.usesQwenEngine && qwenMTPPolicy == true {
       guard (1...5).contains(effectiveQwenMTPDraftTokens),
         (1...32).contains(effectiveQwenMTPZeroAcceptanceLimit) else {
         throw ConfigurationError(L10n.string("Choose 1–5 MTP draft tokens and 1–32 zero-acceptance rounds."))
@@ -422,7 +422,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     let blob = ExpertMemory.blobBytes(for: modelKind)
     if let expertCacheGiB {
       _ = try ExpertMemory.capacity(gib: expertCacheGiB, blobBytes: blob,
-        minimum: modelKind == .qwen3_8FlashNext ? 10 : 6)
+        minimum: modelKind.usesQwenEngine ? 10 : 6)
     }
     if mtpEnabled == true, let mtpCacheGiB {
       _ = try ExpertMemory.capacity(gib: mtpCacheGiB, blobBytes: blob, minimum: 10)
@@ -500,7 +500,10 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     for modelKind: ModelKind,
     defaults: UserDefaults
   ) -> ModelAdvancedSettings? {
-    guard let data = defaults.data(forKey: ServerConfiguration.preferenceKey),
+    // This model did not exist in the old shared settings. Never import FP8
+    // settings, even if the selected model has changed since that save.
+    guard modelKind != .swift1_5Qwen3_8FlashNext,
+      let data = defaults.data(forKey: ServerConfiguration.preferenceKey),
       let legacy = try? JSONDecoder().decode(Legacy.self, from: data)
     else { return nil }
     let identifiedKind: ModelKind
