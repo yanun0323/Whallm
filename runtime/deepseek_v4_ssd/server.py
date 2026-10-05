@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Iterator
@@ -53,6 +54,7 @@ from .model import RuntimeConfig, _POWER_SAVING_LIMITS_GBPS
 from .tool_codec import ToolChoice, ToolStreamDelta, ToolStreamParser
 
 RESPONSE_HEARTBEAT_SECONDS = 10.0
+CHAT_HEARTBEAT_SECONDS = 10.0
 MAX_REQUEST_BYTES = 1_048_576
 MAX_GENERATION_TOKENS = 272_000
 
@@ -289,6 +291,87 @@ class ResponseEvents:
 
     def __enter__(self):
         self.send("response.created", response=self.response)
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_):
+        self.stopped.set()
+        self.thread.join()
+
+
+class ChatEvents:
+    """Serialize Chat chunks and keep idle streams alive on a writer-only thread."""
+
+    def __init__(self, handler, base: dict[str, Any]):
+        self.handler = handler
+        self.base = base
+        self.lock = threading.RLock()
+        self.stopped = threading.Event()
+        self.error: OSError | None = None
+        self.last_sent = time.monotonic()
+        self.thread = threading.Thread(target=self._heartbeat, daemon=True,
+                                       name="whallm-chat-heartbeat")
+
+    def check_connection(self) -> None:
+        if self.error is not None:
+            raise self.error
+
+    def _chunk(self, delta: dict[str, Any], finish_reason: str | None = None) -> dict[str, Any]:
+        return {**self.base, "choices": [
+            {"index": 0, "delta": delta, "finish_reason": finish_reason},
+        ]}
+
+    def _send(self, value: dict[str, Any]) -> None:
+        with self.lock:
+            self.check_connection()
+            if self.stopped.is_set():
+                return
+            try:
+                self.handler._sse(value)
+            except OSError as error:
+                self.error = error
+                self.stopped.set()
+                raise
+            self.last_sent = time.monotonic()
+
+    def send(self, delta: dict[str, Any]) -> None:
+        self._send(self._chunk(delta))
+
+    def end(self, *values: dict[str, Any]) -> None:
+        # Terminal chunks, optional usage and DONE are one uninterrupted write group.
+        with self.lock:
+            self.check_connection()
+            if self.stopped.is_set():
+                return
+            try:
+                for value in values:
+                    self._send(value)
+                self.handler._sse_done()
+            except OSError as error:
+                self.error = error
+                raise
+            finally:
+                self.stopped.set()
+
+    def finish(self, finish_reason: str, prompt_tokens: int, generated: int,
+               include_usage: bool) -> None:
+        values = [self._chunk({}, finish_reason)]
+        if include_usage:
+            values.append({**self.base, "choices": [], "usage": _usage(prompt_tokens, generated)})
+        self.end(*values)
+
+    def _heartbeat(self) -> None:
+        while not self.stopped.wait(CHAT_HEARTBEAT_SECONDS):
+            try:
+                with self.lock:
+                    if time.monotonic() - self.last_sent >= CHAT_HEARTBEAT_SECONDS:
+                        # Empty deltas reach client event timers without adding tokens.
+                        self.send({})
+            except OSError:
+                return
+
+    def __enter__(self):
+        self.send({"role": "assistant"})
         self.thread.start()
         return self
 
@@ -1224,6 +1307,38 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             thinking_mode=thinking_mode,
         ), stream
 
+    @contextmanager
+    def _chat_stream(
+        self, pieces: Iterator[GeneratedPiece], request_id: str,
+        model_name: str, approximation_mode: str,
+    ) -> Iterator[ChatEvents]:
+        base = {
+            "id": request_id,
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": model_name,
+            "approximation": {"mode": approximation_mode},
+        }
+        try:
+            self._start_sse()
+            with ChatEvents(self, base) as events:
+                try:
+                    yield events
+                except (GenerationCancelled, BrokenPipeError, ConnectionResetError):
+                    raise
+                except Exception as error:
+                    sys.stderr.write(f"chat {request_id} failed: {error}\n")
+                    failure = error if isinstance(error, APIError) else APIError(
+                        "Generation failed. Check the server log.",
+                        status=500, code="server_error", error_type="server_error",
+                    )
+                    events.end(failure.body())
+        finally:
+            # MLX iteration and cleanup stay on the request's generation thread.
+            close = getattr(pieces, "close", None)
+            if close is not None:
+                close()
+
     def _stream_chat(
         self,
         pieces: Iterator[GeneratedPiece],
@@ -1233,37 +1348,26 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         model_name: str,
         approximation_mode: str,
     ) -> None:
-        self._start_sse()
-        created = int(time.time())
-        base = {
-            "id": request_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model_name,
-            "approximation": {"mode": approximation_mode},
-        }
-        self._sse({**base, "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]})
-        parser = ReasoningParser(thinking)
-        prompt_tokens = generated = 0
-        finish = None
-        for piece in pieces:
-            prompt_tokens = piece.prompt_tokens
-            generated = piece.generation_tokens
-            finish = piece.finish_reason or finish
-            reasoning, content = parser.feed(piece.text)
+        with self._chat_stream(pieces, request_id, model_name, approximation_mode) as events:
+            parser = ReasoningParser(thinking)
+            prompt_tokens = generated = 0
+            finish = None
+            for piece in pieces:
+                events.check_connection()
+                prompt_tokens = piece.prompt_tokens
+                generated = piece.generation_tokens
+                finish = piece.finish_reason or finish
+                reasoning, content = parser.feed(piece.text)
+                if reasoning:
+                    events.send({"reasoning_content": reasoning})
+                if content:
+                    events.send({"content": content})
+            reasoning, content = parser.finish()
             if reasoning:
-                self._sse({**base, "choices": [{"index": 0, "delta": {"reasoning_content": reasoning}, "finish_reason": None}]})
+                events.send({"reasoning_content": reasoning})
             if content:
-                self._sse({**base, "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}]})
-        reasoning, content = parser.finish()
-        if reasoning:
-            self._sse({**base, "choices": [{"index": 0, "delta": {"reasoning_content": reasoning}, "finish_reason": None}]})
-        if content:
-            self._sse({**base, "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}]})
-        self._sse({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": finish or "stop"}]})
-        if include_usage:
-            self._sse({**base, "choices": [], "usage": _usage(prompt_tokens, generated)})
-        self._sse_done()
+                events.send({"content": content})
+            events.finish(finish or "stop", prompt_tokens, generated, include_usage)
 
     def _stream_tool_chat(
         self,
@@ -1275,27 +1379,13 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         runtime: Any,
         approximation_mode: str,
     ) -> None:
-        self._start_sse()
-        created = int(time.time())
-        base = {
-            "id": request_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model_name,
-            "approximation": {"mode": approximation_mode},
-        }
-        self._sse(
-            {
-                **base,
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"role": "assistant"},
-                        "finish_reason": None,
-                    }
-                ],
-            }
-        )
+        with self._chat_stream(pieces, request_id, model_name, approximation_mode) as events:
+            self._write_tool_chat(pieces, thinking_mode, include_usage, runtime, events)
+
+    def _write_tool_chat(
+        self, pieces: Iterator[GeneratedPiece], thinking_mode: str,
+        include_usage: bool, runtime: Any, events: ChatEvents,
+    ) -> None:
         factory = getattr(runtime, "make_tool_stream_parser", None)
         parser = (
             factory(thinking_mode)
@@ -1325,16 +1415,10 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                 value = {"tool_calls": [call]}
             else:
                 return
-            self._sse(
-                {
-                    **base,
-                    "choices": [
-                        {"index": 0, "delta": value, "finish_reason": None}
-                    ],
-                }
-            )
+            events.send(value)
 
         for piece in pieces:
+            events.check_connection()
             raw_parts.append(piece.text)
             prompt_tokens = piece.prompt_tokens
             generated = piece.generation_tokens
@@ -1347,67 +1431,21 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         raw = "".join(raw_parts)
         try:
             turn = runtime.parse_chat(raw, thinking_mode)
-        except Exception:
-            self._sse(
-                {
-                    "error": {
-                        "message": "The model returned an invalid tool call.",
-                        "type": "server_error",
-                        "param": None,
-                        "code": "invalid_tool_call",
-                    }
-                }
-            )
-            self._sse_done()
-            return
+        except Exception as error:
+            raise APIError(
+                "The model returned an invalid tool call.",
+                status=500, code="invalid_tool_call", error_type="server_error",
+            ) from error
         if not parser.matches(turn.tool_calls):
             if parser.streamed_tool_count:
-                self._sse(
-                    {
-                        "error": {
-                            "message": "The streamed tool call failed validation.",
-                            "type": "server_error",
-                            "param": None,
-                            "code": "invalid_tool_call",
-                        }
-                    }
+                raise APIError(
+                    "The streamed tool call failed validation.",
+                    status=500, code="invalid_tool_call", error_type="server_error",
                 )
-                self._sse_done()
-                return
             for index, call in enumerate(_response_tool_calls(turn.tool_calls)):
-                self._sse(
-                    {
-                        **base,
-                        "choices": [
-                            {
-                                "index": 0,
-                                "delta": {"tool_calls": [{"index": index, **call}]},
-                                "finish_reason": None,
-                            }
-                        ],
-                    }
-                )
-        self._sse(
-            {
-                **base,
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {},
-                        "finish_reason": "tool_calls" if turn.tool_calls else finish,
-                    }
-                ],
-            }
-        )
-        if include_usage:
-            self._sse(
-                {
-                    **base,
-                    "choices": [],
-                    "usage": _usage(prompt_tokens, generated),
-                }
-            )
-        self._sse_done()
+                events.send({"tool_calls": [{"index": index, **call}]})
+        events.finish("tool_calls" if turn.tool_calls else finish,
+                      prompt_tokens, generated, include_usage)
 
     def _stream_completion(
         self,
@@ -1511,6 +1549,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")
         self.send_header("Connection", "close")
         self.end_headers()
         self.close_connection = True

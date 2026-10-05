@@ -215,7 +215,7 @@ struct MemoryPlanningProfile {
     func attentionWork(_ queries: Double) -> Double {
       if qwen {
         // Structural upper estimate; runtime may reduce chunks for workspace.
-        let micro = min(queries, Double(s.qwenQSAQueryChunk ?? 4))
+        let micro = min(queries, Double(s.qwenQSAQueryChunk ?? 16))
         if s.qwenSparseSDPA == true && s.qwenQSAIndexed == true && queries <= 8 && tokens > topk {
           let partials = micro * heads * 32 * (dim + 2) * 4
           let indexScores = micro * ceil(tokens / number("indexer_compress_ratio", 4)) * indexHeads * 8

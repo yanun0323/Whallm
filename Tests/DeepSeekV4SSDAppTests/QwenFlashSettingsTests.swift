@@ -256,7 +256,7 @@ final class QwenFlashSettingsTests: XCTestCase {
   @MainActor
   func testQSAThroughputPreferencesCatalogAndDependencies() throws {
     var settings = ModelAdvancedSettings.defaults(for: qwen)
-    XCTAssertEqual(settings.qwenQSAQueryChunk, 4)
+    XCTAssertEqual(settings.qwenQSAQueryChunk, 16)
     XCTAssertEqual(settings.qwenQSAIndexed, false)
     settings.qwenQSAQueryChunk = 32
     settings.qwenQSAIndexed = true
@@ -274,7 +274,7 @@ final class QwenFlashSettingsTests: XCTestCase {
     XCTAssertEqual(restored.qwenQSAIndexed, true)
     for kind in [ModelKind.deepSeekV4, .deepSeekV41] {
       let other = try object(catalog(settings, kind: kind).models[0].runtime)
-      XCTAssertEqual(other["qwen_qsa_query_chunk"] as? Int, 4)
+      XCTAssertEqual(other["qwen_qsa_query_chunk"] as? Int, 16)
       XCTAssertEqual(other["qwen_qsa_indexed"] as? Bool, false)
     }
     if let base = ProcessInfo.processInfo.environment["WHALLM_QWEN_UI_ARTIFACTS"] {
@@ -293,7 +293,7 @@ final class QwenFlashSettingsTests: XCTestCase {
     old.removeValue(forKey: "qwenQSAIndexed")
     let restored = try JSONDecoder().decode(ModelAdvancedSettings.self,
       from: JSONSerialization.data(withJSONObject: old)).normalized(for: qwen)
-    XCTAssertEqual(restored.qwenQSAQueryChunk, 4)
+    XCTAssertEqual(restored.qwenQSAQueryChunk, 16)
     XCTAssertEqual(restored.qwenQSAIndexed, false)
     for invalid in [Int.min, -1, 0, 129, Int.max] {
       settings.qwenQSAQueryChunk = invalid

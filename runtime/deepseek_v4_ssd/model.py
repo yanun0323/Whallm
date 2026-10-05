@@ -91,8 +91,13 @@ class RuntimeConfig:
     qwen_ngram_io: str = "mmap"
     qwen_ngram_cache_bytes: int = 0
     qwen_sparse_sdpa: bool = False
-    qwen_qsa_query_chunk: int = 4
+    qwen_qsa_query_chunk: int = 16
     qwen_qsa_indexed: bool = False
+    qwen_qsa_dense_within_budget: bool = False
+    qwen_qsa_dense_threshold: int = 0
+    qwen_qsa_skip_complete_gather: bool = True
+    qwen_packed_gdn_prefill: bool = False
+    qwen_sorted_expert_prefill: bool = False
     qwen_mtp_draft_tokens: int = 5
     qwen_mtp_zero_acceptance_limit: int = 1
 
@@ -1054,15 +1059,17 @@ def _load_qwen_mtp(
             mlp = getattr(layer, "mlp", None)
             if mlp is not None:
                 mlp.shared_overlap = getattr(config, "qwen_shared_expert_overlap", False)
-        # New QSA controls also cover the native draft head, not only the target.
-        # Preserve its previous defaults when the new experiments are disabled.
-        if getattr(config, "qwen_qsa_indexed", False) or getattr(config, "qwen_qsa_query_chunk", 4) != 4:
-            for layer in model.layers:
-                attention = getattr(layer, "self_attn", None)
-                if attention is not None:
-                    attention.sparse_sdpa = config.qwen_sparse_sdpa
-                    attention.query_chunk = getattr(config, "qwen_qsa_query_chunk", 4)
-                    attention.indexed_decode = getattr(config, "qwen_qsa_indexed", False)
+        # The QSA controls apply to the native draft head and to the target alike,
+        # because the configured defaults are the shipped attention path.
+        for layer in model.layers:
+            attention = getattr(layer, "self_attn", None)
+            if attention is not None:
+                attention.sparse_sdpa = config.qwen_sparse_sdpa
+                attention.query_chunk = getattr(config, "qwen_qsa_query_chunk", 16)
+                attention.indexed_decode = getattr(config, "qwen_qsa_indexed", False)
+                attention.dense_within_budget = getattr(config, "qwen_qsa_dense_within_budget", False)
+                attention.dense_threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
+                attention.skip_complete_gather = getattr(config, "qwen_qsa_skip_complete_gather", True)
         model.eval()
         mx.eval(model.parameters())
         return model, expert_cache

@@ -23,6 +23,9 @@ class ModelSupport:
         features = self.descriptor.features
         from ..qwen_flash_config import DEFAULTS, validate_flash_config
         validate_flash_config(config)
+        if (getattr(config, "qwen_packed_gdn_prefill", False)
+                and self.descriptor.kind != "swift1.5-qwen3.8-flash-next"):
+            raise ValueError("Packed GDN prefill is supported only by Swift1.5-Qwen3.8-Flash-Next")
         for name, default in DEFAULTS.items():
             if (getattr(config, name, default) != default
                     and self.descriptor.kind not in QWEN_MODEL_KINDS):

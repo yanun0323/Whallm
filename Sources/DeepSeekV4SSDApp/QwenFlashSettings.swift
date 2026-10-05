@@ -4,6 +4,13 @@ import Foundation
 /// Inactive values survive switching backends or temporarily selecting waves.
 extension ModelAdvancedSettings {
   var qwenFlashWavesEnabled: Bool { (qwenExpertWaveSlots ?? 0) > 0 }
+  var effectiveQwenPackedGDNPrefill: Bool { qwenPackedGDNPrefill == true && mtpEnabled != true }
+  /// Sorting only applies to grouped prefill, which waves and a disabled
+  /// Prefill acceleration turn off. The saved choice is kept either way.
+  var qwenSortedExpertPrefillAvailable: Bool { qwenGroupedExperts == true && !qwenFlashWavesEnabled }
+  var effectiveQwenSortedExpertPrefill: Bool {
+    qwenSortedExpertPrefill == true && qwenSortedExpertPrefillAvailable
+  }
   var qwenWholeLayerExperimentsActive: Bool {
     layerMajorPrefill && batchedExpertPrefill == true && !qwenFlashWavesEnabled
   }
@@ -21,7 +28,7 @@ extension ModelAdvancedSettings {
     guard (0...128).contains(qwenPrefillSeedExperts ?? 0) else {
       throw ConfigurationError(L10n.string(QwenFlashCopy.invalidSeeds))
     }
-    guard (1...128).contains(qwenQSAQueryChunk ?? 4) else {
+    guard (1...128).contains(qwenQSAQueryChunk ?? 16) else {
       throw ConfigurationError(L10n.string(QwenFlashCopy.invalidQueryChunk))
     }
     guard (0...512).contains(qwenExpertWaveSlots ?? 0) else {
@@ -38,8 +45,14 @@ extension ModelAdvancedSettings {
 
 /// English localization keys are shared by the controls and validation tests.
 enum QwenFlashCopy {
+  static let packedGDN = "Use packed GDN prefill"
+  static let packedGDNHint = "Off by default. M5 text prefill only, 2–1024 tokens per call. Tested outputs matched, but whole-model gains were below 5%. Requires MTP off; other calls use the original kernel."
+  static let packedGDNInactive = "Packed GDN prefill is inactive while MTP is enabled. Its saved choice is retained."
+  static let sortedExperts = "Use sorted expert prefill"
+  static let sortedExpertsHint = "Off by default. Groups prompt rows by expert so prefill uses a faster kernel. In tests, 4K and 16K prompts reached the first token about 2× sooner. Output can differ slightly from the default. Requires Prefill acceleration."
+  static let sortedExpertsInactive = "Sorted expert prefill is inactive while Prefill acceleration is off or experts per wave is above 0. Its saved choice is retained."
   static let title = "Qwen Flash experiments"
-  static let warning = "Experimental; full-model speed and quality are not yet verified. New QSA controls retain the original chunk size and disable indexed attention by default."
+  static let warning = "Experimental; full-model speed and quality are not yet verified. QSA queries per chunk defaults to 16 and indexed attention stays off."
   static let lifecycle = "Saved automatically for this model. Changes apply on the next model load. Unload the model before editing."
   static let locked = "Unload this model to edit these settings. Loading and unloading also lock the controls."
   static let waves = "Experts per wave"
@@ -57,10 +70,12 @@ enum QwenFlashCopy {
   static let invalidBackend = "Choose mmap or pread for the N-gram read backend."
   static let invalidCache = "N-gram row cache must be an integer from 0 to 512 MiB."
   static let queryChunk = "QSA queries per chunk"
-  static let queryChunkHint = "1–128 queries per attention chunk; default 4. Try 16 or 32 for prefill. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit. Numerical rounding may differ."
+  static let queryChunkHint = "1–128 queries per attention chunk; default 16. Larger batches cut per-chunk overhead; 24 and above measured slower. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit."
   static let indexed = "Use indexed QSA decode"
   static let indexedHint = "Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text."
   static let invalidQueryChunk = "QSA queries per chunk must be an integer from 1 to 128."
+  static let skipGather = "Skip the identity QSA key copy"
+  static let skipGatherHint = "When the indexer selects every visible key, use the prefix directly instead of one gathered copy per query. Measured output is byte-identical; contexts above the sparse threshold are unchanged."
   static let readBatch = "Experts per prefill read"
   static let readBatchHint = "1 keeps existing reads; 2–32 merges adjacent expert payloads without reading unselected gaps. Requires layer-major whole-layer prefill with waves off. Larger batches retain more per-worker staging memory."
   static let seeds = "Warm decode experts per layer"
@@ -70,8 +85,8 @@ enum QwenFlashCopy {
   static let wholeLayerDependency = "Read batching and warm handoff are inactive without layer-major whole-layer prefill, or while expert waves are enabled. Saved choices are retained."
   static let invalidReadBatch = "Experts per prefill read must be an integer from 1 to 32."
   static let invalidSeeds = "Warm decode experts per layer must be an integer from 0 to 128."
-  static let allKeys = [readBatch, readBatchHint, seeds, seedsHint, sharedOverlap,
-    sharedOverlapHint, wholeLayerDependency, invalidReadBatch, invalidSeeds,queryChunk, queryChunkHint, indexed, indexedHint, invalidQueryChunk,title, warning, lifecycle, locked, waves, wavesHint,
+  static let allKeys = [packedGDN, packedGDNHint, packedGDNInactive, sortedExperts, sortedExpertsHint, sortedExpertsInactive, readBatch, readBatchHint, seeds, seedsHint, sharedOverlap,
+    sharedOverlapHint, wholeLayerDependency, invalidReadBatch, invalidSeeds,queryChunk, queryChunkHint, skipGather, skipGatherHint, indexed, indexedHint, invalidQueryChunk,title, warning, lifecycle, locked, waves, wavesHint,
     wavesConflict, backend, backendHint, mmap, pread, cache, cacheHint,
     sdpa, sdpaHint, invalidWaves, invalidBackend, invalidCache]
 }

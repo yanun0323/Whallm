@@ -449,6 +449,9 @@ class QSAAttention(nn.Module):
         self.sparse_sdpa = False
         self.query_chunk = 4
         self.indexed_decode = False
+        self.dense_within_budget = False
+        self.dense_threshold = 0
+        self.skip_complete_gather = False
         self.q_proj = nn.Linear(
             args.hidden_size,
             args.num_attention_heads * args.head_dim * 2,
@@ -525,7 +528,8 @@ class QSAAttention(nn.Module):
     ) -> mx.array:
         if query.shape[0] != 1:
             raise ValueError("Qwen SSD runtime supports batch size one")
-        if self.sparse_sdpa and key.shape[2] <= self.args.indexer_budget:
+        if ((self.sparse_sdpa or self.dense_within_budget)
+                and key.shape[2] <= (self.dense_threshold or self.args.indexer_budget)):
             from .qwen_tensor_ops import dense_causal_attention
             # The selection is every visible key here. Do not duplicate K/V once
             # per query or build unused index pools. Raw index cache was updated
@@ -602,10 +606,20 @@ class QSAAttention(nn.Module):
                 if current is not None:
                     outputs.append(current)
                     continue
-            # Retain the original gather: storage-axis gathering showed no
-            # speed or allocation benefit in the recorded first trial.
-            selected_key = mx.take(key[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
-            selected_value = mx.take(value[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
+            if self.skip_complete_gather and key.shape[2] <= self.args.indexer_budget:
+                # Selection is every visible key, so the per-query gather only
+                # reproduces the same rows for each query. Broadcasting the whole
+                # key/value keeps the identical numbers in the identical layout
+                # (verified byte equal) without materialising them per query.
+                selected_key = mx.contiguous(mx.broadcast_to(
+                    key, (end - start, key.shape[1], key.shape[2], key.shape[3])))
+                selected_value = mx.contiguous(mx.broadcast_to(
+                    value, (end - start, value.shape[1], value.shape[2], value.shape[3])))
+            else:
+                # Retain the original gather: storage-axis gathering showed no
+                # speed or allocation benefit in the recorded first trial.
+                selected_key = mx.take(key[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
+                selected_value = mx.take(value[0].transpose(1, 0, 2), selected, axis=0).transpose(0, 2, 1, 3)
             if self.args.num_attention_heads % selected_key.shape[1] != 0:
                 raise ValueError("Qwen query heads must be divisible by KV heads")
             repeats = self.args.num_attention_heads // selected_key.shape[1]
@@ -680,6 +694,9 @@ class StreamingExperts(nn.Module):
         self.layer = layer
         self.cache = cache
         self.grouped_prefill = False
+        # Opt-in: tell gather_qmm that grouped rows are sorted. Faster for long
+        # prefill, but the segmented kernel is not bit-identical to the default.
+        self.sorted_prefill = False
         self.wave_slots = 0
         self.wave_count = 0
         self.wave_pairs = 0
@@ -740,7 +757,8 @@ class StreamingExperts(nn.Module):
             selected = indices
             if grouped:
                 source, selected, inverse = _gather_sort(source, indices)
-            # Preserve the tested QMM path even when expert indices are sorted.
+            # Default keeps the tested QMM path even when expert indices are sorted.
+            sorted_indices = grouped and self.sorted_prefill
             projected = mx.gather_qmm(
                 source,
                 batched.gate_up,
@@ -750,7 +768,7 @@ class StreamingExperts(nn.Module):
                 group_size=32,
                 bits=4,
                 mode="mxfp4",
-                sorted_indices=False,
+                sorted_indices=sorted_indices,
             )
             gate, up = mx.split(projected, 2, axis=-1)
             output = mx.gather_qmm(
@@ -762,7 +780,7 @@ class StreamingExperts(nn.Module):
                 group_size=32,
                 bits=4,
                 mode="mxfp4",
-                sorted_indices=False,
+                sorted_indices=sorted_indices,
             )
             self.cache.record_gather_qmm(2)
             if grouped:
@@ -871,11 +889,18 @@ class DecoderLayer(nn.Module):
         layer: int,
         cache: ExpertCache,
         ngram_store: NGramStore,
+        *,
+        packed_gdn_prefill: bool = False,
     ):
         super().__init__()
         self.layer_type = args.layer_types[layer]
+        self.packed_gdn_prefill = packed_gdn_prefill
         if self.layer_type == "linear_attention":
-            self.linear_attn = GatedDeltaNet(args)
+            if packed_gdn_prefill:
+                from .qwen_gdn_packed import PackedGatedDeltaNet
+                self.linear_attn = PackedGatedDeltaNet(args)
+            else:
+                self.linear_attn = GatedDeltaNet(args)
             self.linear_attn.norm = RMSNormGated(
                 args.linear_value_head_dim, args.rms_norm_eps
             )
@@ -893,12 +918,18 @@ class DecoderLayer(nn.Module):
         mask: mx.array | None,
         cache,
         rope_positions=None,
+        *,
+        allow_packed_gdn: bool = True,
     ) -> mx.array:
         if self.ple is not None:
             hidden = hidden + self.ple(hidden, input_ids, cache)
         mixed, residual, injection = self.attn_hyper_connection(hidden)
         if self.layer_type == "linear_attention":
-            result = self.linear_attn(mixed, mask, cache)
+            if self.packed_gdn_prefill:
+                result = self.linear_attn(mixed, mask, cache,
+                    allow_packed=allow_packed_gdn and rope_positions is None)
+            else:
+                result = self.linear_attn(mixed, mask, cache)
         else:
             result = self.self_attn(mixed, cache, rope_positions)
         hidden = self.attn_hyper_connection.inject(residual, result, injection)
@@ -913,16 +944,21 @@ class DecoderLayer(nn.Module):
         if self.ple is not None:
             hidden = hidden + self.ple(hidden, input_ids, cache)
         mixed, _, _ = self.attn_hyper_connection(hidden)
-        self.linear_attn(mixed, create_ssm_mask(mixed, cache), cache)
+        if self.packed_gdn_prefill:
+            self.linear_attn(mixed, create_ssm_mask(mixed, cache), cache, allow_packed=False)
+        else:
+            self.linear_attn(mixed, create_ssm_mask(mixed, cache), cache)
 
 
 class TextModel(nn.Module):
-    def __init__(self, args: ModelArgs, cache: ExpertCache, ngram_store: NGramStore):
+    def __init__(self, args: ModelArgs, cache: ExpertCache, ngram_store: NGramStore,
+                 *, packed_gdn_prefill: bool = False):
         super().__init__()
         self.args = args
+        self.packed_gdn_prefill = packed_gdn_prefill
         self.embed_tokens = nn.Embedding(args.vocab_size, args.hidden_size)
         self.layers = [
-            DecoderLayer(args, layer, cache, ngram_store)
+            DecoderLayer(args, layer, cache, ngram_store, packed_gdn_prefill=packed_gdn_prefill)
             for layer in range(args.num_hidden_layers)
         ]
         self.hyper_connection_mixer = GatedResidual(args, combine=False)
@@ -940,7 +976,10 @@ class TextModel(nn.Module):
             check_cancelled()
             if capture is not None:
                 capture.append(hidden)
-            hidden = layer(hidden, input_ids, mask, layer_cache, rope_positions)
+            if self.packed_gdn_prefill and (input_embeddings is not None or capture is not None):
+                hidden = layer(hidden, input_ids, mask, layer_cache, rope_positions, allow_packed_gdn=False)
+            else:
+                hidden = layer(hidden, input_ids, mask, layer_cache, rope_positions)
         return hidden
 
     def __call__(self, input_ids: mx.array, cache=None, *, input_embeddings=None, rope_positions=None) -> mx.array:
@@ -949,11 +988,12 @@ class TextModel(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, args: ModelArgs, cache: ExpertCache, ngram_store: NGramStore):
+    def __init__(self, args: ModelArgs, cache: ExpertCache, ngram_store: NGramStore,
+                 *, packed_gdn_prefill: bool = False):
         super().__init__()
         self.args = args
         self.model_type = args.model_type
-        self.model = TextModel(args, cache, ngram_store)
+        self.model = TextModel(args, cache, ngram_store, packed_gdn_prefill=packed_gdn_prefill)
         self.ngram_store = ngram_store
         self._expert_cache = cache
         self.quantize_kv = False
@@ -1435,6 +1475,12 @@ def load(
     weights: dict[str, mx.array],
     read_limiter=None,
 ):
+    packed_gdn = getattr(config, "qwen_packed_gdn_prefill", False)
+    if type(packed_gdn) is not bool:
+        raise ValueError("qwen_packed_gdn_prefill must be a boolean")
+    if packed_gdn and (getattr(installed, "model_kind", None) != "swift1.5-qwen3.8-flash-next"
+                       or getattr(config, "mtp_enabled", False)):
+        raise ValueError("Packed GDN prefill requires Swift with MTP disabled")
     if installed.ngram is None:
         raise ValueError("Qwen installed model has no N-gram descriptor")
     args = ModelArgs.from_dict(raw_config["text_config"])
@@ -1472,7 +1518,7 @@ def load(
             io_backend=getattr(config, "qwen_ngram_io", "mmap"),
             cache_bytes=getattr(config, "qwen_ngram_cache_bytes", 0),
         )
-        model = Model(args, cache, ngram_store)
+        model = Model(args, cache, ngram_store, **({"packed_gdn_prefill": True} if packed_gdn else {}))
         model.quantize_kv = config.qwen_quantized_kv
         model.quantize_index = config.qwen_quantized_index
         model.pooled_index_cache = getattr(config, "qwen_pooled_index_cache", False)
@@ -1482,15 +1528,20 @@ def load(
                     module.compiled = True
         # Grouping only reorders gather_qmm rows; MTP receives identical hidden states.
         grouped_prefill = bool(getattr(config, "qwen_grouped_experts", True))
+        sorted_prefill = grouped_prefill and getattr(config, "qwen_sorted_expert_prefill", False) is True
         for layer in model.model.layers:
             layer.mlp.shared_overlap = getattr(config, "qwen_shared_expert_overlap", False)
             layer.mlp.experts.grouped_prefill = grouped_prefill
+            layer.mlp.experts.sorted_prefill = sorted_prefill
             layer.mlp.experts.wave_slots = getattr(config, "qwen_expert_wave_slots", 0)
             attention = getattr(layer, "self_attn", None)
             if isinstance(attention, QSAAttention):
                 attention.sparse_sdpa = getattr(config, "qwen_sparse_sdpa", False)
-                attention.query_chunk = getattr(config, "qwen_qsa_query_chunk", 4)
+                attention.query_chunk = getattr(config, "qwen_qsa_query_chunk", 16)
                 attention.indexed_decode = getattr(config, "qwen_qsa_indexed", False)
+                attention.dense_within_budget = getattr(config, "qwen_qsa_dense_within_budget", False)
+                attention.dense_threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
+                attention.skip_complete_gather = getattr(config, "qwen_qsa_skip_complete_gather", True)
         model.eval()
         model.load_weights(list(model.sanitize(weights).items()), strict=True)
         model.dspark = None

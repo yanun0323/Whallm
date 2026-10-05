@@ -49,7 +49,25 @@ def validate(directory: Path) -> int:
         if actual != expected:
             raise ValueError(f"{name}: {actual!r} != {expected!r}")
         print(f"PASS {name}: {actual}")
-    return len(cases) + 5
+    for name, expected, mtp in (("swift-packed-off", False, False),
+                                ("swift-packed-on", True, False),
+                                ("swift-packed-mtp", False, True),
+                                ("qwen-packed-inactive", False, False)):
+        spec = load_model_catalog(directory / f"{name}.json")[0]
+        runtime = spec.runtime
+        validate_flash_config(runtime)
+        if runtime.qwen_packed_gdn_prefill != expected or runtime.mtp_enabled != mtp:
+            raise ValueError(f"{name}: Packed GDN/MTP settings did not survive the catalog")
+        print(f"PASS {name}: packed={expected} mtp={mtp}")
+    for name, expected in (("swift-sorted-off", False), ("swift-sorted-on", True),
+                           ("qwen-sorted-on", True), ("swift-sorted-mtp", True),
+                           ("swift-sorted-no-grouping", False), ("swift-sorted-waves", False)):
+        runtime = load_model_catalog(directory / f"{name}.json")[0].runtime
+        validate_flash_config(runtime)
+        if runtime.qwen_sorted_expert_prefill != expected:
+            raise ValueError(f"{name}: sorted expert prefill did not survive the catalog")
+        print(f"PASS {name}: sorted={expected}")
+    return len(cases) + 15
 
 
 def main() -> None:

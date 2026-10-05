@@ -271,7 +271,10 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var qwenNgramIO: String? = "mmap"
   var qwenNgramCacheMiB: Int? = 0
   var qwenSparseSDPA: Bool? = false
-  var qwenQSAQueryChunk: Int? = 4
+  var qwenQSAQueryChunk: Int?
+  var qwenQSASkipCompleteGather: Bool?
+  var qwenPackedGDNPrefill: Bool? = false
+  var qwenSortedExpertPrefill: Bool? = false
   var qwenQSAIndexed: Bool? = false
   var qwenPrefillReadExperts: Int? = 1
   var qwenPrefillSeedExperts: Int? = 0
@@ -329,6 +332,10 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
       settings.qwenCompileTensorOps = true
       settings.qwenPhaseMemory = true
     }
+    // Every kind sends the runtime default for Qwen-only fields: non-Qwen
+    // validation rejects any value that differs from the runtime default.
+    settings.qwenQSAQueryChunk = 16
+    settings.qwenQSASkipCompleteGather = true
     return settings
   }
 
@@ -371,7 +378,11 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.qwenNgramIO = qwen ? (settings.qwenNgramIO ?? "mmap") : "mmap"
     settings.qwenNgramCacheMiB = qwen ? (settings.qwenNgramCacheMiB ?? 0) : 0
     settings.qwenSparseSDPA = qwen ? (settings.qwenSparseSDPA ?? false) : false
-    settings.qwenQSAQueryChunk = qwen ? (settings.qwenQSAQueryChunk ?? 4) : 4
+    settings.qwenQSAQueryChunk = qwen ? (settings.qwenQSAQueryChunk ?? 16) : 16
+    settings.qwenQSASkipCompleteGather = qwen ? (settings.qwenQSASkipCompleteGather ?? true) : true
+    settings.qwenPackedGDNPrefill = modelKind == .swift1_5Qwen3_8FlashNext
+      ? (settings.qwenPackedGDNPrefill ?? false) : false
+    settings.qwenSortedExpertPrefill = qwen ? (settings.qwenSortedExpertPrefill ?? false) : false
     settings.qwenQSAIndexed = qwen ? (settings.qwenQSAIndexed ?? false) : false
     settings.qwenPrefillReadExperts = qwen ? qwenPrefillReadExperts ?? 1 : 1
     settings.qwenPrefillSeedExperts = qwen ? qwenPrefillSeedExperts ?? 0 : 0
@@ -774,6 +785,9 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       var qwenNgramCacheBytes: Int? = nil
       var qwenSparseSDPA: Bool? = nil
       var qwenQSAQueryChunk: Int? = nil
+      var qwenQSASkipCompleteGather: Bool? = nil
+      var qwenPackedGDNPrefill: Bool? = nil
+      var qwenSortedExpertPrefill: Bool? = nil
       var qwenQSAIndexed: Bool? = nil
       var qwenPrefillReadExperts: Int? = nil
       var qwenPrefillSeedExperts: Int? = nil
@@ -839,6 +853,9 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         case qwenNgramCacheBytes = "qwen_ngram_cache_bytes"
         case qwenSparseSDPA = "qwen_sparse_sdpa"
         case qwenQSAQueryChunk = "qwen_qsa_query_chunk"
+        case qwenQSASkipCompleteGather = "qwen_qsa_skip_complete_gather"
+        case qwenPackedGDNPrefill = "qwen_packed_gdn_prefill"
+        case qwenSortedExpertPrefill = "qwen_sorted_expert_prefill"
         case qwenQSAIndexed = "qwen_qsa_indexed"
         case qwenPrefillReadExperts = "qwen_prefill_read_experts"
         case qwenPrefillSeedExperts = "qwen_prefill_seed_experts"
@@ -870,7 +887,10 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         try values.encode(qwenNgramIO ?? "mmap", forKey: .qwenNgramIO)
         try values.encode(qwenNgramCacheBytes ?? 0, forKey: .qwenNgramCacheBytes)
         try values.encode(qwenSparseSDPA ?? false, forKey: .qwenSparseSDPA)
-        try values.encode(qwenQSAQueryChunk ?? 4, forKey: .qwenQSAQueryChunk)
+        try values.encode(qwenQSAQueryChunk ?? 16, forKey: .qwenQSAQueryChunk)
+        try values.encode(qwenQSASkipCompleteGather ?? true, forKey: .qwenQSASkipCompleteGather)
+        try values.encode(qwenPackedGDNPrefill ?? false, forKey: .qwenPackedGDNPrefill)
+        try values.encode(qwenSortedExpertPrefill ?? false, forKey: .qwenSortedExpertPrefill)
         try values.encode(qwenQSAIndexed ?? false, forKey: .qwenQSAIndexed)
         try values.encode(qwenPrefillReadExperts ?? 1, forKey: .qwenPrefillReadExperts)
         try values.encode(qwenPrefillSeedExperts ?? 0, forKey: .qwenPrefillSeedExperts)
