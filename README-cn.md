@@ -12,7 +12,11 @@
   <a href="README-ko.md"><img src="https://img.shields.io/badge/한국어-클릭-yellow" alt="한국어"></a>
 </p>
 
-Whallm 让 Apple Silicon Mac 从 SSD 读取所需的专家权重，在本地运行大语言模型。支持 DeepSeek V4、DeepSeek V4.1 和 Qwen3.8，提供内置聊天和 OpenAI 兼容 API。
+Whallm 让 Apple Silicon Mac 从 SSD 读取所需的专家权重，在本地运行大语言模型。支持 DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen 和 MiMo（预览版），提供内置聊天和 OpenAI 兼容 API。
+
+1.1.10 版新增第五个模型 `Swift1.5-Qwen3.8-Flash-Next`，从 `Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4` 的固定版本 `257cb509d72ecc07519be35a8b7558fde3b31b21` 下载。它复用 Qwen FP8 模型的推理引擎，但安装目录、保存设置、Alias 与提示词缓存各自独立。API model ID 为 `swift1.5-qwen3.8-flash-next-mxfp4`。App 固定显示的下载大小为 **127,714,522,478 bytes**（约 **118.94 GiB**）：原有 59 个文本／MTP 文件，加上 **897,864,704 bytes** 的视觉权重；不下载审计文件。MTP 仍默认关闭。
+
+两款 Qwen 都可通过 App Chat、`/v1/chat/completions` 和 `/v1/responses` 输入静态 PNG／JPEG／WebP 图片。新安装包含视觉权重；已有安装请在 **Model → Verify and Repair** 补齐缺少或损坏的文件，不会重新下载完好的文本权重。原版 Qwen 的安装大小为 **126,189,355,659 bytes**（约 **117.52 GiB**）。图片请求须关闭 MTP，且不使用提示词缓存。限制：每次 8 张、每文件 8 MiB、每次合计 32 MiB、每张解码／缩放后最多 1,048,576 像素、每次最多 2,048 个图片 tokens。Qwen 不支持视频、音频或文档输入。Swift 完整模型已通过红／蓝图片识别，以及图片请求与中止前后的短文本结果一致性检查；原版 Qwen 的完整视觉生成、广泛图片质量与视觉性能尚未验证。
 
 ## 性能摘要
 
@@ -35,7 +39,7 @@ Whallm 让 Apple Silicon Mac 从 SSD 读取所需的专家权重，在本地运�
 
 默认地址为 `http://127.0.0.1:11434`。模型在首次使用时加载；服务器一次保留一个模型，依次处理生成请求。如果聊天列表中没有刚安装的模型，请重启服务器。
 
-公开下载版的功能可能少于本文所述源码。
+变更、升级步骤和已知限制见 [1.1.10 英文发布说明](Packaging/ReleaseNotes/1.1.10.md)。
 
 ## 使用要求
 
@@ -111,7 +115,7 @@ wire_api = "responses"
 requires_openai_auth = false
 ```
 
-将 `model` 设为Whallm 显示的 API model ID 或 Alias，保存后重启 Codex。此示例使用默认本地地址，且未设置 API key。如果在 Whallm 设置了密钥，客户端也要设置相同密钥。详见 [Codex 配置参考](https://developers.openai.com/codex/config-reference/)。
+将 `model` 设为 API model ID，或在 **Model → Advanced Settings** 设置的 Alias，保存后重启 Codex。Chat、Status、Throughput 与文本／Markdown 结果表格统一使用 Model 页面的显示名称；显示名称不是 API model ID。API 请求与测试结果的 JSON 保留原来的标识符。此示例使用默认本地地址，且未设置 API key。如果在 Whallm 设置了密钥，客户端也要设置相同密钥。详见 [Codex 配置参考](https://developers.openai.com/codex/config-reference/)。
 
 ## API 与隐私
 
@@ -122,19 +126,19 @@ API 支持文本流式输出和工具调用，提供以下端点：
 - `POST /v1/chat/completions` 和 `POST /v1/completions`
 - `POST /api/models/load` 和 `POST /api/models/unload`
 
-当前源码的三个生成端点支持可选 `seed`，接受 `0` 到 `4294967295` 的整数；省略或传入 `null` 时，每次请求使用新的随机值。Playground Chat 的 Seed 仅应用于下一条消息，发送后清空。固定 seed 有助于在相同输入、模型、设置与运行环境下复现结果，但不保证跨版本、缓存状态或加速设置仍逐字一致。`temperature=0` 仍选择概率最高的结果。自 v1.1.8 起提供。
+三个生成端点支持可选 `seed`，接受 `0` 到 `4294967295` 的整数；省略或传入 `null` 时，每次请求使用新的随机值。Playground Chat 的 Seed 仅应用于下一条消息，发送后清空。固定 seed 有助于在相同输入、模型、设置与运行环境下复现结果，但不保证跨版本、缓存状态或加速设置仍逐字一致。`temperature=0` 仍选择概率最高的结果。自 v1.1.8 起提供。
 
-工具由客户端执行，再返回结果；推理 API 不会自动执行 MCP 工具。当前开发源码新增 MiMo 静态图片及有界 PCM WAV 音频输入，可通过 Chat／Responses 和 App 附件使用。JSON 请求体仍限 **1 MiB**；经过身份验证的 `/api/assets` 上传接受每个文件最多 **8 MiB** 的 PNG／JPEG／WebP、PCM WAV，以及有限支持的 PDF／DOCX／PPTX／XLSX 文档。音频输入仅接受 24 kHz、16 位 PCM WAV、单声道或立体声，每段最长 30 秒、每次最多两段。音频输出、视频、`logprobs`、`response_format` 和 `stop` 仍不支持。详见 [MiMo 合约与限制](docs/mimo-development.md)。
+工具由客户端执行，再返回结果；推理 API 不会自动执行 MCP 工具。MiMo（预览版）支持静态图片及有界 PCM WAV 音频输入，可通过 Chat／Responses 和 App 附件使用。JSON 请求体仍限 **1 MiB**；经过身份验证的 `/api/assets` 上传接受每个文件最多 **8 MiB** 的 PNG／JPEG／WebP、PCM WAV，以及有限支持的 PDF／DOCX／PPTX／XLSX 文档。音频输入仅接受 24 kHz、16 位 PCM WAV、单声道或立体声，每段最长 30 秒、每次最多两段。音频输出、视频、`logprobs`、`response_format` 和 `stop` 仍不支持。详见 [MiMo 合约与限制](docs/mimo-development.md)。
 
-当前开发源码的所有模型都能通过 `/v1/responses` 接收字符串或由 `input_text` 片段组成的 `function_call_output.output` 数组。文本会按顺序合并，保留原有空白和换行，不额外添加分隔符。请在请求历史中附上具有相同 `call_id` 的 `function_call`。多媒体支持仍取决于模型。v1.1.8 尚未包含这项修复。
+所有模型都能通过 `/v1/responses` 接收字符串或由 `input_text` 片段组成的 `function_call_output.output` 数组。文本会按顺序合并，保留原有空白和换行，不额外添加分隔符。请在请求历史中附上具有相同 `call_id` 的 `function_call`。多媒体支持仍取决于模型。自 v1.1.9 起提供。
 
 推理在你的 Mac 上运行。下载、更新和 API 连接会使用网络。连接的客户端可能将数据发送到其他服务；**Debug** 日志可能包含完整输入和工具结果。
 
 ## 验证与限制
 
-v1.1.8 源码通过 **464 项 Python 测试**和 **135 项 Swift 测试**。App 和 ZIP 解压副本均通过签名，以及英文、简体中文、繁体中文的隔离启动检查。
+源码验证：**674 项 Python 测试通过**；**196 项 Swift 测试执行，4 项跳过、零失败**。打包检查涵盖 App 和 ZIP 解压副本的签名、包内资源，以及无法访问构建目录时的英文、简体中文、繁体中文启动。发布流程会对正式签名、公证的成品和 GitHub 下载文件再次检查。工具调用回归测试使用固定模型输出，不等于完整 Pi 或 Codex 客户端对话验证。
 
-除三个固定版本的文本模型外，当前开发源码新增 MiMo 文本／图片、有界 WAV 音频及有限文档支持，以及固定 revision 的完整预制 artifact。Python 624 项、Swift 171 项（3 项跳过）测试通过；本轮 MiMo 已完成本地打包，但整体验收仍未完成。聊天附件已加入分类选取文件、拖放、额度提示及上传状态。视频／音视频同步和 MCP Agent 界面仍未完成；音频及文档输入有格式和资源限制。详见[开发状态](docs/mimo-development.md)。新增加速路径已通过小模型和组件测试；完整模型的速度与质量比较仍待验证。很长的输入需要更多缓存内存。
+MiMo 仍为预览版，通过固定版本的预制 artifact 提供文本／图片、有界 WAV 音频及有限文档支持；整体验收尚未完成。聊天附件包含分类选取文件、拖放、额度提示及上传状态。视频／音视频同步和 MCP Agent 界面仍未完成；音频及文档输入有格式和资源限制。详见[开发状态](docs/mimo-development.md)。Qwen 图片验证范围见上方说明。历史 MTP 测量不是最终修正版本的测量，MTP 也不保证对所有任务都更快。部分加速路径仅有小模型和组件测试；很长的输入需要更多缓存内存。
 
 ## 许可证
 

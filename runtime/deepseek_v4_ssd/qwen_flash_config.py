@@ -8,16 +8,31 @@ DEFAULTS = {
     "qwen_prefill_read_experts": 1,
     "qwen_prefill_seed_experts": 0,
     "qwen_shared_expert_overlap": False,
+    "qwen_packed_gdn_prefill": False,
+    "qwen_sorted_expert_prefill": False,
     "qwen_expert_wave_slots": 0,
     "qwen_ngram_io": "mmap",
     "qwen_ngram_cache_bytes": 0,
     "qwen_sparse_sdpa": False,
-    "qwen_qsa_query_chunk": 4,
+    "qwen_qsa_query_chunk": 16,
     "qwen_qsa_indexed": False,
+    "qwen_qsa_dense_within_budget": False,
+    "qwen_qsa_skip_complete_gather": True,
+    "qwen_qsa_dense_threshold": 0,
 }
 
 
 def validate_flash_config(config) -> None:
+    packed = getattr(config, "qwen_packed_gdn_prefill", False)
+    if type(packed) is not bool:
+        raise ValueError("qwen_packed_gdn_prefill must be a boolean")
+    if packed and getattr(config, "mtp_enabled", False):
+        raise ValueError("Disable MTP before enabling Packed GDN prefill")
+    sorted_prefill = getattr(config, "qwen_sorted_expert_prefill", False)
+    if type(sorted_prefill) is not bool:
+        raise ValueError("qwen_sorted_expert_prefill must be a boolean")
+    if sorted_prefill and not getattr(config, "qwen_grouped_experts", True):
+        raise ValueError("qwen_sorted_expert_prefill requires qwen_grouped_experts")
     for name, minimum, maximum in (("qwen_prefill_read_experts", 1, 32),
                                    ("qwen_prefill_seed_experts", 0, 128)):
         value = getattr(config, name, DEFAULTS[name])
@@ -44,6 +59,13 @@ def validate_flash_config(config) -> None:
         raise ValueError("qwen_qsa_indexed must be a boolean")
     if indexed and not getattr(config, "qwen_sparse_sdpa", False):
         raise ValueError("qwen_qsa_indexed requires qwen_sparse_sdpa")
+    if type(getattr(config, "qwen_qsa_dense_within_budget", False)) is not bool:
+        raise ValueError("qwen_qsa_dense_within_budget must be a boolean")
+    if type(getattr(config, "qwen_qsa_skip_complete_gather", False)) is not bool:
+        raise ValueError("qwen_qsa_skip_complete_gather must be a boolean")
+    threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
+    if type(threshold) is not int or not 0 <= threshold <= 262_144:
+        raise ValueError("qwen_qsa_dense_threshold must be an integer from 0 through 262144")
     backend = getattr(config, "qwen_ngram_io", "mmap")
     if not isinstance(backend, str) or backend not in ("mmap", "pread"):
         raise ValueError("qwen_ngram_io must be mmap or pread")
@@ -58,6 +80,11 @@ def validate_flash_config(config) -> None:
 
 def add_flash_arguments(parser: argparse.ArgumentParser) -> None:
     _add_qsa_arguments(parser)
+    parser.add_argument("--qwen-packed-gdn-prefill", action=argparse.BooleanOptionalAction,
+                        default=False, help="experimental M5 Swift text prefill; requires MTP off; speed gains not established")
+    parser.add_argument("--qwen-sorted-expert-prefill", action=argparse.BooleanOptionalAction,
+                        default=False, help="experimental sorted gather_qmm for grouped Qwen prefill; "
+                        "output is not bit-identical")
     parser.add_argument("--qwen-prefill-read-experts", type=int, default=1,
                         help="1..32 consecutive experts per prefill read; 1 keeps old I/O")
     parser.add_argument("--qwen-prefill-seed-experts", type=int, default=0,
@@ -75,10 +102,18 @@ def add_flash_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_qsa_arguments(parser):
-    parser.add_argument("--qwen-qsa-query-chunk", type=int, default=4,
+    parser.add_argument("--qwen-qsa-query-chunk", type=int, default=16,
                         help="QSA queries per chunk, 1..128; bounded estimated workspace")
     parser.add_argument("--qwen-qsa-indexed", action=argparse.BooleanOptionalAction,
                         default=False, help="experimental indexed Metal QSA decode; requires sparse SDPA")
+    parser.add_argument("--qwen-qsa-dense-within-budget", action=argparse.BooleanOptionalAction,
+                        default=False,
+                        help="QSA dense SDPA when the context fits the indexer budget; selection is unchanged")
+    parser.add_argument("--qwen-qsa-skip-complete-gather", action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help="skip the identity per-query gather when QSA selects every visible key")
+    parser.add_argument("--qwen-qsa-dense-threshold", type=int, default=0,
+                        help="0 keeps the indexer budget; otherwise dense SDPA up to this key length")
 
 
 def flash_arguments(arguments: argparse.Namespace) -> dict:

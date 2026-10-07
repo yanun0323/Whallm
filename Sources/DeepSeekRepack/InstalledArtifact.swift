@@ -107,15 +107,17 @@ struct InstalledArtifactDownloader: Sendable {
   private let revision: String
   private let source: any CheckpointSource
   private let expectedKind: ModelKind
+  private let visionSource: (any CheckpointSource)?
   private let fileConcurrency = 4
 
   init(repository: String, revision: String, source: any CheckpointSource,
-    expectedKind: ModelKind = .qwen3_8FlashNext)
+    expectedKind: ModelKind = .qwen3_8FlashNext, visionSource: (any CheckpointSource)? = nil)
   {
     self.repository = repository
     self.revision = revision
     self.source = source
     self.expectedKind = expectedKind
+    self.visionSource = visionSource
   }
 
   func manifest() async throws -> (data: Data, manifest: InstalledManifest) {
@@ -142,11 +144,20 @@ struct InstalledArtifactDownloader: Sendable {
     let output = output.standardizedFileURL
     let partial = output.appendingPathExtension("partial")
     let current = try InstalledModel.loadManifest(at: output)
+    guard current.modelKind == expectedKind else {
+      throw RepackError.incompatibleModel("installed model does not match the selected package")
+    }
+    let supplemental = QwenVisionArtifact.requiredFiles(for: current)
+    if !invalidFiles.isEmpty, invalidFiles.isSubset(of: Set(supplemental.map(\.path))) {
+      try await QwenVisionArtifact.install(at: output, definition: QwenVisionArtifact.definition(for: expectedKind)!,
+        source: QwenVisionArtifact.source(for: expectedKind, upstream: visionSource), progress: progress)
+      return current
+    }
     let artifact = try await manifest()
     guard current == artifact.manifest else {
       throw RepackError.incompatibleModel("installed model does not match the published artifact")
     }
-    let paths = Set(current.files.map(\.path))
+    let paths = Set(InstalledModel.verificationFiles(for: current).map(\.path))
     guard invalidFiles.isSubset(of: paths) else {
       throw RepackError.invalidPlan("repair contains an unknown installed file")
     }
@@ -224,7 +235,8 @@ struct InstalledArtifactDownloader: Sendable {
       }
     }
 
-    let filesByPath = Dictionary(uniqueKeysWithValues: artifact.manifest.files.map { ($0.path, $0) })
+    let files = InstalledModel.verificationFiles(for: artifact.manifest)
+    let filesByPath = Dictionary(uniqueKeysWithValues: files.map { ($0.path, $0) })
     receipt.completed = receipt.completed.filter { path, digest in
       guard let file = filesByPath[path], digest == file.sha256,
         let url = try? safeFileURL(root: partial, path: path),
@@ -244,7 +256,7 @@ struct InstalledArtifactDownloader: Sendable {
       progress: progress)
     await state.report()
 
-    let pending = artifact.manifest.files.filter { receipt.completed[$0.path] == nil }
+    let pending = files.filter { receipt.completed[$0.path] == nil }
     let fileDownloader = InstalledArtifactFileDownloader(source: source)
     try await withThrowingTaskGroup(of: Void.self) { group in
       var iterator = pending.makeIterator()
@@ -294,7 +306,10 @@ struct InstalledArtifactDownloader: Sendable {
     state: InstalledArtifactState
   ) async throws {
     let destination = try safeFileURL(root: partial, path: file.path)
-    let digest = try await downloader.run(file: file, to: destination) {
+    let actualDownloader = file.path == "vision/common.bin" && expectedKind.usesQwenEngine
+      ? InstalledArtifactFileDownloader(source: QwenVisionArtifact.source(for: expectedKind, upstream: visionSource))
+      : downloader
+    let digest = try await actualDownloader.run(file: file, to: destination) {
       copiedBytes, downloadedBytes in
       await state.advance(copiedBytes: copiedBytes, downloadedBytes: downloadedBytes)
     }
@@ -302,7 +317,7 @@ struct InstalledArtifactDownloader: Sendable {
   }
 
   private func installedBytes(_ manifest: InstalledManifest) throws -> UInt64 {
-    try manifest.files.reduce(UInt64(0)) { total, file in
+    try InstalledModel.verificationFiles(for: manifest).reduce(UInt64(0)) { total, file in
       let result = total.addingReportingOverflow(file.size)
       guard !result.overflow else {
         throw RepackError.invalidPlan("installed file sizes overflow")

@@ -12,7 +12,11 @@
   <a href="README-ko.md"><img src="https://img.shields.io/badge/한국어-클릭-yellow" alt="한국어"></a>
 </p>
 
-Whallm runs large language models on Apple Silicon Macs by reading the experts it needs from SSD. It supports DeepSeek V4, DeepSeek V4.1, and Qwen3.8, with built-in chat and an OpenAI-compatible API.
+Whallm runs large language models on Apple Silicon Macs by reading the experts it needs from SSD. It supports DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen, and MiMo (preview), with built-in chat and an OpenAI-compatible API.
+
+Version 1.1.10 adds a fifth model, `Swift1.5-Qwen3.8-Flash-Next`, downloaded from `Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4` at revision `257cb509d72ecc07519be35a8b7558fde3b31b21`. It reuses the Qwen FP8 model's inference engine, but has its own installation folder, saved settings, Alias and prompt caches. Its API model ID is `swift1.5-qwen3.8-flash-next-mxfp4`. The App's fixed download size is **127,714,522,478 bytes** (about **118.94 GiB**): the artifact's 59 text/MTP files plus **897,864,704 bytes** of image weights. Audit files are not downloaded. MTP remains off by default.
+
+Both Qwen models accept still PNG/JPEG/WebP images in App Chat, `/v1/chat/completions`, and `/v1/responses`. New installations include image weights; existing installations use **Model → Verify and Repair** to fetch only missing or damaged files, without redownloading intact text weights. The original Qwen installation totals **126,189,355,659 bytes** (about **117.52 GiB**). Images require MTP off and do not use prompt caching. Limits: 8 images, 8 MiB per file, 32 MiB per request, 1,048,576 pixels per decoded/resized image and 2,048 image tokens per request. Video, audio and document input are not enabled for Qwen. A full Swift-model check recognized red/blue images and preserved a short text result before/after image requests and cancellation. Full original-Qwen vision generation, broad image quality and vision performance remain unvalidated.
 
 ## Benchmark summary
 
@@ -35,7 +39,7 @@ Whallm runs large language models on Apple Silicon Macs by reading the experts i
 
 The default address is `http://127.0.0.1:11434`. Models load when first used. The server keeps one model loaded and handles one generation request at a time. Restart the server if a newly installed model is missing from the chat picker.
 
-Public downloads may contain fewer features than the source described here.
+See the [1.1.10 release notes](Packaging/ReleaseNotes/1.1.10.md) for changes, upgrade steps, and known limits.
 
 ## Requirements
 
@@ -111,7 +115,7 @@ wire_api = "responses"
 requires_openai_auth = false
 ```
 
-Set `model` to an API model ID or Alias shown in Whallm, then restart Codex. This example assumes the default local address and no API key. If you configure a key in Whallm, configure the same key in your client. See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/).
+Set `model` to an API model ID or an Alias configured in **Model → Advanced Settings**, then restart Codex. Chat, Status, Throughput and text/Markdown result tables use the same display names as the Model page; these labels are not API model IDs. Requests and benchmark JSON keep their original identifiers. This example assumes the default local address and no API key. If you configure a key in Whallm, configure the same key in your client. See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/).
 
 ## API and privacy
 
@@ -122,19 +126,19 @@ The API supports text streaming and tool calls through:
 - `POST /v1/chat/completions` and `POST /v1/completions`
 - `POST /api/models/load` and `POST /api/models/unload`
 
-Current source supports an optional `seed` integer from `0` to `4294967295` on all three generation endpoints. Omit it or send `null` for a fresh random seed on every request. In Playground Chat, Seed applies only to the next message and clears after sending. A fixed seed helps reproduce a result with the same prompt, model, settings, and runtime; it does not guarantee identical text across versions, cache states, or acceleration settings. `temperature=0` remains greedy. Available in v1.1.8.
+All three generation endpoints support an optional `seed` integer from `0` to `4294967295`. Omit it or send `null` for a fresh random seed on every request. In Playground Chat, Seed applies only to the next message and clears after sending. A fixed seed helps reproduce a result with the same prompt, model, settings, and runtime; it does not guarantee identical text across versions, cache states, or acceleration settings. `temperature=0` remains greedy. Available in v1.1.8.
 
-The client executes tools and sends their results back; inference APIs never run MCP tools automatically. Current development source adds still-image and bounded PCM WAV input for MiMo through Chat/Responses and App attachments. JSON bodies remain limited to **1 MiB**; authenticated `/api/assets` uploads accept PNG/JPEG/WebP, PCM WAV and bounded PDF/DOCX/PPTX/XLSX documents up to **8 MiB** per file. Audio input is limited to 24 kHz, 16-bit PCM WAV, mono/stereo, 30 seconds per clip and two clips per request. Audio output, video, `logprobs`, `response_format`, and `stop` remain unsupported. See the [MiMo contract and limits](docs/mimo-development.md).
+The client executes tools and sends their results back; inference APIs never run MCP tools automatically. MiMo (preview) supports still-image and bounded PCM WAV input through Chat/Responses and App attachments. JSON bodies remain limited to **1 MiB**; authenticated `/api/assets` uploads accept PNG/JPEG/WebP, PCM WAV and bounded PDF/DOCX/PPTX/XLSX documents up to **8 MiB** per file. Audio input is limited to 24 kHz, 16-bit PCM WAV, mono/stereo, 30 seconds per clip and two clips per request. Audio output, video, `logprobs`, `response_format`, and `stop` remain unsupported. See the [MiMo contract and limits](docs/mimo-development.md).
 
-Current development source accepts `function_call_output.output` as a string or an array of `input_text` parts for every model through `/v1/responses`. Text parts are joined in order without adding separators; existing whitespace is preserved. Include the matching `function_call` with the same `call_id` in the request history. Media support still depends on the model. This fix is not included in v1.1.8.
+All models accept `function_call_output.output` as a string or an array of `input_text` parts for every model through `/v1/responses`. Text parts are joined in order without adding separators; existing whitespace is preserved. Include the matching `function_call` with the same `call_id` in the request history. Media support still depends on the model. Available since v1.1.9.
 
 Inference runs on your Mac. Network access is used for downloads, updates, and API connections. Connected clients may send data elsewhere; **Debug** logs can contain complete prompts and tool results.
 
 ## Validation and limits
 
-The v1.1.8 source passed **464 Python tests** and **135 Swift tests**. Both the app and extracted ZIP passed signature and isolated startup checks in English, Simplified Chinese, and Traditional Chinese.
+Source validation: **674 Python tests passed**; **196 Swift tests ran, with 4 skipped and no failures**. Packaging checks cover signatures, bundled resources, and startup without access to the build directory in English, Simplified Chinese, and Traditional Chinese, for both the App and extracted ZIP. The release workflow repeats these checks on the signed, notarized package and the GitHub download. Tool-call regression tests use fixed model output; they are not a complete Pi or Codex client session.
 
-Alongside the three pinned text checkpoints, current development source adds MiMo text/image, bounded WAV audio and limited document support, plus a complete, immutable prepared artifact. Python 624 tests and Swift 171 tests (three skipped) pass; this MiMo work is locally packaged, but full acceptance remains incomplete. Chat attachments include categorized pickers, drag-and-drop, quota indicators and upload status. Video/AV synchronization and the MCP Agent interface remain unfinished; audio and document inputs have format and resource limits. See [development status](docs/mimo-development.md). New acceleration paths have small-model and component tests; full-model speed and quality comparisons are still pending. Very long prompts need more cache memory.
+MiMo remains a preview with text/image, bounded WAV audio and limited document support, using a pinned prepared artifact; full acceptance remains incomplete. Chat attachments include categorized pickers, drag-and-drop, quota indicators and upload status. Video/AV synchronization and the MCP Agent interface remain unfinished; audio and document inputs have format and resource limits. See [development status](docs/mimo-development.md). Qwen image-validation limits are listed above. Historical MTP measurements are not measurements of the final corrected runtime, and MTP is not faster for every workload. Some acceleration paths have only small-model and component coverage. Very long prompts need more cache memory.
 
 ## License
 

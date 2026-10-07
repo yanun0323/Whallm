@@ -42,8 +42,10 @@ class _PooledKeys:
 
     def trim(self, n):
         count = super().trim(n)
-        # Reset rather than reusing any block that might be overwritten by replay.
-        self._reset_pooled()
+        # Complete blocks before the new offset are unchanged by later appends;
+        # drop only blocks that include trimmed or future rows.
+        if self.pooled_keys is not None and self._pooled_ratio is not None:
+            self.pooled_keys = self.pooled_keys[:, : self.offset // self._pooled_ratio]
         return count
 
     @property

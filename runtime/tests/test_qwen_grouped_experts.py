@@ -44,13 +44,71 @@ class GroupedExpertsTests(unittest.TestCase):
                 self.assertTrue(mx.array_equal(actual, expected).item())
         self.assertEqual(calls, [2] * 10)
 
-    def test_load_applies_default_off_override_and_mtp_guard(self):
+    def test_sorted_prefill_is_opt_in_close_and_only_for_grouped_rows(self):
+        weights = self.weights()
+        cache = SimpleNamespace(current_batched=lambda layer: weights, record_gather_qmm=lambda count: None)
+        experts = qwen.StreamingExperts(0, cache)
+        self.assertFalse(experts.sorted_prefill)
+        self.assertFalse(RuntimeConfig().qwen_sorted_expert_prefill)
+        rng = np.random.default_rng(62)
+        for length, top_k in ((6, 10), (128, 10), (1024, 10)):
+            with self.subTest(length=length):
+                value = mx.array(rng.normal(0, .2, (1, length, 64)), dtype=mx.bfloat16)
+                indices = mx.array(rng.integers(0, 16, (1, length, top_k)), dtype=mx.int32)
+                experts.grouped_prefill, experts.sorted_prefill = True, False
+                expected = experts(value, indices)
+                flags = []
+                original = mx.gather_qmm
+                def record(*args, **kwargs):
+                    flags.append(kwargs["sorted_indices"])
+                    return original(*args, **kwargs)
+                experts.sorted_prefill = True
+                with patch.object(qwen.mx, "gather_qmm", side_effect=record):
+                    actual = experts(value, indices)
+                    mx.eval(expected, actual)
+                # Short inputs are not grouped, so they keep the unsorted kernel.
+                self.assertEqual(flags, [length * top_k >= 64] * 2)
+                self.assertEqual(actual.shape, expected.shape)
+                difference = mx.abs(actual.astype(mx.float32) - expected.astype(mx.float32)).max().item()
+                self.assertLess(difference, 1e-2)
+                experts.grouped_prefill = False
+                with patch.object(qwen.mx, "gather_qmm", side_effect=record):
+                    flags.clear()
+                    mx.eval(experts(value, indices))
+                self.assertEqual(flags, [False, False])
+
+    def test_sorted_prefill_config_cli_and_cache_contract(self):
+        import argparse
+        from deepseek_v4_ssd.generation import _prompt_cache_contract
+        from deepseek_v4_ssd.qwen_flash_config import (
+            add_flash_arguments, flash_arguments, validate_flash_config)
+        parser = argparse.ArgumentParser()
+        add_flash_arguments(parser)
+        self.assertFalse(flash_arguments(parser.parse_args([]))["qwen_sorted_expert_prefill"])
+        self.assertTrue(flash_arguments(parser.parse_args(["--qwen-sorted-expert-prefill"]))[
+            "qwen_sorted_expert_prefill"])
+        validate_flash_config(RuntimeConfig(qwen_sorted_expert_prefill=True))
+        for invalid in (RuntimeConfig(qwen_sorted_expert_prefill=1),
+                        RuntimeConfig(qwen_sorted_expert_prefill=True, qwen_grouped_experts=False)):
+            with self.subTest(config=invalid), self.assertRaises(ValueError):
+                validate_flash_config(invalid)
+        installed = SimpleNamespace(root=Path("/nonexistent"), revision="r", model_id="m")
+        off = _prompt_cache_contract(installed, RuntimeConfig())
+        self.assertNotIn("qwenSortedExpertPrefill", off)
+        self.assertEqual(off, _prompt_cache_contract(installed, RuntimeConfig(
+            qwen_sorted_expert_prefill=True, qwen_grouped_experts=False)))
+        self.assertEqual(_prompt_cache_contract(installed, RuntimeConfig(qwen_sorted_expert_prefill=True))[
+            "qwenSortedExpertPrefill"], "mlx-v1")
+
+    def test_load_applies_default_off_override_with_or_without_mtp(self):
         installed = SimpleNamespace(root=Path("/unused"), ngram=SimpleNamespace(file="ngram.bin"))
         scale = "model.language_model.layers.1.ple.ple_embedding.ngram_embedding.weight_scale"
-        for config, expected in (
-            (RuntimeConfig(), True),
-            (RuntimeConfig(qwen_grouped_experts=False), False),
-            (RuntimeConfig(mtp_enabled=True), False),
+        for config, expected, sort in (
+            (RuntimeConfig(), True, False),
+            (RuntimeConfig(qwen_grouped_experts=False), False, False),
+            # Grouping is bit-identical, so MTP no longer disables it.
+            (RuntimeConfig(mtp_enabled=True), True, False),
+            (RuntimeConfig(qwen_sorted_expert_prefill=True), True, True),
         ):
             with self.subTest(config=config):
                 model = MagicMock()
@@ -63,6 +121,7 @@ class GroupedExpertsTests(unittest.TestCase):
                      patch("deepseek_v4_ssd.ane_prefill.install_qwen_ane_prefill", return_value=None):
                     qwen.load(installed, config, {"text_config": {}}, {scale: mx.array([1.0])})
                 self.assertEqual([layer.mlp.experts.grouped_prefill for layer in model.model.layers], [expected] * 2)
+                self.assertEqual([layer.mlp.experts.sorted_prefill for layer in model.model.layers], [sort] * 2)
 
     def test_individual_expert_decode_keeps_original_path(self):
         batched = self.weights()

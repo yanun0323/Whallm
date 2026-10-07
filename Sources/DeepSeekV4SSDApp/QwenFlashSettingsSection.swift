@@ -10,7 +10,7 @@ struct QwenFlashSettingsSection: View {
   private func text(_ key: String) -> String { L10n.string(key, language: language) }
 
   var body: some View {
-    if modelKind == .qwen3_8FlashNext {
+    if modelKind.usesQwenEngine {
       VStack(alignment: .leading, spacing: 12) {
         Text(text(QwenFlashCopy.title))
           .font(.headline)
@@ -25,6 +25,46 @@ struct QwenFlashSettingsSection: View {
           .fixedSize(horizontal: false, vertical: true)
 
         VStack(spacing: 0) {
+          if modelKind == .swift1_5Qwen3_8FlashNext {
+            SettingRow(QwenFlashCopy.packedGDN, hint: text(QwenFlashCopy.packedGDNHint), language: language) {
+              Toggle(text(QwenFlashCopy.packedGDN), isOn: Binding(
+                get: { settings.effectiveQwenPackedGDNPrefill },
+                set: { settings.qwenPackedGDNPrefill = $0 }
+              ))
+              .labelsHidden()
+              .disabled(settings.mtpEnabled == true)
+              .accessibilityLabel(text(QwenFlashCopy.packedGDN))
+              .accessibilityHint(text(QwenFlashCopy.packedGDNHint))
+              .accessibilityIdentifier("qwen-packed-gdn-prefill")
+            }
+            if settings.mtpEnabled == true {
+              Text(text(QwenFlashCopy.packedGDNInactive))
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 8)
+            }
+            Divider()
+          }
+          SettingRow(QwenFlashCopy.sortedExperts, hint: text(QwenFlashCopy.sortedExpertsHint), language: language) {
+            Toggle(text(QwenFlashCopy.sortedExperts), isOn: Binding(
+              get: { settings.effectiveQwenSortedExpertPrefill },
+              set: { settings.qwenSortedExpertPrefill = $0 }
+            ))
+            .labelsHidden()
+            .disabled(!settings.qwenSortedExpertPrefillAvailable)
+            .accessibilityLabel(text(QwenFlashCopy.sortedExperts))
+            .accessibilityHint(text(QwenFlashCopy.sortedExpertsHint))
+            .accessibilityIdentifier("qwen-sorted-expert-prefill")
+          }
+          if !settings.qwenSortedExpertPrefillAvailable {
+            Text(text(QwenFlashCopy.sortedExpertsInactive))
+              .font(.caption).foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.bottom, 8)
+          }
+          Divider()
           numberRow(QwenFlashCopy.waves, hint: QwenFlashCopy.wavesHint,
             key: \.qwenExpertWaveSlots, identifier: "qwen-flash-waves")
           if settings.qwenFlashWavesEnabled {
@@ -69,7 +109,18 @@ struct QwenFlashSettingsSection: View {
           Divider()
           numberRow(QwenFlashCopy.queryChunk, hint: QwenFlashCopy.queryChunkHint,
             key: \.qwenQSAQueryChunk, identifier: "qwen-qsa-query-chunk",
-            limits: 1...128, defaultValue: 4)
+            limits: 1...128, defaultValue: 16)
+          Divider()
+          SettingRow(QwenFlashCopy.skipGather, hint: text(QwenFlashCopy.skipGatherHint), language: language) {
+            Toggle(text(QwenFlashCopy.skipGather), isOn: Binding(
+              get: { settings.qwenQSASkipCompleteGather ?? true },
+              set: { settings.qwenQSASkipCompleteGather = $0 }
+            ))
+            .labelsHidden()
+            .accessibilityLabel(text(QwenFlashCopy.skipGather))
+            .accessibilityHint(text(QwenFlashCopy.skipGatherHint))
+            .accessibilityIdentifier("qwen-qsa-skip-complete-gather")
+          }
           Divider()
           SettingRow(QwenFlashCopy.indexed, hint: text(QwenFlashCopy.indexedHint), language: language) {
             Toggle(text(QwenFlashCopy.indexed), isOn: Binding(

@@ -1,7 +1,24 @@
 # Benchmark
 
-Recorded historical measurements for the V4.1 prefill change, v1.1.7, v1.1.4,
-and v1.1.0. No new full-model performance measurements are claimed for v1.1.8. Each section states its workload and measurement conditions.
+Recorded measurements for the Qwen MTP draft-context change (2026-09-29), the V4.1 prefill change, v1.1.7, v1.1.4,
+and v1.1.0. No new full-model performance measurements are claimed for v1.1.8. Measurement conditions and evidence gaps are stated below; these are not controlled speed comparisons of v1.1.10.
+
+## Swift1.5 Qwen3.8 Flash Next
+
+These retained M5 Pro rows record the displayed workload, slot count, output limit,
+temperature and seed. They do not include a source commit, full environment and
+configuration, cache state, raw run artifact or output token hash. Treat them as
+reference observations, not reproducible release validation or evidence of a
+speedup over another model or version.
+
+### M5 Pro
+
+| Model | Context | Slots | Output limit | Input / Output | TTFT (ms) | TPOT (ms) | PP tok/s | TG tok/s | Total (s) | Throughput | Peak Memory | Temperature | Seed |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| swift1.5-qwen3.8-flash-next-mxfp4 | Code | 3084 | 128 | 1024 / 128 | 7208.6 | 96.3 | 142.1 | 10.4 | 19.4 | 59.2 | 17.57 GiB | 0.0 | 42 |
+| swift1.5-qwen3.8-flash-next-mxfp4 | Code | 3084 | 128 | 4096 / 128 | 26232.5 | 93.6 | 156.1 | 10.7 | 38.1 | 110.8 | 17.64 GiB | 0.0 | 42 |
+| swift1.5-qwen3.8-flash-next-mxfp4 | Code | 3084 | 128 | 8192 / 128 | 50188.0 | 95.5 | 163.2 | 10.5 | 62.3 | 133.5 | 17.92 GiB | 0.0 | 42 |
+| swift1.5-qwen3.8-flash-next-mxfp4 | Code | 3084 | 128 | 16384 / 128 | 104258.4 | 111.3 | 157.1 | 9.0 | 118.4 | 139.5 | 18.37 GiB | 0.0 | 42 |
 
 ## Historical PR measurements: DeepSeek V4.1 prefill on M5 Max
 
@@ -66,6 +83,58 @@ this change:
 | layer-major | 1024 | 23186 | 44.2 | 3.89 | 93.58 | 382 GB | b1f87721338c7e39 |
 | layer-major | 4096 | 33614 | 121.9 | 5.20 | 96.05 | 419 GB | 3da271deec0f6e61 |
 | token-major (control) | 1024 | 44091 | 23.2 | 4.65 | 95.87 | 477 GB | de4d738a8356a3ff |
+
+## Qwen MTP draft context and rewind (2026-09-29)
+
+Historical source comparison of `ba9e126` against `35ae599` with four MTP changes. First, the
+native draft layer's attention cache is filled from the whole prompt after layer-major
+Prefill. Previously it received only the last `mtp_slots // 10` positions, 3-4 tokens
+at default budgets. Second, that fill reads the draft layer's experts once into a
+whole-layer buffer. Third, grouped expert Prefill is no longer disabled with MTP.
+Fourth, rejected drafts roll back without replaying accepted tokens through the MoE:
+attention layers trim the verified cache, and linear-attention layers rerun only PLE
+and the Gated DeltaNet mixer on captured verification inputs. The installed model,
+sampling, and MTP-off paths are unchanged.
+
+These measurements predate the correction that makes `eval_prompt_cache` wait for
+Qwen's recurrent, convolution, and N-gram arrays. Previously, rejected-draft rewind
+could defer linear-attention calculations until the next forward pass, understating
+its recorded `replay_seconds`. The table remains a historical end-to-end result,
+not a measurement of the corrected source. No corrected full-model timings have
+been recorded here.
+
+Environment: Apple M4 Max, 36 GB, macOS 27.0.1, Python 3.14.7, MLX 0.32.2, mlx-lm
+0.31.3. Direct runtime harness, not the App or HTTP server. Workload: bundled Code or
+Novel context, 4,096 input tokens, 256 output tokens, greedy seed 42, top-p 1,
+top-k 0. Each run used one request in a fresh process with empty expert slots and Prompt
+Cache off. Runs were interleaved A/B/B/A; the OS page cache was not purged.
+Settings: 7.5 GiB main expert cache, LFU, 16 read workers, 1,024-token batched
+layer-major Prefill, 30 GiB MLX limit. MTP runs used a 1.3 GiB MTP cache, 2 draft
+tokens, and a zero-acceptance limit of 32. Each cell lists two runs.
+
+| Workload | Configuration | Decode tok/s, `ba9e126` | Decode tok/s, changed | TTFT s, `ba9e126` | TTFT s, changed | MTP acceptance |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Code | MTP off | 8.04 / 8.59 | 8.14 / 8.54 | 26.4 / 26.0 | 26.1 / 26.4 | - |
+| Code | MTP on | 7.38 / 7.42 | 9.87 / 9.90 | 25.3 / 25.2 | 21.5 / 21.5 | 64.9% -> 80.9% |
+| Novel | MTP on | 5.77 / 5.79 | 8.37 / 8.27 | 32.2 / 24.7 | 21.4 / 29.5 | 34.8% -> 42.5% |
+| Novel | MTP off | - | 9.66 / 9.74 | - | 20.5 / 28.1 | - |
+
+MTP-off output tokens are identical before and after the change. MTP-on outputs are
+stable within each version but differ from MTP-off output starting at the second
+token. At that position the three largest target logits fall within one bf16 step
+(17.375, 17.25, 17.25), and the verification batch shape changes the argmax. The
+unchanged source shows the same behavior. With these changes, MTP improved Code decode
+by 18.5% over MTP off, but slowed Novel by 14%. The App's 2-draft / 2-zero-round
+strategy switched MTP off after the first two Code rounds in one run, at 8.06 tok/s.
+A rate-aware fallback remains open. Novel TTFT varied by 8-10 s in both versions
+with uncontrolled OS cache state. No swap activity occurred, and the sampled peak
+process footprint was 19.6 GiB with MTP and 18.4 GiB without.
+
+A decode-time prefetch of experts predicted by the next layer's router was rejected.
+On this SSD, one 2.6 MB expert read takes about 0.65 ms, and four concurrent reads take
+about 1.95 ms. Decode is therefore bandwidth-bound, so mispredicted reads delayed
+demand reads. Prefetching the top 4, 6, 10, or 16 experts reduced Code decode to 7.52,
+7.34, 7.15, and 6.30 tok/s. Output tokens were unchanged.
 
 ## Runtime profiling
 

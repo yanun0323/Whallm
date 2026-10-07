@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from unittest.mock import patch
 
 from deepseek_v4_ssd.generation import GenerationOptions, GeneratedPiece, THINK_START
 from deepseek_v4_ssd.model import RuntimeConfig
@@ -28,7 +29,9 @@ from deepseek_v4_ssd.server import (
     _response_messages,
     _validate_approximation_runtime,
 )
-from deepseek_v4_ssd.tool_codec import AssistantTurn, ToolCall
+from deepseek_v4_ssd.tool_codec import (
+    AssistantTurn, QwenToolCodec, QwenToolStreamParser, ToolCall,
+)
 
 
 class FakeRuntime:
@@ -422,6 +425,117 @@ class QwenSamplingServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(self.runtime.last_options.approximation_mode, "learned-route-drop-lowest-1")
+
+    def test_qwen_chat_stream_preserves_multiple_calls_across_newline_chunks(self):
+        tool = {
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                    "required": ["command"],
+                },
+            },
+        }
+        calls = [
+            f"<tool_call><function=bash><parameter=command>{command}"
+            "</parameter></function></tool_call>"
+            for command in ("pwd", "ls -la")
+        ]
+        runtime = self.runtime
+        with (
+            patch.object(runtime, "parse_chat", side_effect=QwenToolCodec(None).parse),
+            patch.object(runtime, "make_tool_stream_parser", QwenToolStreamParser, create=True),
+        ):
+            for mode in ("chat", "thinking"):
+                prefix = "plan</think>" if mode == "thinking" else ""
+                chunks = [prefix + calls[0], "\n \t", calls[1]]
+                for fragments in (chunks, list("".join(chunks))):
+                    with self.subTest(mode=mode, fragments=len(fragments)), patch.object(
+                        runtime, "response_chunks", fragments,
+                    ):
+                        status, body = self.request("/v1/chat/completions", {
+                            "model": "qwen3.8-flash-next-fp8",
+                            "messages": [{"role": "user", "content": "Inspect the project."}],
+                            "tools": [tool], "stream": True, "thinking_mode": mode,
+                            "stream_options": {"include_usage": True},
+                        })
+                        self.assertEqual(status, 200, body)
+                        events = [json.loads(line[6:]) for line in body.decode().splitlines()
+                                  if line.startswith("data: {")]
+                        self.assertFalse(any("error" in event for event in events), body)
+                        streamed = [call for event in events for choice in event.get("choices", [])
+                                    for call in choice["delta"].get("tool_calls", [])]
+                        starts = [call for call in streamed if "id" in call]
+                        self.assertEqual([call["index"] for call in starts], [0, 1])
+                        self.assertEqual(len({call["id"] for call in starts}), 2)
+                        self.assertEqual([call["function"]["name"] for call in starts], ["bash", "bash"])
+                        for index, command in enumerate(("pwd", "ls -la")):
+                            arguments = "".join(call["function"].get("arguments", "")
+                                                for call in streamed if call["index"] == index)
+                            self.assertEqual(json.loads(arguments), {"command": command})
+                        self.assertEqual(events[-2]["choices"][0]["finish_reason"], "tool_calls")
+                        self.assertEqual(events[-1]["usage"]["completion_tokens"], len(fragments))
+                        self.assertTrue(body.endswith(b"data: [DONE]\n\n"))
+
+    def test_qwen_codex_responses_preserve_multiple_calls_and_tool_results(self):
+        calls = [
+            f"<tool_call><function=exec_command><parameter=cmd>{command}"
+            "</parameter></function></tool_call>"
+            for command in ("pwd", "ls -la")
+        ]
+        runtime = self.runtime
+        with (
+            patch.object(runtime, "parse_chat", side_effect=QwenToolCodec(None).parse),
+            # Responses must keep validating the full output, not use the Chat parser.
+            patch.object(runtime, "make_tool_stream_parser", create=True,
+                         side_effect=AssertionError("Responses used the incremental tool parser")),
+        ):
+            for mode in ("chat", "thinking"):
+                prefix = "plan</think>" if mode == "thinking" else ""
+                with self.subTest(mode=mode), patch.object(
+                    runtime, "response_chunks", list(prefix + calls[0] + "\n \t" + calls[1]),
+                ):
+                    before = runtime.stream_call_count
+                    status, body = self.request("/v1/responses", {
+                        "model": "qwen3.8-flash-next-fp8", "input": "Inspect the project.",
+                        "tools": [self.codex_tool], "stream": True, "thinking_mode": mode,
+                    })
+                    self.assertEqual(status, 200, body)
+                    events = [json.loads(line[6:]) for line in body.decode().splitlines()
+                              if line.startswith("data: {")]
+                    self.assertFalse(any(event["type"] in {"error", "response.failed"} for event in events), body)
+                    self.assertEqual(runtime.stream_call_count - before, 1)
+                    self.assertEqual(runtime.last_tool_choice.mode, "required")
+                    self.assertEqual(events[-1]["type"], "response.completed")
+                    self.assertEqual(events[-1]["response"]["status"], "completed")
+                    output = events[-1]["response"]["output"]
+                    returned = [item for item in output if item["type"] == "function_call"]
+                    self.assertEqual([item["name"] for item in returned], ["exec_command", "exec_command"])
+                    self.assertEqual([json.loads(item["arguments"]) for item in returned],
+                                     [{"cmd": "pwd"}, {"cmd": "ls -la"}])
+                    self.assertEqual(len({item["call_id"] for item in returned}), 2)
+                    done = [event for event in events if event["type"] == "response.function_call_arguments.done"]
+                    self.assertEqual([event["item_id"] for event in done], [item["id"] for item in returned])
+                    self.assertEqual([event["arguments"] for event in done], [item["arguments"] for item in returned])
+
+                    history = [{"role": "user", "content": "Inspect the project."}, *output]
+                    history.extend({"type": "function_call_output", "call_id": item["call_id"],
+                                    "output": result} for item, result in zip(returned, ("/tmp/project", "README.md")))
+                    with patch.object(runtime, "response_chunks", [prefix + "Review complete."]):
+                        status, body = self.request("/v1/responses", {
+                            "model": "qwen3.8-flash-next-fp8", "input": history,
+                            "tools": [self.codex_tool], "thinking_mode": mode,
+                        })
+                    self.assertEqual(status, 200, body)
+                    response = json.loads(body)
+                    self.assertEqual(response["status"], "completed")
+                    message = next(item for item in response["output"] if item["type"] == "message")
+                    self.assertEqual(message["content"][0]["text"], "Review complete.")
+                    self.assertEqual(runtime.last_tool_choice.mode, "auto")
+                    self.assertEqual([message["content"] for message in runtime.last_messages
+                                      if message["role"] == "tool"], ["/tmp/project", "README.md"])
 
     def test_qwen_codex_first_turn_requires_tool_and_retries_once(self):
         runtime = self.runtime

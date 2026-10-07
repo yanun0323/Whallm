@@ -254,6 +254,10 @@ def _prompt_cache_contract(installed: InstalledModel, config: RuntimeConfig) -> 
            if getattr(config, "qwen_quantized_kv", False) or getattr(config, "qwen_quantized_index", False) else {}),
         **({"deepseekANE": config.ane_prefill_ratio} if getattr(config, "deepseek_ane_prefill", False) else {}),
         # Keep legacy cache contracts unchanged when the experiment is off.
+        **({"qwenPackedGDNPrefill": "m5-v1"} if getattr(config, "qwen_packed_gdn_prefill", False) else {}),
+        **({"qwenSortedExpertPrefill": "mlx-v1"}
+           if getattr(config, "qwen_sorted_expert_prefill", False) and getattr(config, "qwen_grouped_experts", True)
+           else {}),
         "modelConfigSHA256": _sha256_json(raw_config),
         "rope": {key: raw_config.get(key) for key in rope_keys},
         "kvFormat": {
@@ -1297,6 +1301,7 @@ class ModelRuntime:
                         feature = "audioInput" if isinstance(part, AudioPart) else "imageInput" if isinstance(part, ImagePart) else None
                         if feature and not self.support.descriptor.supports(feature):
                             raise MediaError("This model does not support these media inputs.")
+            self.support.validate_media_runtime(self)
             return self.support.validate_media(request)
         return self._codec.encode(
             messages,
@@ -1537,7 +1542,7 @@ class ModelRuntime:
                     with _use_mlx_lm_generation_stream(self._generation_stream):
                         responses = iter(
                             stream_generate(
-                                self.model,
+                                self.support.model_for_prompt(self.model, prepared) if has_media else self.model,
                                 self.tokenizer,
                                 generation_prompt,
                                 max_tokens=options.max_tokens,

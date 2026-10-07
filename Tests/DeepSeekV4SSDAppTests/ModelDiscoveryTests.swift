@@ -127,7 +127,7 @@ final class ModelDiscoveryTests: XCTestCase {
 
     XCTAssertEqual(
       ModelLibrary.supportedModelKinds,
-      [.deepSeekV4, .deepSeekV41, .qwen3_8FlashNext, .mimoV26FlashRL]
+      [.deepSeekV4, .deepSeekV41, .qwen3_8FlashNext, .mimoV26FlashRL, .swift1_5Qwen3_8FlashNext]
     )
     XCTAssertNil(library.usableModel(for: .deepSeekV4))
     XCTAssertNil(library.usableModel(for: .deepSeekV41))
@@ -148,7 +148,8 @@ final class ModelDiscoveryTests: XCTestCase {
 
     XCTAssertEqual(library.plannedInstalledBytes(for: .deepSeekV4), 166_878_580_480)
     XCTAssertEqual(library.plannedInstalledBytes(for: .deepSeekV41), 501_382_643_728)
-    XCTAssertEqual(library.plannedInstalledBytes(for: .qwen3_8FlashNext), 125_291_490_955)
+    XCTAssertEqual(library.plannedInstalledBytes(for: .qwen3_8FlashNext), 126_189_355_659)
+    XCTAssertEqual(library.plannedInstalledBytes(for: .swift1_5Qwen3_8FlashNext), 127_714_522_478)
   }
 
   @MainActor

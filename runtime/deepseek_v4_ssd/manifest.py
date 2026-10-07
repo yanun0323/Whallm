@@ -133,7 +133,8 @@ class InstalledModel:
 
     @property
     def is_qwen(self) -> bool:
-        return self.model_kind == "qwen3.8-flash-next"
+        from .model_support.catalog import QWEN_MODEL_KINDS
+        return self.model_kind in QWEN_MODEL_KINDS
 
     @property
     def is_deepseek_v41(self) -> bool:
@@ -321,5 +322,5 @@ def _deepseek_v41_contract(raw):
     return validate(raw)
 
 def _qwen_contract(raw):
-    from .model_support.qwen import _qwen_contract as validate
-    return validate(raw)
+    from .model_support import get_support
+    return get_support("qwen3.8-flash-next").manifest_contract(raw)

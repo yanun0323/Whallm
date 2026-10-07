@@ -645,6 +645,9 @@ class QwenToolStreamParser:
                 if self._state == "tool":
                     self._buffer = "<tool_call>" + self._buffer
             elif self._state == "tool":
+                # Separators may arrive after the previous call's closing chunk.
+                # Match the complete-output parser without touching parameter values.
+                self._buffer = self._buffer.lstrip()
                 end = self._buffer.find("</tool_call>")
                 if end < 0:
                     break

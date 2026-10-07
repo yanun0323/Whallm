@@ -931,8 +931,22 @@ public enum InstalledModel {
   }
 
   static func decodeManifest(_ data: Data) throws -> InstalledManifest {
-    let manifest = try JSONDecoder().decode(InstalledManifest.self, from: data)
+    var manifest = try JSONDecoder().decode(InstalledManifest.self, from: data)
+    // The published Swift artifact retains Qwen's schema label. Resolve only
+    // this pinned source identity; keep the downloaded manifest bytes intact.
+    let swift = ModelKind.swift1_5Qwen3_8FlashNext.descriptor
+    if manifest.modelKind == .qwen3_8FlashNext,
+      manifest.modelID == swift.checkpointModelID,
+      manifest.revision == swift.checkpointRevision
+    {
+      manifest.modelKind = .swift1_5Qwen3_8FlashNext
+    }
     return try ModelPackages.package(for: manifest).validate(manifest)
+  }
+
+  /// Includes required supplemental weights without rewriting pinned manifests.
+  public static func verificationFiles(for manifest: InstalledManifest) -> [InstalledFile] {
+    manifest.files + QwenVisionArtifact.requiredFiles(for: manifest)
   }
 
   public static func verify(at root: URL) throws -> InstalledManifest {
@@ -964,7 +978,8 @@ public enum InstalledModel {
     progress: (@Sendable (VerificationProgress) -> Void)? = nil
   ) throws -> InstalledModelVerification {
     let root = root.standardizedFileURL
-    let totalBytes = try manifest.files.reduce(UInt64(0)) { total, file in
+    let files = verificationFiles(for: manifest)
+    let totalBytes = try files.reduce(UInt64(0)) { total, file in
       let sum = total.addingReportingOverflow(file.size)
       guard !sum.overflow else {
         throw RepackError.invalidPlan("installed file sizes overflow")
@@ -974,7 +989,7 @@ public enum InstalledModel {
     var checkedBytes: UInt64 = 0
     var issues: [InstalledFileIssue] = []
     progress?(VerificationProgress(checkedBytes: 0, totalBytes: totalBytes))
-    for file in manifest.files.sorted(by: { $0.path < $1.path }) {
+    for file in files.sorted(by: { $0.path < $1.path }) {
       try Task.checkCancellation()
       let url = try safeFileURL(root: root, path: file.path)
       guard let size = try? fileSize(url) else {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import unittest
@@ -510,7 +511,7 @@ class QwenTests(unittest.TestCase):
         self.assertEqual([token for token, _ in generated], [3, 4, 5])
         self.assertEqual(target_cache[0].offset, 4)
 
-    def test_mtp_layer_major_prefill_is_bounded_by_expert_slots(self):
+    def test_mtp_layer_major_prefill_covers_whole_prompt_in_slot_chunks(self):
         target = FakeGreedyTarget()
         mtp = FakeGreedyMTP()
         mtp.expert_cache.slots = 20
@@ -530,7 +531,48 @@ class QwenTests(unittest.TestCase):
         )
 
         self.assertEqual([token for token, _ in generated], [8])
-        self.assertEqual(mtp.cache.offset, 2)
+        # Without whole-layer buffers, chunks stay within slots // top-k.
+        self.assertEqual(mtp.cache.offset, 6)
+        self.assertEqual(mtp.maximum_input_tokens, 2)
+        self.assertEqual(target_cache[0].offset, 7)
+
+    def test_mtp_layer_major_prefill_uses_one_whole_layer_buffer(self):
+        target = FakeGreedyTarget()
+        mtp = FakeGreedyMTP()
+        events = []
+
+        @contextmanager
+        def reuse_layer_buffers():
+            events.append("reuse")
+            yield
+            events.append("release")
+
+        @contextmanager
+        def batched_layer(layer):
+            events.append(("layer", layer))
+            yield
+            events.append(("done", layer, mtp.cache.offset))
+
+        mtp.expert_cache = SimpleNamespace(
+            slots=10, reuse_layer_buffers=reuse_layer_buffers, batched_layer=batched_layer)
+        target_cache = [FakeTargetCache()]
+        target_cache[0].offset = 6
+
+        generated = list(
+            generate_mtp_tokens(
+                [1, 2, 3, 4, 5, 6, 7],
+                target,
+                mtp,
+                target_cache,
+                max_tokens=1,
+                prefill_step_size=4,
+                prefilled_hidden=mx.ones((1, 6, 1)),
+            )
+        )
+
+        self.assertEqual([token for token, _ in generated], [8])
+        self.assertEqual(events, ["reuse", ("layer", 0), ("done", 0, 6), "release"])
+        self.assertEqual(mtp.maximum_input_tokens, 4)
         self.assertEqual(target_cache[0].offset, 7)
 
     def test_ngram_hash_keeps_cross_chunk_context(self):
@@ -757,6 +799,85 @@ class QwenTests(unittest.TestCase):
         self.assertEqual(turn.tool_calls, (ToolCall("weather", '{"city":"Taipei","days":2}'),))
         self.assertTrue(parser.matches((call,)))
         self.assertTrue(parser.matches(turn.tool_calls))
+
+    def test_qwen_stream_parser_multiple_calls_at_all_chunk_boundaries(self):
+        command = "  printf '繁中'\n  "
+        first = (
+            "<tool_call><function=bash><parameter=command>"
+            + json.dumps(command, ensure_ascii=False)
+            + "</parameter></function></tool_call>"
+        )
+        second = (
+            "<tool_call><function=read><parameter=path>README.md"
+            "</parameter></function></tool_call>"
+        )
+        expected = (
+            ToolCall("bash", json.dumps({"command": command}, ensure_ascii=False, separators=(",", ":"))),
+            ToolCall("read", '{"path":"README.md"}'),
+        )
+        for mode in ("chat", "thinking"):
+            prefix = "plan</think>Checking files.\n" if mode == "thinking" else "Checking files.\n"
+            for separator in ("", "\n", "\r\n \t", "\u2003"):
+                raw = prefix + first + separator + second + "\n"
+                turn = QwenToolCodec(None).parse(raw, mode)
+                self.assertEqual(turn.tool_calls, expected)
+                chunkings = [[raw], list(raw)]
+                chunkings.extend([raw[:split], raw[split:]] for split in range(len(raw) + 1))
+                for case, chunks in enumerate(chunkings):
+                    with self.subTest(mode=mode, separator=repr(separator), case=case):
+                        parser = QwenToolStreamParser(mode)
+                        deltas = [delta for chunk in chunks for delta in parser.feed(chunk)]
+                        deltas.extend(parser.finish())
+                        self.assertFalse(parser.failed)
+                        self.assertTrue(parser.matches(turn.tool_calls))
+                        self.assertEqual(parser.streamed_tool_count, 2)
+                        for index, call in enumerate(expected):
+                            self.assertEqual(
+                                [d.tool_name for d in deltas if d.tool_index == index and d.tool_name],
+                                [call.name],
+                            )
+                            self.assertEqual(
+                                json.loads("".join(d.arguments for d in deltas if d.tool_index == index)),
+                                json.loads(call.arguments),
+                            )
+
+    def test_qwen_stream_parser_emits_each_call_before_the_next(self):
+        call = "<tool_call><function=bash><parameter=command>pwd</parameter></function></tool_call>"
+        parser = QwenToolStreamParser("chat")
+        first = parser.feed(call)
+        self.assertEqual([d.tool_name for d in first if d.tool_name], ["bash"])
+        self.assertEqual(parser.streamed_tool_count, 1)
+        self.assertEqual(parser.feed("\n \t"), ())
+        second = parser.feed(call)
+        self.assertEqual([d.tool_name for d in second if d.tool_name], ["bash"])
+        self.assertEqual([d.tool_index for d in second], [1, 1])
+        parser.finish()
+        self.assertTrue(parser.matches(QwenToolCodec(None).parse(call + "\n \t" + call, "chat").tool_calls))
+
+    def test_qwen_stream_parser_rejects_invalid_suffix_after_separator(self):
+        first = "<tool_call><function=bash><parameter=command>pwd</parameter></function></tool_call>"
+        invalid_suffixes = (
+            "unexpected text",
+            "<tool_call><function=read>",
+            "<tool_call><function=read></tool_call>",
+            "<tool_call><function=read><parameter=path>a</parameter>"
+            "<parameter=path>b</parameter></function></tool_call>",
+        )
+        for mode in ("chat", "thinking"):
+            prefix = "plan</think>" if mode == "thinking" else ""
+            for suffix in invalid_suffixes:
+                with self.subTest(mode=mode, suffix=suffix):
+                    codec = QwenToolCodec(None)
+                    turn = codec.parse(prefix + first, mode)
+                    parser = QwenToolStreamParser(mode)
+                    parser.feed(prefix + first)
+                    for character in "\n \t" + suffix:
+                        parser.feed(character)
+                    parser.finish()
+                    self.assertTrue(parser.failed)
+                    self.assertFalse(parser.matches(turn.tool_calls))
+                    with self.assertRaises(ValueError):
+                        codec.parse(prefix + first + "\n \t" + suffix, mode)
 
     def test_qwen_codec_adds_forced_function_instruction(self):
         tokenizer = FakeTokenizer()

@@ -1,9 +1,7 @@
 name: Qwen demand prefill
 
+# Research runs are opt-in; PRs and pushes must not start these jobs.
 on:
-  push:
-    branches: [feat/qwen-flash-optimize]
-    paths: ['.github/qwen-demand-candidate/**', '.github/workflows/qwen-demand-prefill.yml']
   workflow_dispatch:
 
 permissions:

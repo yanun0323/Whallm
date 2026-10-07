@@ -714,7 +714,7 @@ class ExpertCache:
         if type(prefill_seed_experts) is not int or not 0 <= prefill_seed_experts <= 128:
             raise ValueError("prefill seed count must be an integer from 0 through 128")
         if ((prefill_read_experts != 1 or prefill_seed_experts)
-                and (installed_model.model_kind != "qwen3.8-flash-next" or staged_expert_streaming)):
+                and (not installed_model.is_qwen or staged_expert_streaming)):
             raise ValueError("prefill read/seed experiments require direct Qwen slots")
         self.prefill_read_experts = prefill_read_experts
         self.prefill_seed_experts = prefill_seed_experts

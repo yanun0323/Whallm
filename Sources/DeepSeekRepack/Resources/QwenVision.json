@@ -1,0 +1,4839 @@
+{
+  "version": 1,
+  "visionConfig": {
+    "deepstack_visual_indexes": [],
+    "depth": 27,
+    "hidden_act": "gelu_pytorch_tanh",
+    "hidden_size": 1152,
+    "in_channels": 3,
+    "initializer_range": 0.02,
+    "intermediate_size": 4304,
+    "model_type": "qwen4_exp",
+    "num_heads": 16,
+    "num_position_embeddings": 2304,
+    "out_hidden_size": 2560,
+    "patch_size": 16,
+    "spatial_merge_size": 2,
+    "temporal_patch_size": 2
+  },
+  "tensors": [
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.0.attn.proj.bias",
+      "offset": 0,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.0.attn.proj.weight",
+      "offset": 2304,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.0.attn.qkv.bias",
+      "offset": 2656512,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.0.attn.qkv.weight",
+      "offset": 2663424,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.0.mlp.linear_fc1.bias",
+      "offset": 10626048,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.0.mlp.linear_fc1.weight",
+      "offset": 10634752,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.0.mlp.linear_fc2.bias",
+      "offset": 20551168,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.0.mlp.linear_fc2.weight",
+      "offset": 20553472,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.0.norm1.bias",
+      "offset": 30469888,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.0.norm1.weight",
+      "offset": 30472192,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.0.norm2.bias",
+      "offset": 30474496,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.0.norm2.weight",
+      "offset": 30476800,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.1.attn.proj.bias",
+      "offset": 30479104,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.1.attn.proj.weight",
+      "offset": 30481408,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.1.attn.qkv.bias",
+      "offset": 33135616,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.1.attn.qkv.weight",
+      "offset": 33142528,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.1.mlp.linear_fc1.bias",
+      "offset": 41105152,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.1.mlp.linear_fc1.weight",
+      "offset": 41113856,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.1.mlp.linear_fc2.bias",
+      "offset": 51030272,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.1.mlp.linear_fc2.weight",
+      "offset": 51032576,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.1.norm1.bias",
+      "offset": 60948992,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.1.norm1.weight",
+      "offset": 60951296,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.1.norm2.bias",
+      "offset": 60953600,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.1.norm2.weight",
+      "offset": 60955904,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.10.attn.proj.bias",
+      "offset": 60958208,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.10.attn.proj.weight",
+      "offset": 60960512,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.10.attn.qkv.bias",
+      "offset": 63614720,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.10.attn.qkv.weight",
+      "offset": 63621632,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.10.mlp.linear_fc1.bias",
+      "offset": 71584256,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.10.mlp.linear_fc1.weight",
+      "offset": 71592960,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.10.mlp.linear_fc2.bias",
+      "offset": 81509376,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.10.mlp.linear_fc2.weight",
+      "offset": 81511680,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.10.norm1.bias",
+      "offset": 91428096,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.10.norm1.weight",
+      "offset": 91430400,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.10.norm2.bias",
+      "offset": 91432704,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.10.norm2.weight",
+      "offset": 91435008,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.11.attn.proj.bias",
+      "offset": 91437312,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.11.attn.proj.weight",
+      "offset": 91439616,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.11.attn.qkv.bias",
+      "offset": 94093824,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.11.attn.qkv.weight",
+      "offset": 94100736,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.11.mlp.linear_fc1.bias",
+      "offset": 102063360,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.11.mlp.linear_fc1.weight",
+      "offset": 102072064,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.11.mlp.linear_fc2.bias",
+      "offset": 111988480,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.11.mlp.linear_fc2.weight",
+      "offset": 111990784,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.11.norm1.bias",
+      "offset": 121907200,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.11.norm1.weight",
+      "offset": 121909504,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.11.norm2.bias",
+      "offset": 121911808,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.11.norm2.weight",
+      "offset": 121914112,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.12.attn.proj.bias",
+      "offset": 121916416,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.12.attn.proj.weight",
+      "offset": 121918720,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.12.attn.qkv.bias",
+      "offset": 124572928,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.12.attn.qkv.weight",
+      "offset": 124579840,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.12.mlp.linear_fc1.bias",
+      "offset": 132542464,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.12.mlp.linear_fc1.weight",
+      "offset": 132551168,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.12.mlp.linear_fc2.bias",
+      "offset": 142467584,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.12.mlp.linear_fc2.weight",
+      "offset": 142469888,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.12.norm1.bias",
+      "offset": 152386304,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.12.norm1.weight",
+      "offset": 152388608,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.12.norm2.bias",
+      "offset": 152390912,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.12.norm2.weight",
+      "offset": 152393216,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.13.attn.proj.bias",
+      "offset": 152395520,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.13.attn.proj.weight",
+      "offset": 152397824,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.13.attn.qkv.bias",
+      "offset": 155052032,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.13.attn.qkv.weight",
+      "offset": 155058944,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.13.mlp.linear_fc1.bias",
+      "offset": 163021568,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.13.mlp.linear_fc1.weight",
+      "offset": 163030272,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.13.mlp.linear_fc2.bias",
+      "offset": 172946688,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.13.mlp.linear_fc2.weight",
+      "offset": 172948992,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.13.norm1.bias",
+      "offset": 182865408,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.13.norm1.weight",
+      "offset": 182867712,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.13.norm2.bias",
+      "offset": 182870016,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.13.norm2.weight",
+      "offset": 182872320,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.14.attn.proj.bias",
+      "offset": 182874624,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.14.attn.proj.weight",
+      "offset": 182876928,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.14.attn.qkv.bias",
+      "offset": 185531136,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.14.attn.qkv.weight",
+      "offset": 185538048,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.14.mlp.linear_fc1.bias",
+      "offset": 193500672,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.14.mlp.linear_fc1.weight",
+      "offset": 193509376,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.14.mlp.linear_fc2.bias",
+      "offset": 203425792,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.14.mlp.linear_fc2.weight",
+      "offset": 203428096,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.14.norm1.bias",
+      "offset": 213344512,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.14.norm1.weight",
+      "offset": 213346816,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.14.norm2.bias",
+      "offset": 213349120,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.14.norm2.weight",
+      "offset": 213351424,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.15.attn.proj.bias",
+      "offset": 213353728,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.15.attn.proj.weight",
+      "offset": 213356032,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.15.attn.qkv.bias",
+      "offset": 216010240,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.15.attn.qkv.weight",
+      "offset": 216017152,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.15.mlp.linear_fc1.bias",
+      "offset": 223979776,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.15.mlp.linear_fc1.weight",
+      "offset": 223988480,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.15.mlp.linear_fc2.bias",
+      "offset": 233904896,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.15.mlp.linear_fc2.weight",
+      "offset": 233907200,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.15.norm1.bias",
+      "offset": 243823616,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.15.norm1.weight",
+      "offset": 243825920,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.15.norm2.bias",
+      "offset": 243828224,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.15.norm2.weight",
+      "offset": 243830528,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.16.attn.proj.bias",
+      "offset": 243832832,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.16.attn.proj.weight",
+      "offset": 243835136,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.16.attn.qkv.bias",
+      "offset": 246489344,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.16.attn.qkv.weight",
+      "offset": 246496256,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.16.mlp.linear_fc1.bias",
+      "offset": 254458880,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.16.mlp.linear_fc1.weight",
+      "offset": 254467584,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.16.mlp.linear_fc2.bias",
+      "offset": 264384000,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.16.mlp.linear_fc2.weight",
+      "offset": 264386304,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.16.norm1.bias",
+      "offset": 274302720,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.16.norm1.weight",
+      "offset": 274305024,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.16.norm2.bias",
+      "offset": 274307328,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.16.norm2.weight",
+      "offset": 274309632,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.17.attn.proj.bias",
+      "offset": 274311936,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.17.attn.proj.weight",
+      "offset": 274314240,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.17.attn.qkv.bias",
+      "offset": 276968448,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.17.attn.qkv.weight",
+      "offset": 276975360,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.17.mlp.linear_fc1.bias",
+      "offset": 284937984,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.17.mlp.linear_fc1.weight",
+      "offset": 284946688,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.17.mlp.linear_fc2.bias",
+      "offset": 294863104,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.17.mlp.linear_fc2.weight",
+      "offset": 294865408,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.17.norm1.bias",
+      "offset": 304781824,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.17.norm1.weight",
+      "offset": 304784128,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.17.norm2.bias",
+      "offset": 304786432,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.17.norm2.weight",
+      "offset": 304788736,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.18.attn.proj.bias",
+      "offset": 304791040,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.18.attn.proj.weight",
+      "offset": 304793344,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.18.attn.qkv.bias",
+      "offset": 307447552,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.18.attn.qkv.weight",
+      "offset": 307454464,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.18.mlp.linear_fc1.bias",
+      "offset": 315417088,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.18.mlp.linear_fc1.weight",
+      "offset": 315425792,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.18.mlp.linear_fc2.bias",
+      "offset": 325342208,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.18.mlp.linear_fc2.weight",
+      "offset": 325344512,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.18.norm1.bias",
+      "offset": 335260928,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.18.norm1.weight",
+      "offset": 335263232,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.18.norm2.bias",
+      "offset": 335265536,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.18.norm2.weight",
+      "offset": 335267840,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.19.attn.proj.bias",
+      "offset": 335270144,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.19.attn.proj.weight",
+      "offset": 335272448,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.19.attn.qkv.bias",
+      "offset": 337926656,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.19.attn.qkv.weight",
+      "offset": 337933568,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.19.mlp.linear_fc1.bias",
+      "offset": 345896192,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.19.mlp.linear_fc1.weight",
+      "offset": 345904896,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.19.mlp.linear_fc2.bias",
+      "offset": 355821312,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.19.mlp.linear_fc2.weight",
+      "offset": 355823616,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.19.norm1.bias",
+      "offset": 365740032,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.19.norm1.weight",
+      "offset": 365742336,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.19.norm2.bias",
+      "offset": 365744640,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.19.norm2.weight",
+      "offset": 365746944,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.2.attn.proj.bias",
+      "offset": 365749248,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.2.attn.proj.weight",
+      "offset": 365751552,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.2.attn.qkv.bias",
+      "offset": 368405760,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.2.attn.qkv.weight",
+      "offset": 368412672,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.2.mlp.linear_fc1.bias",
+      "offset": 376375296,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.2.mlp.linear_fc1.weight",
+      "offset": 376384000,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.2.mlp.linear_fc2.bias",
+      "offset": 386300416,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.2.mlp.linear_fc2.weight",
+      "offset": 386302720,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.2.norm1.bias",
+      "offset": 396219136,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.2.norm1.weight",
+      "offset": 396221440,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.2.norm2.bias",
+      "offset": 396223744,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.2.norm2.weight",
+      "offset": 396226048,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.20.attn.proj.bias",
+      "offset": 396228352,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.20.attn.proj.weight",
+      "offset": 396230656,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.20.attn.qkv.bias",
+      "offset": 398884864,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.20.attn.qkv.weight",
+      "offset": 398891776,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.20.mlp.linear_fc1.bias",
+      "offset": 406854400,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.20.mlp.linear_fc1.weight",
+      "offset": 406863104,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.20.mlp.linear_fc2.bias",
+      "offset": 416779520,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.20.mlp.linear_fc2.weight",
+      "offset": 416781824,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.20.norm1.bias",
+      "offset": 426698240,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.20.norm1.weight",
+      "offset": 426700544,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.20.norm2.bias",
+      "offset": 426702848,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.20.norm2.weight",
+      "offset": 426705152,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.21.attn.proj.bias",
+      "offset": 426707456,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.21.attn.proj.weight",
+      "offset": 426709760,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.21.attn.qkv.bias",
+      "offset": 429363968,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.21.attn.qkv.weight",
+      "offset": 429370880,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.21.mlp.linear_fc1.bias",
+      "offset": 437333504,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.21.mlp.linear_fc1.weight",
+      "offset": 437342208,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.21.mlp.linear_fc2.bias",
+      "offset": 447258624,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.21.mlp.linear_fc2.weight",
+      "offset": 447260928,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.21.norm1.bias",
+      "offset": 457177344,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.21.norm1.weight",
+      "offset": 457179648,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.21.norm2.bias",
+      "offset": 457181952,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.21.norm2.weight",
+      "offset": 457184256,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.22.attn.proj.bias",
+      "offset": 457186560,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.22.attn.proj.weight",
+      "offset": 457188864,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.22.attn.qkv.bias",
+      "offset": 459843072,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.22.attn.qkv.weight",
+      "offset": 459849984,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.22.mlp.linear_fc1.bias",
+      "offset": 467812608,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.22.mlp.linear_fc1.weight",
+      "offset": 467821312,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.22.mlp.linear_fc2.bias",
+      "offset": 477737728,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.22.mlp.linear_fc2.weight",
+      "offset": 477740032,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.22.norm1.bias",
+      "offset": 487656448,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.22.norm1.weight",
+      "offset": 487658752,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.22.norm2.bias",
+      "offset": 487661056,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.22.norm2.weight",
+      "offset": 487663360,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.23.attn.proj.bias",
+      "offset": 487665664,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.23.attn.proj.weight",
+      "offset": 487667968,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.23.attn.qkv.bias",
+      "offset": 490322176,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.23.attn.qkv.weight",
+      "offset": 490329088,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.23.mlp.linear_fc1.bias",
+      "offset": 498291712,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.23.mlp.linear_fc1.weight",
+      "offset": 498300416,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.23.mlp.linear_fc2.bias",
+      "offset": 508216832,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.23.mlp.linear_fc2.weight",
+      "offset": 508219136,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.23.norm1.bias",
+      "offset": 518135552,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.23.norm1.weight",
+      "offset": 518137856,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.23.norm2.bias",
+      "offset": 518140160,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.23.norm2.weight",
+      "offset": 518142464,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.24.attn.proj.bias",
+      "offset": 518144768,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.24.attn.proj.weight",
+      "offset": 518147072,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.24.attn.qkv.bias",
+      "offset": 520801280,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.24.attn.qkv.weight",
+      "offset": 520808192,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.24.mlp.linear_fc1.bias",
+      "offset": 528770816,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.24.mlp.linear_fc1.weight",
+      "offset": 528779520,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.24.mlp.linear_fc2.bias",
+      "offset": 538695936,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.24.mlp.linear_fc2.weight",
+      "offset": 538698240,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.24.norm1.bias",
+      "offset": 548614656,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.24.norm1.weight",
+      "offset": 548616960,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.24.norm2.bias",
+      "offset": 548619264,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.24.norm2.weight",
+      "offset": 548621568,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.25.attn.proj.bias",
+      "offset": 548623872,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.25.attn.proj.weight",
+      "offset": 548626176,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.25.attn.qkv.bias",
+      "offset": 551280384,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.25.attn.qkv.weight",
+      "offset": 551287296,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.25.mlp.linear_fc1.bias",
+      "offset": 559249920,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.25.mlp.linear_fc1.weight",
+      "offset": 559258624,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.25.mlp.linear_fc2.bias",
+      "offset": 569175040,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.25.mlp.linear_fc2.weight",
+      "offset": 569177344,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.25.norm1.bias",
+      "offset": 579093760,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.25.norm1.weight",
+      "offset": 579096064,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.25.norm2.bias",
+      "offset": 579098368,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.25.norm2.weight",
+      "offset": 579100672,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.26.attn.proj.bias",
+      "offset": 579102976,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.26.attn.proj.weight",
+      "offset": 579105280,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.26.attn.qkv.bias",
+      "offset": 581759488,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.26.attn.qkv.weight",
+      "offset": 581766400,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.26.mlp.linear_fc1.bias",
+      "offset": 589729024,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.26.mlp.linear_fc1.weight",
+      "offset": 589737728,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.26.mlp.linear_fc2.bias",
+      "offset": 599654144,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.26.mlp.linear_fc2.weight",
+      "offset": 599656448,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.26.norm1.bias",
+      "offset": 609572864,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.26.norm1.weight",
+      "offset": 609575168,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.26.norm2.bias",
+      "offset": 609577472,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.26.norm2.weight",
+      "offset": 609579776,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.3.attn.proj.bias",
+      "offset": 609582080,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.3.attn.proj.weight",
+      "offset": 609584384,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.3.attn.qkv.bias",
+      "offset": 612238592,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.3.attn.qkv.weight",
+      "offset": 612245504,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.3.mlp.linear_fc1.bias",
+      "offset": 620208128,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.3.mlp.linear_fc1.weight",
+      "offset": 620216832,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.3.mlp.linear_fc2.bias",
+      "offset": 630133248,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.3.mlp.linear_fc2.weight",
+      "offset": 630135552,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.3.norm1.bias",
+      "offset": 640051968,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.3.norm1.weight",
+      "offset": 640054272,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.3.norm2.bias",
+      "offset": 640056576,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.3.norm2.weight",
+      "offset": 640058880,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.4.attn.proj.bias",
+      "offset": 640061184,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.4.attn.proj.weight",
+      "offset": 640063488,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.4.attn.qkv.bias",
+      "offset": 642717696,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.4.attn.qkv.weight",
+      "offset": 642724608,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.4.mlp.linear_fc1.bias",
+      "offset": 650687232,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.4.mlp.linear_fc1.weight",
+      "offset": 650695936,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.4.mlp.linear_fc2.bias",
+      "offset": 660612352,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.4.mlp.linear_fc2.weight",
+      "offset": 660614656,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.4.norm1.bias",
+      "offset": 670531072,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.4.norm1.weight",
+      "offset": 670533376,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.4.norm2.bias",
+      "offset": 670535680,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.4.norm2.weight",
+      "offset": 670537984,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.5.attn.proj.bias",
+      "offset": 670540288,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.5.attn.proj.weight",
+      "offset": 670542592,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.5.attn.qkv.bias",
+      "offset": 673196800,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.5.attn.qkv.weight",
+      "offset": 673203712,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.5.mlp.linear_fc1.bias",
+      "offset": 681166336,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.5.mlp.linear_fc1.weight",
+      "offset": 681175040,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.5.mlp.linear_fc2.bias",
+      "offset": 691091456,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.5.mlp.linear_fc2.weight",
+      "offset": 691093760,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.5.norm1.bias",
+      "offset": 701010176,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.5.norm1.weight",
+      "offset": 701012480,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.5.norm2.bias",
+      "offset": 701014784,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.5.norm2.weight",
+      "offset": 701017088,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.6.attn.proj.bias",
+      "offset": 701019392,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.6.attn.proj.weight",
+      "offset": 701021696,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.6.attn.qkv.bias",
+      "offset": 703675904,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.6.attn.qkv.weight",
+      "offset": 703682816,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.6.mlp.linear_fc1.bias",
+      "offset": 711645440,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.6.mlp.linear_fc1.weight",
+      "offset": 711654144,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.6.mlp.linear_fc2.bias",
+      "offset": 721570560,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.6.mlp.linear_fc2.weight",
+      "offset": 721572864,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.6.norm1.bias",
+      "offset": 731489280,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.6.norm1.weight",
+      "offset": 731491584,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.6.norm2.bias",
+      "offset": 731493888,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.6.norm2.weight",
+      "offset": 731496192,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.7.attn.proj.bias",
+      "offset": 731498496,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.7.attn.proj.weight",
+      "offset": 731500800,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.7.attn.qkv.bias",
+      "offset": 734155008,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.7.attn.qkv.weight",
+      "offset": 734161920,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.7.mlp.linear_fc1.bias",
+      "offset": 742124544,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.7.mlp.linear_fc1.weight",
+      "offset": 742133248,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.7.mlp.linear_fc2.bias",
+      "offset": 752049664,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.7.mlp.linear_fc2.weight",
+      "offset": 752051968,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.7.norm1.bias",
+      "offset": 761968384,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.7.norm1.weight",
+      "offset": 761970688,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.7.norm2.bias",
+      "offset": 761972992,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.7.norm2.weight",
+      "offset": 761975296,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.8.attn.proj.bias",
+      "offset": 761977600,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.8.attn.proj.weight",
+      "offset": 761979904,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.8.attn.qkv.bias",
+      "offset": 764634112,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.8.attn.qkv.weight",
+      "offset": 764641024,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.8.mlp.linear_fc1.bias",
+      "offset": 772603648,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.8.mlp.linear_fc1.weight",
+      "offset": 772612352,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.8.mlp.linear_fc2.bias",
+      "offset": 782528768,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.8.mlp.linear_fc2.weight",
+      "offset": 782531072,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.8.norm1.bias",
+      "offset": 792447488,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.8.norm1.weight",
+      "offset": 792449792,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.8.norm2.bias",
+      "offset": 792452096,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.8.norm2.weight",
+      "offset": 792454400,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.9.attn.proj.bias",
+      "offset": 792456704,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2654208,
+      "name": "model.visual.blocks.9.attn.proj.weight",
+      "offset": 792459008,
+      "shape": [
+        1152,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 6912,
+      "name": "model.visual.blocks.9.attn.qkv.bias",
+      "offset": 795113216,
+      "shape": [
+        3456
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 7962624,
+      "name": "model.visual.blocks.9.attn.qkv.weight",
+      "offset": 795120128,
+      "shape": [
+        3456,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 8608,
+      "name": "model.visual.blocks.9.mlp.linear_fc1.bias",
+      "offset": 803082752,
+      "shape": [
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.9.mlp.linear_fc1.weight",
+      "offset": 803091456,
+      "shape": [
+        4304,
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.9.mlp.linear_fc2.bias",
+      "offset": 813007872,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9916416,
+      "name": "model.visual.blocks.9.mlp.linear_fc2.weight",
+      "offset": 813010176,
+      "shape": [
+        1152,
+        4304
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.9.norm1.bias",
+      "offset": 822926592,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.9.norm1.weight",
+      "offset": 822928896,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.9.norm2.bias",
+      "offset": 822931200,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.blocks.9.norm2.weight",
+      "offset": 822933504,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 9216,
+      "name": "model.visual.merger.linear_fc1.bias",
+      "offset": 822935808,
+      "shape": [
+        4608
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 42467328,
+      "name": "model.visual.merger.linear_fc1.weight",
+      "offset": 822945024,
+      "shape": [
+        4608,
+        4608
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 5120,
+      "name": "model.visual.merger.linear_fc2.bias",
+      "offset": 865412352,
+      "shape": [
+        2560
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 23592960,
+      "name": "model.visual.merger.linear_fc2.weight",
+      "offset": 865417472,
+      "shape": [
+        2560,
+        4608
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.merger.norm.bias",
+      "offset": 889010432,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.merger.norm.weight",
+      "offset": 889012736,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 2304,
+      "name": "model.visual.patch_embed.proj.bias",
+      "offset": 889015040,
+      "shape": [
+        1152
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 3538944,
+      "name": "model.visual.patch_embed.proj.weight",
+      "offset": 889017344,
+      "shape": [
+        1152,
+        3,
+        2,
+        16,
+        16
+      ]
+    },
+    {
+      "dtype": "BF16",
+      "length": 5308416,
+      "name": "model.visual.pos_embed.weight",
+      "offset": 892556288,
+      "shape": [
+        2304,
+        1152
+      ]
+    }
+  ],
+  "models": [
+    {
+      "kind": "qwen3.8-flash-next",
+      "checkpointModelID": "Qwen/Qwen3.8-Flash-Next-FP8",
+      "checkpointRevision": "bcd9f01ddc9cff2316eb84281bebcd5b058bddce",
+      "repository": "Qwen/Qwen3.8-Flash-Next-FP8",
+      "revision": "bcd9f01ddc9cff2316eb84281bebcd5b058bddce",
+      "sourceFile": "model-00001-of-00131.safetensors",
+      "sourceSize": 1040155912,
+      "sourceSHA256": "774f0ceeadb40d165f2b3ff397d5f3840e6ca8fcb8f3d39d8acb4fea9e52c941",
+      "file": {
+        "path": "vision/common.bin",
+        "size": 897864704,
+        "sha256": "8c03df692c3c94002f86307a1e8419e9d4f9d390a64a10c2d99d003c5d64f01a"
+      },
+      "copies": [
+        {
+          "offset": 0,
+          "length": 2304,
+          "sourceOffset": 142293800
+        },
+        {
+          "offset": 2304,
+          "length": 2654208,
+          "sourceOffset": 142296104
+        },
+        {
+          "offset": 2656512,
+          "length": 6912,
+          "sourceOffset": 144950312
+        },
+        {
+          "offset": 2663424,
+          "length": 7962624,
+          "sourceOffset": 144957224
+        },
+        {
+          "offset": 10626048,
+          "length": 8608,
+          "sourceOffset": 152919848
+        },
+        {
+          "offset": 10634752,
+          "length": 9916416,
+          "sourceOffset": 152928456
+        },
+        {
+          "offset": 20551168,
+          "length": 2304,
+          "sourceOffset": 162844872
+        },
+        {
+          "offset": 20553472,
+          "length": 9916416,
+          "sourceOffset": 162847176
+        },
+        {
+          "offset": 30469888,
+          "length": 2304,
+          "sourceOffset": 172763592
+        },
+        {
+          "offset": 30472192,
+          "length": 2304,
+          "sourceOffset": 172765896
+        },
+        {
+          "offset": 30474496,
+          "length": 2304,
+          "sourceOffset": 172768200
+        },
+        {
+          "offset": 30476800,
+          "length": 2304,
+          "sourceOffset": 172770504
+        },
+        {
+          "offset": 30479104,
+          "length": 2304,
+          "sourceOffset": 172772808
+        },
+        {
+          "offset": 30481408,
+          "length": 2654208,
+          "sourceOffset": 172775112
+        },
+        {
+          "offset": 33135616,
+          "length": 6912,
+          "sourceOffset": 175429320
+        },
+        {
+          "offset": 33142528,
+          "length": 7962624,
+          "sourceOffset": 175436232
+        },
+        {
+          "offset": 41105152,
+          "length": 8608,
+          "sourceOffset": 183398856
+        },
+        {
+          "offset": 41113856,
+          "length": 9916416,
+          "sourceOffset": 183407464
+        },
+        {
+          "offset": 51030272,
+          "length": 2304,
+          "sourceOffset": 193323880
+        },
+        {
+          "offset": 51032576,
+          "length": 9916416,
+          "sourceOffset": 193326184
+        },
+        {
+          "offset": 60948992,
+          "length": 2304,
+          "sourceOffset": 203242600
+        },
+        {
+          "offset": 60951296,
+          "length": 2304,
+          "sourceOffset": 203244904
+        },
+        {
+          "offset": 60953600,
+          "length": 2304,
+          "sourceOffset": 203247208
+        },
+        {
+          "offset": 60955904,
+          "length": 2304,
+          "sourceOffset": 203249512
+        },
+        {
+          "offset": 60958208,
+          "length": 2304,
+          "sourceOffset": 203251816
+        },
+        {
+          "offset": 60960512,
+          "length": 2654208,
+          "sourceOffset": 203254120
+        },
+        {
+          "offset": 63614720,
+          "length": 6912,
+          "sourceOffset": 205908328
+        },
+        {
+          "offset": 63621632,
+          "length": 7962624,
+          "sourceOffset": 205915240
+        },
+        {
+          "offset": 71584256,
+          "length": 8608,
+          "sourceOffset": 213877864
+        },
+        {
+          "offset": 71592960,
+          "length": 9916416,
+          "sourceOffset": 213886472
+        },
+        {
+          "offset": 81509376,
+          "length": 2304,
+          "sourceOffset": 223802888
+        },
+        {
+          "offset": 81511680,
+          "length": 9916416,
+          "sourceOffset": 223805192
+        },
+        {
+          "offset": 91428096,
+          "length": 2304,
+          "sourceOffset": 233721608
+        },
+        {
+          "offset": 91430400,
+          "length": 2304,
+          "sourceOffset": 233723912
+        },
+        {
+          "offset": 91432704,
+          "length": 2304,
+          "sourceOffset": 233726216
+        },
+        {
+          "offset": 91435008,
+          "length": 2304,
+          "sourceOffset": 233728520
+        },
+        {
+          "offset": 91437312,
+          "length": 2304,
+          "sourceOffset": 233730824
+        },
+        {
+          "offset": 91439616,
+          "length": 2654208,
+          "sourceOffset": 233733128
+        },
+        {
+          "offset": 94093824,
+          "length": 6912,
+          "sourceOffset": 236387336
+        },
+        {
+          "offset": 94100736,
+          "length": 7962624,
+          "sourceOffset": 236394248
+        },
+        {
+          "offset": 102063360,
+          "length": 8608,
+          "sourceOffset": 244356872
+        },
+        {
+          "offset": 102072064,
+          "length": 9916416,
+          "sourceOffset": 244365480
+        },
+        {
+          "offset": 111988480,
+          "length": 2304,
+          "sourceOffset": 254281896
+        },
+        {
+          "offset": 111990784,
+          "length": 9916416,
+          "sourceOffset": 254284200
+        },
+        {
+          "offset": 121907200,
+          "length": 2304,
+          "sourceOffset": 264200616
+        },
+        {
+          "offset": 121909504,
+          "length": 2304,
+          "sourceOffset": 264202920
+        },
+        {
+          "offset": 121911808,
+          "length": 2304,
+          "sourceOffset": 264205224
+        },
+        {
+          "offset": 121914112,
+          "length": 2304,
+          "sourceOffset": 264207528
+        },
+        {
+          "offset": 121916416,
+          "length": 2304,
+          "sourceOffset": 264209832
+        },
+        {
+          "offset": 121918720,
+          "length": 2654208,
+          "sourceOffset": 264212136
+        },
+        {
+          "offset": 124572928,
+          "length": 6912,
+          "sourceOffset": 266866344
+        },
+        {
+          "offset": 124579840,
+          "length": 7962624,
+          "sourceOffset": 266873256
+        },
+        {
+          "offset": 132542464,
+          "length": 8608,
+          "sourceOffset": 274835880
+        },
+        {
+          "offset": 132551168,
+          "length": 9916416,
+          "sourceOffset": 274844488
+        },
+        {
+          "offset": 142467584,
+          "length": 2304,
+          "sourceOffset": 284760904
+        },
+        {
+          "offset": 142469888,
+          "length": 9916416,
+          "sourceOffset": 284763208
+        },
+        {
+          "offset": 152386304,
+          "length": 2304,
+          "sourceOffset": 294679624
+        },
+        {
+          "offset": 152388608,
+          "length": 2304,
+          "sourceOffset": 294681928
+        },
+        {
+          "offset": 152390912,
+          "length": 2304,
+          "sourceOffset": 294684232
+        },
+        {
+          "offset": 152393216,
+          "length": 2304,
+          "sourceOffset": 294686536
+        },
+        {
+          "offset": 152395520,
+          "length": 2304,
+          "sourceOffset": 294688840
+        },
+        {
+          "offset": 152397824,
+          "length": 2654208,
+          "sourceOffset": 294691144
+        },
+        {
+          "offset": 155052032,
+          "length": 6912,
+          "sourceOffset": 297345352
+        },
+        {
+          "offset": 155058944,
+          "length": 7962624,
+          "sourceOffset": 297352264
+        },
+        {
+          "offset": 163021568,
+          "length": 8608,
+          "sourceOffset": 305314888
+        },
+        {
+          "offset": 163030272,
+          "length": 9916416,
+          "sourceOffset": 305323496
+        },
+        {
+          "offset": 172946688,
+          "length": 2304,
+          "sourceOffset": 315239912
+        },
+        {
+          "offset": 172948992,
+          "length": 9916416,
+          "sourceOffset": 315242216
+        },
+        {
+          "offset": 182865408,
+          "length": 2304,
+          "sourceOffset": 325158632
+        },
+        {
+          "offset": 182867712,
+          "length": 2304,
+          "sourceOffset": 325160936
+        },
+        {
+          "offset": 182870016,
+          "length": 2304,
+          "sourceOffset": 325163240
+        },
+        {
+          "offset": 182872320,
+          "length": 2304,
+          "sourceOffset": 325165544
+        },
+        {
+          "offset": 182874624,
+          "length": 2304,
+          "sourceOffset": 325167848
+        },
+        {
+          "offset": 182876928,
+          "length": 2654208,
+          "sourceOffset": 325170152
+        },
+        {
+          "offset": 185531136,
+          "length": 6912,
+          "sourceOffset": 327824360
+        },
+        {
+          "offset": 185538048,
+          "length": 7962624,
+          "sourceOffset": 327831272
+        },
+        {
+          "offset": 193500672,
+          "length": 8608,
+          "sourceOffset": 335793896
+        },
+        {
+          "offset": 193509376,
+          "length": 9916416,
+          "sourceOffset": 335802504
+        },
+        {
+          "offset": 203425792,
+          "length": 2304,
+          "sourceOffset": 345718920
+        },
+        {
+          "offset": 203428096,
+          "length": 9916416,
+          "sourceOffset": 345721224
+        },
+        {
+          "offset": 213344512,
+          "length": 2304,
+          "sourceOffset": 355637640
+        },
+        {
+          "offset": 213346816,
+          "length": 2304,
+          "sourceOffset": 355639944
+        },
+        {
+          "offset": 213349120,
+          "length": 2304,
+          "sourceOffset": 355642248
+        },
+        {
+          "offset": 213351424,
+          "length": 2304,
+          "sourceOffset": 355644552
+        },
+        {
+          "offset": 213353728,
+          "length": 2304,
+          "sourceOffset": 355646856
+        },
+        {
+          "offset": 213356032,
+          "length": 2654208,
+          "sourceOffset": 355649160
+        },
+        {
+          "offset": 216010240,
+          "length": 6912,
+          "sourceOffset": 358303368
+        },
+        {
+          "offset": 216017152,
+          "length": 7962624,
+          "sourceOffset": 358310280
+        },
+        {
+          "offset": 223979776,
+          "length": 8608,
+          "sourceOffset": 366272904
+        },
+        {
+          "offset": 223988480,
+          "length": 9916416,
+          "sourceOffset": 366281512
+        },
+        {
+          "offset": 233904896,
+          "length": 2304,
+          "sourceOffset": 376197928
+        },
+        {
+          "offset": 233907200,
+          "length": 9916416,
+          "sourceOffset": 376200232
+        },
+        {
+          "offset": 243823616,
+          "length": 2304,
+          "sourceOffset": 386116648
+        },
+        {
+          "offset": 243825920,
+          "length": 2304,
+          "sourceOffset": 386118952
+        },
+        {
+          "offset": 243828224,
+          "length": 2304,
+          "sourceOffset": 386121256
+        },
+        {
+          "offset": 243830528,
+          "length": 2304,
+          "sourceOffset": 386123560
+        },
+        {
+          "offset": 243832832,
+          "length": 2304,
+          "sourceOffset": 386125864
+        },
+        {
+          "offset": 243835136,
+          "length": 2654208,
+          "sourceOffset": 386128168
+        },
+        {
+          "offset": 246489344,
+          "length": 6912,
+          "sourceOffset": 388782376
+        },
+        {
+          "offset": 246496256,
+          "length": 7962624,
+          "sourceOffset": 388789288
+        },
+        {
+          "offset": 254458880,
+          "length": 8608,
+          "sourceOffset": 396751912
+        },
+        {
+          "offset": 254467584,
+          "length": 9916416,
+          "sourceOffset": 396760520
+        },
+        {
+          "offset": 264384000,
+          "length": 2304,
+          "sourceOffset": 406676936
+        },
+        {
+          "offset": 264386304,
+          "length": 9916416,
+          "sourceOffset": 406679240
+        },
+        {
+          "offset": 274302720,
+          "length": 2304,
+          "sourceOffset": 416595656
+        },
+        {
+          "offset": 274305024,
+          "length": 2304,
+          "sourceOffset": 416597960
+        },
+        {
+          "offset": 274307328,
+          "length": 2304,
+          "sourceOffset": 416600264
+        },
+        {
+          "offset": 274309632,
+          "length": 2304,
+          "sourceOffset": 416602568
+        },
+        {
+          "offset": 274311936,
+          "length": 2304,
+          "sourceOffset": 416604872
+        },
+        {
+          "offset": 274314240,
+          "length": 2654208,
+          "sourceOffset": 416607176
+        },
+        {
+          "offset": 276968448,
+          "length": 6912,
+          "sourceOffset": 419261384
+        },
+        {
+          "offset": 276975360,
+          "length": 7962624,
+          "sourceOffset": 419268296
+        },
+        {
+          "offset": 284937984,
+          "length": 8608,
+          "sourceOffset": 427230920
+        },
+        {
+          "offset": 284946688,
+          "length": 9916416,
+          "sourceOffset": 427239528
+        },
+        {
+          "offset": 294863104,
+          "length": 2304,
+          "sourceOffset": 437155944
+        },
+        {
+          "offset": 294865408,
+          "length": 9916416,
+          "sourceOffset": 437158248
+        },
+        {
+          "offset": 304781824,
+          "length": 2304,
+          "sourceOffset": 447074664
+        },
+        {
+          "offset": 304784128,
+          "length": 2304,
+          "sourceOffset": 447076968
+        },
+        {
+          "offset": 304786432,
+          "length": 2304,
+          "sourceOffset": 447079272
+        },
+        {
+          "offset": 304788736,
+          "length": 2304,
+          "sourceOffset": 447081576
+        },
+        {
+          "offset": 304791040,
+          "length": 2304,
+          "sourceOffset": 447083880
+        },
+        {
+          "offset": 304793344,
+          "length": 2654208,
+          "sourceOffset": 447086184
+        },
+        {
+          "offset": 307447552,
+          "length": 6912,
+          "sourceOffset": 449740392
+        },
+        {
+          "offset": 307454464,
+          "length": 7962624,
+          "sourceOffset": 449747304
+        },
+        {
+          "offset": 315417088,
+          "length": 8608,
+          "sourceOffset": 457709928
+        },
+        {
+          "offset": 315425792,
+          "length": 9916416,
+          "sourceOffset": 457718536
+        },
+        {
+          "offset": 325342208,
+          "length": 2304,
+          "sourceOffset": 467634952
+        },
+        {
+          "offset": 325344512,
+          "length": 9916416,
+          "sourceOffset": 467637256
+        },
+        {
+          "offset": 335260928,
+          "length": 2304,
+          "sourceOffset": 477553672
+        },
+        {
+          "offset": 335263232,
+          "length": 2304,
+          "sourceOffset": 477555976
+        },
+        {
+          "offset": 335265536,
+          "length": 2304,
+          "sourceOffset": 477558280
+        },
+        {
+          "offset": 335267840,
+          "length": 2304,
+          "sourceOffset": 477560584
+        },
+        {
+          "offset": 335270144,
+          "length": 2304,
+          "sourceOffset": 477562888
+        },
+        {
+          "offset": 335272448,
+          "length": 2654208,
+          "sourceOffset": 477565192
+        },
+        {
+          "offset": 337926656,
+          "length": 6912,
+          "sourceOffset": 480219400
+        },
+        {
+          "offset": 337933568,
+          "length": 7962624,
+          "sourceOffset": 480226312
+        },
+        {
+          "offset": 345896192,
+          "length": 8608,
+          "sourceOffset": 488188936
+        },
+        {
+          "offset": 345904896,
+          "length": 9916416,
+          "sourceOffset": 488197544
+        },
+        {
+          "offset": 355821312,
+          "length": 2304,
+          "sourceOffset": 498113960
+        },
+        {
+          "offset": 355823616,
+          "length": 9916416,
+          "sourceOffset": 498116264
+        },
+        {
+          "offset": 365740032,
+          "length": 2304,
+          "sourceOffset": 508032680
+        },
+        {
+          "offset": 365742336,
+          "length": 2304,
+          "sourceOffset": 508034984
+        },
+        {
+          "offset": 365744640,
+          "length": 2304,
+          "sourceOffset": 508037288
+        },
+        {
+          "offset": 365746944,
+          "length": 2304,
+          "sourceOffset": 508039592
+        },
+        {
+          "offset": 365749248,
+          "length": 2304,
+          "sourceOffset": 508041896
+        },
+        {
+          "offset": 365751552,
+          "length": 2654208,
+          "sourceOffset": 508044200
+        },
+        {
+          "offset": 368405760,
+          "length": 6912,
+          "sourceOffset": 510698408
+        },
+        {
+          "offset": 368412672,
+          "length": 7962624,
+          "sourceOffset": 510705320
+        },
+        {
+          "offset": 376375296,
+          "length": 8608,
+          "sourceOffset": 518667944
+        },
+        {
+          "offset": 376384000,
+          "length": 9916416,
+          "sourceOffset": 518676552
+        },
+        {
+          "offset": 386300416,
+          "length": 2304,
+          "sourceOffset": 528592968
+        },
+        {
+          "offset": 386302720,
+          "length": 9916416,
+          "sourceOffset": 528595272
+        },
+        {
+          "offset": 396219136,
+          "length": 2304,
+          "sourceOffset": 538511688
+        },
+        {
+          "offset": 396221440,
+          "length": 2304,
+          "sourceOffset": 538513992
+        },
+        {
+          "offset": 396223744,
+          "length": 2304,
+          "sourceOffset": 538516296
+        },
+        {
+          "offset": 396226048,
+          "length": 2304,
+          "sourceOffset": 538518600
+        },
+        {
+          "offset": 396228352,
+          "length": 2304,
+          "sourceOffset": 538520904
+        },
+        {
+          "offset": 396230656,
+          "length": 2654208,
+          "sourceOffset": 538523208
+        },
+        {
+          "offset": 398884864,
+          "length": 6912,
+          "sourceOffset": 541177416
+        },
+        {
+          "offset": 398891776,
+          "length": 7962624,
+          "sourceOffset": 541184328
+        },
+        {
+          "offset": 406854400,
+          "length": 8608,
+          "sourceOffset": 549146952
+        },
+        {
+          "offset": 406863104,
+          "length": 9916416,
+          "sourceOffset": 549155560
+        },
+        {
+          "offset": 416779520,
+          "length": 2304,
+          "sourceOffset": 559071976
+        },
+        {
+          "offset": 416781824,
+          "length": 9916416,
+          "sourceOffset": 559074280
+        },
+        {
+          "offset": 426698240,
+          "length": 2304,
+          "sourceOffset": 568990696
+        },
+        {
+          "offset": 426700544,
+          "length": 2304,
+          "sourceOffset": 568993000
+        },
+        {
+          "offset": 426702848,
+          "length": 2304,
+          "sourceOffset": 568995304
+        },
+        {
+          "offset": 426705152,
+          "length": 2304,
+          "sourceOffset": 568997608
+        },
+        {
+          "offset": 426707456,
+          "length": 2304,
+          "sourceOffset": 568999912
+        },
+        {
+          "offset": 426709760,
+          "length": 2654208,
+          "sourceOffset": 569002216
+        },
+        {
+          "offset": 429363968,
+          "length": 6912,
+          "sourceOffset": 571656424
+        },
+        {
+          "offset": 429370880,
+          "length": 7962624,
+          "sourceOffset": 571663336
+        },
+        {
+          "offset": 437333504,
+          "length": 8608,
+          "sourceOffset": 579625960
+        },
+        {
+          "offset": 437342208,
+          "length": 9916416,
+          "sourceOffset": 579634568
+        },
+        {
+          "offset": 447258624,
+          "length": 2304,
+          "sourceOffset": 589550984
+        },
+        {
+          "offset": 447260928,
+          "length": 9916416,
+          "sourceOffset": 589553288
+        },
+        {
+          "offset": 457177344,
+          "length": 2304,
+          "sourceOffset": 599469704
+        },
+        {
+          "offset": 457179648,
+          "length": 2304,
+          "sourceOffset": 599472008
+        },
+        {
+          "offset": 457181952,
+          "length": 2304,
+          "sourceOffset": 599474312
+        },
+        {
+          "offset": 457184256,
+          "length": 2304,
+          "sourceOffset": 599476616
+        },
+        {
+          "offset": 457186560,
+          "length": 2304,
+          "sourceOffset": 599478920
+        },
+        {
+          "offset": 457188864,
+          "length": 2654208,
+          "sourceOffset": 599481224
+        },
+        {
+          "offset": 459843072,
+          "length": 6912,
+          "sourceOffset": 602135432
+        },
+        {
+          "offset": 459849984,
+          "length": 7962624,
+          "sourceOffset": 602142344
+        },
+        {
+          "offset": 467812608,
+          "length": 8608,
+          "sourceOffset": 610104968
+        },
+        {
+          "offset": 467821312,
+          "length": 9916416,
+          "sourceOffset": 610113576
+        },
+        {
+          "offset": 477737728,
+          "length": 2304,
+          "sourceOffset": 620029992
+        },
+        {
+          "offset": 477740032,
+          "length": 9916416,
+          "sourceOffset": 620032296
+        },
+        {
+          "offset": 487656448,
+          "length": 2304,
+          "sourceOffset": 629948712
+        },
+        {
+          "offset": 487658752,
+          "length": 2304,
+          "sourceOffset": 629951016
+        },
+        {
+          "offset": 487661056,
+          "length": 2304,
+          "sourceOffset": 629953320
+        },
+        {
+          "offset": 487663360,
+          "length": 2304,
+          "sourceOffset": 629955624
+        },
+        {
+          "offset": 487665664,
+          "length": 2304,
+          "sourceOffset": 629957928
+        },
+        {
+          "offset": 487667968,
+          "length": 2654208,
+          "sourceOffset": 629960232
+        },
+        {
+          "offset": 490322176,
+          "length": 6912,
+          "sourceOffset": 632614440
+        },
+        {
+          "offset": 490329088,
+          "length": 7962624,
+          "sourceOffset": 632621352
+        },
+        {
+          "offset": 498291712,
+          "length": 8608,
+          "sourceOffset": 640583976
+        },
+        {
+          "offset": 498300416,
+          "length": 9916416,
+          "sourceOffset": 640592584
+        },
+        {
+          "offset": 508216832,
+          "length": 2304,
+          "sourceOffset": 650509000
+        },
+        {
+          "offset": 508219136,
+          "length": 9916416,
+          "sourceOffset": 650511304
+        },
+        {
+          "offset": 518135552,
+          "length": 2304,
+          "sourceOffset": 660427720
+        },
+        {
+          "offset": 518137856,
+          "length": 2304,
+          "sourceOffset": 660430024
+        },
+        {
+          "offset": 518140160,
+          "length": 2304,
+          "sourceOffset": 660432328
+        },
+        {
+          "offset": 518142464,
+          "length": 2304,
+          "sourceOffset": 660434632
+        },
+        {
+          "offset": 518144768,
+          "length": 2304,
+          "sourceOffset": 660436936
+        },
+        {
+          "offset": 518147072,
+          "length": 2654208,
+          "sourceOffset": 660439240
+        },
+        {
+          "offset": 520801280,
+          "length": 6912,
+          "sourceOffset": 663093448
+        },
+        {
+          "offset": 520808192,
+          "length": 7962624,
+          "sourceOffset": 663100360
+        },
+        {
+          "offset": 528770816,
+          "length": 8608,
+          "sourceOffset": 671062984
+        },
+        {
+          "offset": 528779520,
+          "length": 9916416,
+          "sourceOffset": 671071592
+        },
+        {
+          "offset": 538695936,
+          "length": 2304,
+          "sourceOffset": 680988008
+        },
+        {
+          "offset": 538698240,
+          "length": 9916416,
+          "sourceOffset": 680990312
+        },
+        {
+          "offset": 548614656,
+          "length": 2304,
+          "sourceOffset": 690906728
+        },
+        {
+          "offset": 548616960,
+          "length": 2304,
+          "sourceOffset": 690909032
+        },
+        {
+          "offset": 548619264,
+          "length": 2304,
+          "sourceOffset": 690911336
+        },
+        {
+          "offset": 548621568,
+          "length": 2304,
+          "sourceOffset": 690913640
+        },
+        {
+          "offset": 548623872,
+          "length": 2304,
+          "sourceOffset": 690915944
+        },
+        {
+          "offset": 548626176,
+          "length": 2654208,
+          "sourceOffset": 690918248
+        },
+        {
+          "offset": 551280384,
+          "length": 6912,
+          "sourceOffset": 693572456
+        },
+        {
+          "offset": 551287296,
+          "length": 7962624,
+          "sourceOffset": 693579368
+        },
+        {
+          "offset": 559249920,
+          "length": 8608,
+          "sourceOffset": 701541992
+        },
+        {
+          "offset": 559258624,
+          "length": 9916416,
+          "sourceOffset": 701550600
+        },
+        {
+          "offset": 569175040,
+          "length": 2304,
+          "sourceOffset": 711467016
+        },
+        {
+          "offset": 569177344,
+          "length": 9916416,
+          "sourceOffset": 711469320
+        },
+        {
+          "offset": 579093760,
+          "length": 2304,
+          "sourceOffset": 721385736
+        },
+        {
+          "offset": 579096064,
+          "length": 2304,
+          "sourceOffset": 721388040
+        },
+        {
+          "offset": 579098368,
+          "length": 2304,
+          "sourceOffset": 721390344
+        },
+        {
+          "offset": 579100672,
+          "length": 2304,
+          "sourceOffset": 721392648
+        },
+        {
+          "offset": 579102976,
+          "length": 2304,
+          "sourceOffset": 721394952
+        },
+        {
+          "offset": 579105280,
+          "length": 2654208,
+          "sourceOffset": 721397256
+        },
+        {
+          "offset": 581759488,
+          "length": 6912,
+          "sourceOffset": 724051464
+        },
+        {
+          "offset": 581766400,
+          "length": 7962624,
+          "sourceOffset": 724058376
+        },
+        {
+          "offset": 589729024,
+          "length": 8608,
+          "sourceOffset": 732021000
+        },
+        {
+          "offset": 589737728,
+          "length": 9916416,
+          "sourceOffset": 732029608
+        },
+        {
+          "offset": 599654144,
+          "length": 2304,
+          "sourceOffset": 741946024
+        },
+        {
+          "offset": 599656448,
+          "length": 9916416,
+          "sourceOffset": 741948328
+        },
+        {
+          "offset": 609572864,
+          "length": 2304,
+          "sourceOffset": 751864744
+        },
+        {
+          "offset": 609575168,
+          "length": 2304,
+          "sourceOffset": 751867048
+        },
+        {
+          "offset": 609577472,
+          "length": 2304,
+          "sourceOffset": 751869352
+        },
+        {
+          "offset": 609579776,
+          "length": 2304,
+          "sourceOffset": 751871656
+        },
+        {
+          "offset": 609582080,
+          "length": 2304,
+          "sourceOffset": 751873960
+        },
+        {
+          "offset": 609584384,
+          "length": 2654208,
+          "sourceOffset": 751876264
+        },
+        {
+          "offset": 612238592,
+          "length": 6912,
+          "sourceOffset": 754530472
+        },
+        {
+          "offset": 612245504,
+          "length": 7962624,
+          "sourceOffset": 754537384
+        },
+        {
+          "offset": 620208128,
+          "length": 8608,
+          "sourceOffset": 762500008
+        },
+        {
+          "offset": 620216832,
+          "length": 9916416,
+          "sourceOffset": 762508616
+        },
+        {
+          "offset": 630133248,
+          "length": 2304,
+          "sourceOffset": 772425032
+        },
+        {
+          "offset": 630135552,
+          "length": 9916416,
+          "sourceOffset": 772427336
+        },
+        {
+          "offset": 640051968,
+          "length": 2304,
+          "sourceOffset": 782343752
+        },
+        {
+          "offset": 640054272,
+          "length": 2304,
+          "sourceOffset": 782346056
+        },
+        {
+          "offset": 640056576,
+          "length": 2304,
+          "sourceOffset": 782348360
+        },
+        {
+          "offset": 640058880,
+          "length": 2304,
+          "sourceOffset": 782350664
+        },
+        {
+          "offset": 640061184,
+          "length": 2304,
+          "sourceOffset": 782352968
+        },
+        {
+          "offset": 640063488,
+          "length": 2654208,
+          "sourceOffset": 782355272
+        },
+        {
+          "offset": 642717696,
+          "length": 6912,
+          "sourceOffset": 785009480
+        },
+        {
+          "offset": 642724608,
+          "length": 7962624,
+          "sourceOffset": 785016392
+        },
+        {
+          "offset": 650687232,
+          "length": 8608,
+          "sourceOffset": 792979016
+        },
+        {
+          "offset": 650695936,
+          "length": 9916416,
+          "sourceOffset": 792987624
+        },
+        {
+          "offset": 660612352,
+          "length": 2304,
+          "sourceOffset": 802904040
+        },
+        {
+          "offset": 660614656,
+          "length": 9916416,
+          "sourceOffset": 802906344
+        },
+        {
+          "offset": 670531072,
+          "length": 2304,
+          "sourceOffset": 812822760
+        },
+        {
+          "offset": 670533376,
+          "length": 2304,
+          "sourceOffset": 812825064
+        },
+        {
+          "offset": 670535680,
+          "length": 2304,
+          "sourceOffset": 812827368
+        },
+        {
+          "offset": 670537984,
+          "length": 2304,
+          "sourceOffset": 812829672
+        },
+        {
+          "offset": 670540288,
+          "length": 2304,
+          "sourceOffset": 812831976
+        },
+        {
+          "offset": 670542592,
+          "length": 2654208,
+          "sourceOffset": 812834280
+        },
+        {
+          "offset": 673196800,
+          "length": 6912,
+          "sourceOffset": 815488488
+        },
+        {
+          "offset": 673203712,
+          "length": 7962624,
+          "sourceOffset": 815495400
+        },
+        {
+          "offset": 681166336,
+          "length": 8608,
+          "sourceOffset": 823458024
+        },
+        {
+          "offset": 681175040,
+          "length": 9916416,
+          "sourceOffset": 823466632
+        },
+        {
+          "offset": 691091456,
+          "length": 2304,
+          "sourceOffset": 833383048
+        },
+        {
+          "offset": 691093760,
+          "length": 9916416,
+          "sourceOffset": 833385352
+        },
+        {
+          "offset": 701010176,
+          "length": 2304,
+          "sourceOffset": 843301768
+        },
+        {
+          "offset": 701012480,
+          "length": 2304,
+          "sourceOffset": 843304072
+        },
+        {
+          "offset": 701014784,
+          "length": 2304,
+          "sourceOffset": 843306376
+        },
+        {
+          "offset": 701017088,
+          "length": 2304,
+          "sourceOffset": 843308680
+        },
+        {
+          "offset": 701019392,
+          "length": 2304,
+          "sourceOffset": 843310984
+        },
+        {
+          "offset": 701021696,
+          "length": 2654208,
+          "sourceOffset": 843313288
+        },
+        {
+          "offset": 703675904,
+          "length": 6912,
+          "sourceOffset": 845967496
+        },
+        {
+          "offset": 703682816,
+          "length": 7962624,
+          "sourceOffset": 845974408
+        },
+        {
+          "offset": 711645440,
+          "length": 8608,
+          "sourceOffset": 853937032
+        },
+        {
+          "offset": 711654144,
+          "length": 9916416,
+          "sourceOffset": 853945640
+        },
+        {
+          "offset": 721570560,
+          "length": 2304,
+          "sourceOffset": 863862056
+        },
+        {
+          "offset": 721572864,
+          "length": 9916416,
+          "sourceOffset": 863864360
+        },
+        {
+          "offset": 731489280,
+          "length": 2304,
+          "sourceOffset": 873780776
+        },
+        {
+          "offset": 731491584,
+          "length": 2304,
+          "sourceOffset": 873783080
+        },
+        {
+          "offset": 731493888,
+          "length": 2304,
+          "sourceOffset": 873785384
+        },
+        {
+          "offset": 731496192,
+          "length": 2304,
+          "sourceOffset": 873787688
+        },
+        {
+          "offset": 731498496,
+          "length": 2304,
+          "sourceOffset": 873789992
+        },
+        {
+          "offset": 731500800,
+          "length": 2654208,
+          "sourceOffset": 873792296
+        },
+        {
+          "offset": 734155008,
+          "length": 6912,
+          "sourceOffset": 876446504
+        },
+        {
+          "offset": 734161920,
+          "length": 7962624,
+          "sourceOffset": 876453416
+        },
+        {
+          "offset": 742124544,
+          "length": 8608,
+          "sourceOffset": 884416040
+        },
+        {
+          "offset": 742133248,
+          "length": 9916416,
+          "sourceOffset": 884424648
+        },
+        {
+          "offset": 752049664,
+          "length": 2304,
+          "sourceOffset": 894341064
+        },
+        {
+          "offset": 752051968,
+          "length": 9916416,
+          "sourceOffset": 894343368
+        },
+        {
+          "offset": 761968384,
+          "length": 2304,
+          "sourceOffset": 904259784
+        },
+        {
+          "offset": 761970688,
+          "length": 2304,
+          "sourceOffset": 904262088
+        },
+        {
+          "offset": 761972992,
+          "length": 2304,
+          "sourceOffset": 904264392
+        },
+        {
+          "offset": 761975296,
+          "length": 2304,
+          "sourceOffset": 904266696
+        },
+        {
+          "offset": 761977600,
+          "length": 2304,
+          "sourceOffset": 904269000
+        },
+        {
+          "offset": 761979904,
+          "length": 2654208,
+          "sourceOffset": 904271304
+        },
+        {
+          "offset": 764634112,
+          "length": 6912,
+          "sourceOffset": 906925512
+        },
+        {
+          "offset": 764641024,
+          "length": 7962624,
+          "sourceOffset": 906932424
+        },
+        {
+          "offset": 772603648,
+          "length": 8608,
+          "sourceOffset": 914895048
+        },
+        {
+          "offset": 772612352,
+          "length": 9916416,
+          "sourceOffset": 914903656
+        },
+        {
+          "offset": 782528768,
+          "length": 2304,
+          "sourceOffset": 924820072
+        },
+        {
+          "offset": 782531072,
+          "length": 9916416,
+          "sourceOffset": 924822376
+        },
+        {
+          "offset": 792447488,
+          "length": 2304,
+          "sourceOffset": 934738792
+        },
+        {
+          "offset": 792449792,
+          "length": 2304,
+          "sourceOffset": 934741096
+        },
+        {
+          "offset": 792452096,
+          "length": 2304,
+          "sourceOffset": 934743400
+        },
+        {
+          "offset": 792454400,
+          "length": 2304,
+          "sourceOffset": 934745704
+        },
+        {
+          "offset": 792456704,
+          "length": 2304,
+          "sourceOffset": 934748008
+        },
+        {
+          "offset": 792459008,
+          "length": 2654208,
+          "sourceOffset": 934750312
+        },
+        {
+          "offset": 795113216,
+          "length": 6912,
+          "sourceOffset": 937404520
+        },
+        {
+          "offset": 795120128,
+          "length": 7962624,
+          "sourceOffset": 937411432
+        },
+        {
+          "offset": 803082752,
+          "length": 8608,
+          "sourceOffset": 945374056
+        },
+        {
+          "offset": 803091456,
+          "length": 9916416,
+          "sourceOffset": 945382664
+        },
+        {
+          "offset": 813007872,
+          "length": 2304,
+          "sourceOffset": 955299080
+        },
+        {
+          "offset": 813010176,
+          "length": 9916416,
+          "sourceOffset": 955301384
+        },
+        {
+          "offset": 822926592,
+          "length": 2304,
+          "sourceOffset": 965217800
+        },
+        {
+          "offset": 822928896,
+          "length": 2304,
+          "sourceOffset": 965220104
+        },
+        {
+          "offset": 822931200,
+          "length": 2304,
+          "sourceOffset": 965222408
+        },
+        {
+          "offset": 822933504,
+          "length": 2304,
+          "sourceOffset": 965224712
+        },
+        {
+          "offset": 822935808,
+          "length": 9216,
+          "sourceOffset": 965227016
+        },
+        {
+          "offset": 822945024,
+          "length": 42467328,
+          "sourceOffset": 965236232
+        },
+        {
+          "offset": 865412352,
+          "length": 5120,
+          "sourceOffset": 1007703560
+        },
+        {
+          "offset": 865417472,
+          "length": 23592960,
+          "sourceOffset": 1007708680
+        },
+        {
+          "offset": 889010432,
+          "length": 2304,
+          "sourceOffset": 1031301640
+        },
+        {
+          "offset": 889012736,
+          "length": 2304,
+          "sourceOffset": 1031303944
+        },
+        {
+          "offset": 889015040,
+          "length": 2304,
+          "sourceOffset": 1031306248
+        },
+        {
+          "offset": 889017344,
+          "length": 3538944,
+          "sourceOffset": 1031308552
+        },
+        {
+          "offset": 892556288,
+          "length": 5308416,
+          "sourceOffset": 1034847496
+        }
+      ]
+    },
+    {
+      "kind": "swift1.5-qwen3.8-flash-next",
+      "checkpointModelID": "ukisai/Swift1.5-Qwen3.8-Flash-Next",
+      "checkpointRevision": "0bd4fe22431372cdad1979267d3ab45aa7e6150a",
+      "repository": "Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4",
+      "revision": "257cb509d72ecc07519be35a8b7558fde3b31b21",
+      "sourceFile": "preserved/vision.bin",
+      "sourceSize": 897864704,
+      "sourceSHA256": "8c03df692c3c94002f86307a1e8419e9d4f9d390a64a10c2d99d003c5d64f01a",
+      "file": {
+        "path": "vision/common.bin",
+        "size": 897864704,
+        "sha256": "8c03df692c3c94002f86307a1e8419e9d4f9d390a64a10c2d99d003c5d64f01a"
+      },
+      "copies": [
+        {
+          "offset": 0,
+          "length": 897864704,
+          "sourceOffset": 0
+        }
+      ]
+    }
+  ]
+}

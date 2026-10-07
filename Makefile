@@ -6,6 +6,7 @@ export
 MODEL ?= $(HOME)/.dsmodel/deepseek-v4-flash-0731.dsv4
 HOST ?= 127.0.0.1
 PORT ?= 11434
+PAGES_WAIT_SECONDS ?= 900
 SPEED_BENCH_DIR ?= scratch/speed-bench
 SPARKLE_FRAMEWORK_PATH := $(CURDIR)/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64
 
@@ -76,7 +77,12 @@ package:
 ane-bridge:
 	./Scripts/build-ane-bridge.sh
 
-## release: publish a signed update (CHANNEL=stable or dev, DEV_BUILD=1)
+## test-release: test manual workflow policy and bounded Pages verification
+.PHONY: test-release
+test-release:
+	$(PYTHON) -m unittest discover -s Tests/ReleaseScripts -v
+
+## release: publish a signed update (CHANNEL=stable or dev, DEV_BUILD=1, PAGES_WAIT_SECONDS=900)
 release:
 	./Scripts/release.sh
 

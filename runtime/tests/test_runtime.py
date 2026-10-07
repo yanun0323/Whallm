@@ -16,7 +16,7 @@ from unittest.mock import patch
 import mlx.core as mx
 import numpy as np
 from mlx_lm.models import deepseek_v4
-from mlx_lm.models.cache import CacheList
+from mlx_lm.models.cache import ArraysCache, CacheList
 
 from deepseek_v4_ssd.expert_cache import (
     BatchedExperts,
@@ -78,6 +78,41 @@ from deepseek_v4_ssd.model import (
 )
 
 _mlx_lm_generate = importlib.import_module("mlx_lm.generate")
+
+
+class PromptCacheEvaluationTests(unittest.TestCase):
+    def test_eval_includes_array_state_without_reading_persistence_state(self):
+        class RawArraysCache(ArraysCache):
+            @property
+            def state(self):
+                raise AssertionError("evaluation must use raw cache arrays")
+
+        for wrapped in (False, True):
+            with self.subTest(wrapped=wrapped):
+                cache = RawArraysCache(size=4)
+                recurrent = mx.ones((1, 2, 4)) + 1
+                convolution = mx.ones((1, 3, 4)) + 2
+                history = mx.array([[1, 2]], dtype=mx.int32)
+                cache[0], cache[1], cache[2] = recurrent, convolution, history
+                dependency = mx.ones((1, 4)) + 3
+                # Repeated cache references must not inflate the array counts.
+                caches = [CacheList(cache, cache)] if wrapped else [cache, cache]
+                with patch("deepseek_v4_ssd.model.mx.eval", wraps=mx.eval) as evaluate:
+                    count, size = eval_prompt_cache(caches, dependency)
+
+                evaluated = {id(value) for value in evaluate.call_args.args}
+                self.assertEqual(evaluated, {id(dependency), id(recurrent),
+                                             id(convolution), id(history)})
+                self.assertEqual(count, 3)
+                self.assertEqual(size, recurrent.nbytes + convolution.nbytes + history.nbytes)
+
+    def test_eval_empty_array_cache_still_evaluates_dependencies(self):
+        cache = ArraysCache(size=4)
+        dependency = mx.ones((1, 4)) + 1
+        with patch("deepseek_v4_ssd.model.mx.eval", wraps=mx.eval) as evaluate:
+            self.assertEqual(eval_prompt_cache([cache], dependency), (0, 0))
+        self.assertEqual(len(evaluate.call_args.args), 1)
+        self.assertIs(evaluate.call_args.args[0], dependency)
 
 
 class ModelRuntimeTests(unittest.TestCase):

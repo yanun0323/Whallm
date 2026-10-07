@@ -86,7 +86,7 @@ enum InstalledModelDiscovery {
     let expectedLayerSize = UInt64(manifest.expertCount) * manifest.expertBlobSize
     var totalSize: UInt64 = 0
     var issues: [InstalledFileIssue] = []
-    for file in manifest.files {
+    for file in InstalledModel.verificationFiles(for: manifest) {
       guard !file.path.hasPrefix("/"), !file.path.split(separator: "/").contains("..") else {
         return nil
       }
@@ -237,7 +237,8 @@ final class ModelLibrary: ObservableObject {
     ModelKind.deepSeekV4.rawValue: 166_878_580_480,
     // Pinned V4.1 revision dba1be0: repack plan installed weight bytes.
     ModelKind.deepSeekV41.rawValue: 501_382_643_728,
-    ModelKind.qwen3_8FlashNext.rawValue: 125_291_490_955,
+    ModelKind.qwen3_8FlashNext.rawValue: 125_291_490_955 + QwenVisionArtifact.installedBytes,
+    ModelKind.swift1_5Qwen3_8FlashNext.rawValue: SwiftQwenInstalledModelArtifact.installedBytes,
   ]
   @Published private(set) var planningModelKinds: Set<String> = []
   @Published private(set) var installationPlanErrors: [String: String] = [:]
@@ -345,7 +346,7 @@ final class ModelLibrary: ObservableObject {
       let settings = (settings[modelKind] ?? .defaults(for: modelKind))
         .normalized(for: modelKind)
       try settings.validate(for: modelKind)
-      let flashWaves = modelKind == .qwen3_8FlashNext && settings.qwenFlashWavesEnabled
+      let flashWaves = modelKind.usesQwenEngine && settings.qwenFlashWavesEnabled
       let alias = aliases[modelKind] ?? ""
       return ModelCatalog.Entry(
         id: modelKind.apiModelID,
@@ -371,7 +372,7 @@ final class ModelLibrary: ObservableObject {
           promptCacheDirectory: nil,
           moePrefillStepSize: settings.moePrefillStepSize ?? 0,
           batchedExpertPrefill: settings.batchedExpertPrefill == true && !flashWaves,
-          qwenNextLayerPrefetch: modelKind == .qwen3_8FlashNext && settings.nextLayerPrefetch == true && settings.layerMajorPrefill && !flashWaves,
+          qwenNextLayerPrefetch: modelKind.usesQwenEngine && settings.nextLayerPrefetch == true && settings.layerMajorPrefill && !flashWaves,
           qwenGroupedExperts: settings.qwenGroupedExperts == true && !flashWaves,
           expertEvictionPolicy: settings.routeAwareExpertCache == true ? "route" : (settings.recentExpertCache == true ? "lru" : "lfu"),
           anePrefill: modelKind.descriptor.supports("anePrefill"),
@@ -392,29 +393,32 @@ final class ModelLibrary: ObservableObject {
           readyExpertDecode: settings.readyExpertDecode == true,
           stagedExpertStreaming: false,
           powerSavingLimitGBps: powerSavingLimitGBps,
-          qwenQuantizedKV: modelKind == .qwen3_8FlashNext && settings.packedKVCache == true,
-          qwenQuantizedIndex: modelKind == .qwen3_8FlashNext && settings.packedIndexCache == true,
-          qwenPooledIndexCache: modelKind == .qwen3_8FlashNext && settings.qwenPooledIndexCache == true,
-          qwenNgramLookupOptimized: modelKind == .qwen3_8FlashNext && settings.qwenNgramLookupOptimized == true,
-          qwenCompileTensorOps: modelKind == .qwen3_8FlashNext && settings.qwenCompileTensorOps == true,
-          qwenPhaseMemory: modelKind == .qwen3_8FlashNext && settings.qwenPhaseMemory == true,
+          qwenQuantizedKV: modelKind.usesQwenEngine && settings.packedKVCache == true,
+          qwenQuantizedIndex: modelKind.usesQwenEngine && settings.packedIndexCache == true,
+          qwenPooledIndexCache: modelKind.usesQwenEngine && settings.qwenPooledIndexCache == true,
+          qwenNgramLookupOptimized: modelKind.usesQwenEngine && settings.qwenNgramLookupOptimized == true,
+          qwenCompileTensorOps: modelKind.usesQwenEngine && settings.qwenCompileTensorOps == true,
+          qwenPhaseMemory: modelKind.usesQwenEngine && settings.qwenPhaseMemory == true,
           qwenExpertWaveSlots: settings.qwenExpertWaveSlots ?? 0,
           qwenNgramIO: settings.qwenNgramIO ?? "mmap",
           qwenNgramCacheBytes: settings.effectiveQwenNgramCacheBytes,
           qwenSparseSDPA: settings.qwenSparseSDPA ?? false,
-          qwenQSAQueryChunk: settings.qwenQSAQueryChunk ?? 4,
+          qwenQSAQueryChunk: settings.qwenQSAQueryChunk ?? 16,
+          qwenQSASkipCompleteGather: settings.qwenQSASkipCompleteGather ?? true,
+          qwenPackedGDNPrefill: modelKind == .swift1_5Qwen3_8FlashNext && settings.effectiveQwenPackedGDNPrefill,
+          qwenSortedExpertPrefill: modelKind.usesQwenEngine && settings.effectiveQwenSortedExpertPrefill,
           qwenQSAIndexed: settings.qwenSparseSDPA == true && settings.qwenQSAIndexed == true,
             qwenPrefillReadExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillReadExperts ?? 1 : 1,
             qwenPrefillSeedExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillSeedExperts ?? 0 : 0,
             qwenSharedExpertOverlap: settings.qwenSharedExpertOverlap ?? false,
-          qwenMTPDraftTokens: modelKind == .qwen3_8FlashNext ? settings.effectiveQwenMTPDraftTokens : 5,
-          qwenMTPZeroAcceptanceLimit: modelKind == .qwen3_8FlashNext ? settings.effectiveQwenMTPZeroAcceptanceLimit : 1,
+          qwenMTPDraftTokens: modelKind.usesQwenEngine ? settings.effectiveQwenMTPDraftTokens : 5,
+          qwenMTPZeroAcceptanceLimit: modelKind.usesQwenEngine ? settings.effectiveQwenMTPZeroAcceptanceLimit : 1,
           v41PackedKV: modelKind == .deepSeekV41 && settings.packedKVCache == true,
           v41PackedIndex: modelKind == .deepSeekV41 && settings.packedIndexCache == true,
           v41CandidateIndex: modelKind == .deepSeekV41 && settings.candidateIndex == true,
           v41CEDPrefill: modelKind == .deepSeekV41 && settings.cedPrefill == true && settings.layerMajorPrefill && !settings.dsparkEnabled,
           v41NextLayerPrefetch: modelKind == .deepSeekV41 && settings.nextLayerPrefetch == true && settings.layerMajorPrefill && settings.batchedExpertPrefill != false,
-          deepseekANEPrefill: modelKind != .qwen3_8FlashNext && settings.deepSeekANEPrefill == true,
+          deepseekANEPrefill: !modelKind.usesQwenEngine && settings.deepSeekANEPrefill == true,
           v41LayerMajorPrefill: modelKind == .deepSeekV41 && settings.layerMajorPrefill
         ),
         defaults: ModelCatalog.Entry.Defaults(
@@ -441,7 +445,8 @@ final class ModelLibrary: ObservableObject {
     defaults: UserDefaults,
     selectedModelKind: ModelKind
   ) {
-    guard defaults.integer(forKey: aliasMigrationPreference) < 1 else { return }
+    guard selectedModelKind != .swift1_5Qwen3_8FlashNext,
+      defaults.integer(forKey: aliasMigrationPreference) < 1 else { return }
     defer { defaults.set(1, forKey: aliasMigrationPreference) }
     guard defaults.string(forKey: aliasPreferenceKey(for: selectedModelKind)) == nil,
       let data = defaults.data(forKey: ServerConfiguration.preferenceKey),

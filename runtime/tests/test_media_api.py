@@ -41,7 +41,8 @@ class MediaAPITests(unittest.TestCase):
             with urlopen(Request(self.base + path, data=data, headers=headers, method=method)) as response:
                 return response.status, json.load(response)
         except HTTPError as error:
-            return error.code, json.load(error)
+            with error:
+                return error.code, json.load(error)
 
     def test_upload_reference_chat_responses_delete(self):
         status, uploaded = self.request("/api/assets", data=png(), mime="image/png")
@@ -94,7 +95,8 @@ class MediaAPITests(unittest.TestCase):
         status, result = self.request("/api/capabilities")
         self.assertEqual(status, 200)
         self.assertEqual(result["models"]["mimo-v2.6-flash-rl"]["input"], ["text", "image", "document", "audio"])
-        self.assertEqual(result["models"]["qwen3.8-flash-next-fp8"]["input"], ["text"])
+        self.assertEqual(result["models"]["qwen3.8-flash-next-fp8"]["input"], ["text", "image"])
+        self.assertEqual(result["models"]["swift1.5-qwen3.8-flash-next-mxfp4"]["input"], ["text", "image"])
         self.assertFalse(result["media"]["remote_urls"])
         self.assertEqual(MAX_REQUEST_BYTES, 1_048_576)
 

@@ -15,6 +15,7 @@ enum BenchmarkContext: String, CaseIterable, Codable, Sendable {
 struct ThroughputResult: Codable, Identifiable, Sendable {
   var id: Int { contextTokens }
   let model: String
+  var displayName: String { ModelDisplayName.resolve(model) }
   let slots: Int?
   let benchmarkContext: BenchmarkContext
   let corpusSha256: String
@@ -72,7 +73,7 @@ enum ThroughputOutputFormat: String, CaseIterable {
       let slots = result.slots.map { String($0) } ?? "—"
       let temperature = result.temperature.map { String($0) } ?? "—"
       let seed = result.seed.map { String($0) } ?? "—"
-      let prefix: [String] = [result.model, result.benchmarkContext.title, slots, String(result.generationLimit)]
+      let prefix: [String] = [result.displayName, result.benchmarkContext.title, slots, String(result.generationLimit)]
       return prefix + result.cells + [temperature, seed]
     }
     if self == .plainText {
@@ -224,6 +225,12 @@ final class ThroughputSession: ObservableObject {
   @Published private(set) var generated = 0
   @Published private(set) var error: String?
   @Published private(set) var resultModel = ""
+  var resultDisplayName: String {
+    if let result = results.first, result.model != Self.dryRunModel {
+      return result.displayName
+    }
+    return ModelDisplayName.resolve(resultModel)
+  }
   private var task: Task<Void, Never>?
 
   func runDryRun() {
@@ -394,7 +401,7 @@ struct ThroughputView: View {
                   if ThroughputSession.dryRunAvailable {
                     Text("Dry run").tag(ThroughputSession.dryRunModel)
                   }
-                  ForEach(models) { model in Text(model.requestName).tag(model.id) }
+                  ForEach(models) { model in Text(model.displayName).tag(model.id) }
                 }
                 .labelsHidden().fixedSize().frame(maxWidth: 280, alignment: .trailing)
               }
@@ -529,7 +536,7 @@ struct ThroughputView: View {
     VStack(alignment: .leading, spacing: 12) {
       Text(label("Single request results")).font(.headline)
       HStack {
-        Text(label(session.resultModel))
+        Text(label(session.resultDisplayName))
         if let result = session.results.first {
           Text("· " + label(result.benchmarkContext.title))
           Text("· " + slotsSummary + " slots")

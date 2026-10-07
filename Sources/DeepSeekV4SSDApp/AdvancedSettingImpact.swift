@@ -28,7 +28,7 @@ enum AdvancedSettingImpact {
     case "Use layer-major prefill", "Batch expert calculations":
       "Shorten prefill, but peak memory may rise and output may differ slightly."
     case "Prefill acceleration":
-      "Shorten prefill, but may use more memory. Requires layer-major prefill with MTP off."
+      "Shorten prefill, but may use more memory. Requires layer-major prefill."
     case "Prefill step size":
       "Larger batches may shorten prefill, but raise peak memory. 0 automatically selects 128, 256, or 1024. Default: 0."
     case "MoE prefill step size":

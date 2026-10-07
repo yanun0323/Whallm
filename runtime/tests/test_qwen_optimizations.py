@@ -100,9 +100,13 @@ class QwenOptimizationTests(unittest.TestCase):
         np.testing.assert_array_equal(bits(attention(hidden[:, 9:10], candidate)),
                                       bits(attention(hidden[:, 9:10], baseline)))
         # Roll back across both complete and incomplete blocks, then overwrite.
+        before_trim = bits(index.pooled_keys).copy()
         for item in (*candidate.caches, *baseline.caches):
             item.trim(3)
-        self.assertIsNone(index.pooled_keys)
+        # Only complete blocks before the new offset survive, unchanged.
+        kept = index.offset // args.indexer_compress_ratio
+        self.assertEqual(index.pooled_keys.shape[1], kept)
+        np.testing.assert_array_equal(bits(index.pooled_keys), before_trim[:, :kept])
         np.testing.assert_array_equal(bits(attention(hidden[:, 12:15], candidate)),
                                       bits(attention(hidden[:, 12:15], baseline)))
         # Restore into a used cache: no stale derived keys may survive.

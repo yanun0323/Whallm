@@ -1,16 +1,7 @@
 name: Qwen Flash optimization
 
+# Research runs are opt-in; PRs and pushes must not start these jobs.
 on:
-  push:
-    branches: [feat/qwen-flash-optimize]
-  pull_request:
-    branches: [master]
-    paths:
-      - 'runtime/**'
-      - 'Scripts/*qwen*'
-      - 'requirements.txt'
-      - 'Makefile'
-      - '.github/workflows/qwen-flash-optimize.yml'
   workflow_dispatch:
 
 permissions:

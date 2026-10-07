@@ -611,7 +611,9 @@ public struct QwenFlashNextCheckpoint: Sendable {
     else {
       throw RepackError.incompatibleModel("repack plan does not match the pinned Qwen model contract")
     }
-    return try await Repacker(source: source).run(plan: plan, output: output, progress: progress)
+    let manifest = try await Repacker(source: source).run(plan: plan, output: output, progress: progress)
+    try await QwenVisionArtifact.install(at: output, progress: progress)
+    return manifest
   }
 
   public func repair(
@@ -714,7 +716,7 @@ public struct QwenInstalledModelArtifact: Sendable {
 
   public func installedBytes() async throws -> UInt64 {
     let manifest = try await downloader.manifest().manifest
-    return try manifest.files.reduce(UInt64(0)) { total, file in
+    return try InstalledModel.verificationFiles(for: manifest).reduce(UInt64(0)) { total, file in
       let result = total.addingReportingOverflow(file.size)
       guard !result.overflow else {
         throw RepackError.invalidPlan("installed file sizes overflow")

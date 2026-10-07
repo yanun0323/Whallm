@@ -30,14 +30,44 @@ contexts, MTP acceptance and concurrency prevent direct tok/s comparisons.
 
 ### Bounded QSA query batches
 
-`qwen_qsa_query_chunk` accepts 1..128 and retains the existing default 4.
-Larger chunks amortize Python iteration, index selection and graph submission.
-The original indexer, discrete top-k and causal selection remain in use.
+`qwen_qsa_query_chunk` accepts 1..128 and defaults to 16. Larger chunks amortize
+Python iteration, index selection and graph submission; 24 and above measured
+slower than 16, so the default sits at the measured optimum. The original
+indexer, discrete top-k and causal selection remain in use, and chunk size does
+not change the selected rows: the measured 16-query configuration produced
+bit-identical output tokens to 4 in the 2026-10-04 paired runs.
+
+`qwen_qsa_skip_complete_gather` defaults to true. When the indexer selects every
+visible key, the runtime broadcasts the key/value prefix instead of materialising
+one gathered copy per query; the measured replacement is byte-identical, so it
+does not change output tokens.
 `qwen_qsa_schedule.py` estimates per-query index-score, gathered K/V and score
 workspace, reducing the request to a 256 MiB estimated per-chunk ceiling.
 This is not a total allocation or RSS bound: pending lazy graph chunks, retained
-outputs, SDPA scratch and resident tensors are additional. Different batched
-kernels can round differently. The unchanged default bypasses extra planner work.
+outputs, SDPA scratch and resident tensors are additional. `qwen_qsa_query_chunk`
+= 4 still bypasses the extra planner work.
+
+### Sorted grouped-expert prefill (opt-in)
+
+`qwen_sorted_expert_prefill` (`--qwen-sorted-expert-prefill`) defaults to false.
+Grouped prefill already sorts routed rows by expert; this flag also passes
+`sorted_indices=True` to `gather_qmm`, so MLX uses its segmented kernel. It
+requires `qwen_grouped_experts`, applies only to grouped batches of at least 64
+rows, and leaves decode unchanged. The App shows it as **Use sorted expert
+prefill** under Qwen Flash experiments for both Qwen models.
+
+The segmented kernel is not bit-identical to the default path. Enabled mode adds
+a separate `qwenSortedExpertPrefill: mlx-v1` Prompt Cache contract, so cached
+states from the two modes are never mixed.
+
+On an M5 Pro/64 GiB with Swift1.5-Qwen3.8-Flash-Next (`MLX_ENABLE_TF32=0`,
+prompt cache and MTP off, two AB/BA pairs), first-token time fell from 22.1 s
+to 10.8 s for a 4,096-token prompt and from 90.7 s to 44.4 s for a
+16,384-token prompt. Decode speed and peak MLX memory were unchanged. The
+16,384-token output was identical; the 4,096-token output differed. In greedy
+checks on four chat prompts, the size of the logit differences was similar to
+the difference between `MLX_ENABLE_TF32=0` and the App's default precision.
+This is a bounded comparison, not a scored quality evaluation.
 
 ### Indexed QSA Decode / narrow MTP verification
 
@@ -75,7 +105,7 @@ Advanced Settings > Qwen Flash experiments adds the following controls:
 
 | UI | Preference | Runtime / CLI | Default |
 | --- | --- | --- | --- |
-| QSA queries per chunk | qwenQSAQueryChunk | qwen_qsa_query_chunk / --qwen-qsa-query-chunk | 4 |
+| QSA queries per chunk | qwenQSAQueryChunk | qwen_qsa_query_chunk / --qwen-qsa-query-chunk | 16 |
 | Use indexed QSA decode | qwenQSAIndexed | qwen_qsa_indexed / --qwen-qsa-indexed | false |
 
 English, Traditional Chinese and Simplified Chinese copy, range checks and

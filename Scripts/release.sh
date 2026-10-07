@@ -32,6 +32,16 @@ case $channel in
     ;;
 esac
 repository=${GITHUB_REPOSITORY:-yanun0323/Whallm}
+python_executable=${PYTHON:-$project_root/.venv/bin/python}
+pages_wait_seconds=${PAGES_WAIT_SECONDS:-900}
+[[ $pages_wait_seconds == <-> && $pages_wait_seconds -gt 0 ]] || {
+  print -u2 "PAGES_WAIT_SECONDS must be a positive number of seconds."
+  exit 1
+}
+command -v "$python_executable" >/dev/null || {
+  print -u2 "Python is required to verify the public Pages update feed: $python_executable"
+  exit 1
+}
 archive_name=Whallm-macOS-arm64.zip
 archive_path=$project_root/dist/$archive_name
 sparkle_tools=$project_root/.build/artifacts/sparkle/Sparkle/bin
@@ -128,6 +138,22 @@ ditto "$download_root/appcast.xml" "$pages_root/appcast.xml"
 git -C "$pages_root" add appcast.xml
 git -C "$pages_root" commit -m "Publish $channel update $tag"
 git -C "$pages_root" push origin HEAD:gh-pages
+
+# A pushed commit is not proof that the App can see the update. Include queued
+# jobs, network requests and stale CDN responses in one bounded wait.
+pages_commit=$(git -C "$pages_root" rev-parse HEAD)
+feed_url=$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' \
+  "$project_root/dist/Whallm.app/Contents/Info.plist")
+if ! "$python_executable" "$project_root/Scripts/wait_for_pages.py" \
+  --repository "$repository" \
+  --commit "$pages_commit" \
+  --feed-url "$feed_url" \
+  --expected-feed "$download_root/appcast.xml" \
+  --timeout "$pages_wait_seconds"; then
+  print -u2 "Release $tag is already published, but its Pages update feed is not verified."
+  print -u2 "Do not recreate the release. Inspect the Pages deployment and recheck the public feed."
+  exit 1
+fi
 
 release_url=$(gh release view "$tag" --repo "$repository" --json url --jq .url)
 print "Release: $release_url"

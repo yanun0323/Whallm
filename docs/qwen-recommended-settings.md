@@ -98,6 +98,17 @@ expert cache** on the 64 GB profiles. On the 96 GB planning profile, try **1.3 G
 cache and memory limits are unchanged. The App's inactive auxiliary budget is
 not counted until MTP is enabled.
 
+The draft layer's own attention cache is now filled from the whole prompt after
+layer-major Prefill, using one whole-layer read of its experts. Grouped expert
+Prefill stays available with MTP. Rejected drafts roll back by trimming attention
+caches and rerunning only the linear-attention mixers, without reading routed
+experts again. In a historical M4 Max / 36 GB measurement with a 1.3 GiB MTP cache,
+MTP helped code (+18.5% decode versus MTP off) but hurt prose (-14%), where draft
+acceptance was about 43%. This measurement predates the final rewind-timing fix;
+it is not a measurement of the corrected runtime or v1.1.10. Measure your own workload. The zero-acceptance
+strategy can also switch MTP off early after two unlucky rounds; see
+[BENCHMARK.md](../BENCHMARK.md#qwen-mtp-draft-context-and-rewind-2026-09-29).
+
 Test draft depth 3 only after depth 2 improves accepted output tokens/second at
 the same quality. Additional draft/verify reads can outweigh acceptance gains.
 The App currently disables ordinary prompt-cache reuse for MTP; repeated-turn

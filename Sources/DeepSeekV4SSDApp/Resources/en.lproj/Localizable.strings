@@ -397,7 +397,7 @@
 "Verify or repair the model before starting the server." = "Verify or repair the model before starting the server.";
 
 "Prefill acceleration" = "Prefill acceleration";
-"Speeds up prompt processing. Requires layer-major prefill with MTP off. Changes apply on next load." = "Speeds up prompt processing. Requires layer-major prefill with MTP off. Changes apply on next load.";
+"Speeds up prompt processing. Requires layer-major prefill. Changes apply on next load." = "Speeds up prompt processing. Requires layer-major prefill. Changes apply on next load.";
 
 "Keep recently used experts" = "Keep recently used experts";
 
@@ -557,7 +557,7 @@
 "May shorten prefill, but needs extra memory and may slightly change output." = "May shorten prefill, but needs extra memory and may slightly change output.";
 "More ANE work may shorten prefill, but adds memory use and may change output. 0 uses GPU only." = "More ANE work may shorten prefill, but adds memory use and may change output. 0 uses GPU only.";
 "Shorten prefill, but peak memory may rise and output may differ slightly." = "Shorten prefill, but peak memory may rise and output may differ slightly.";
-"Shorten prefill, but may use more memory. Requires layer-major prefill with MTP off." = "Shorten prefill, but may use more memory. Requires layer-major prefill with MTP off.";
+"Shorten prefill, but may use more memory. Requires layer-major prefill." = "Shorten prefill, but may use more memory. Requires layer-major prefill.";
 "Larger batches may shorten prefill, but raise peak memory. 0 selects automatically." = "Larger batches may shorten prefill, but raise peak memory. 0 selects automatically.";
 "Avoid whole-layer overhead on shorter prompts, but fewer prompts benefit from faster prefill." = "Avoid whole-layer overhead on shorter prompts, but fewer prompts benefit from faster prefill.";
 "Reduce SSD waiting, but may need more temporary memory." = "Reduce SSD waiting, but may need more temporary memory.";
@@ -610,8 +610,13 @@
 "Enter a whole number from 0 to 4294967295, or leave blank for automatic." = "Enter a whole number from 0 to 4294967295, or leave blank for automatic.";
 
 /* Qwen Flash opt-in experiments */
+"Use packed GDN prefill" = "Use packed GDN prefill";
+"Off by default. M5 text prefill only, 2–1024 tokens per call. Tested outputs matched, but whole-model gains were below 5%. Requires MTP off; other calls use the original kernel." = "Off by default. M5 text prefill only, 2–1024 tokens per call. Tested outputs matched, but whole-model gains were below 5%. Requires MTP off; other calls use the original kernel.";
+"Packed GDN prefill is inactive while MTP is enabled. Its saved choice is retained." = "Packed GDN prefill is inactive while MTP is enabled. Its saved choice is retained.";
+"Use sorted expert prefill" = "Use sorted expert prefill";
+"Off by default. Groups prompt rows by expert so prefill uses a faster kernel. In tests, 4K and 16K prompts reached the first token about 2× sooner. Output can differ slightly from the default. Requires Prefill acceleration." = "Off by default. Groups prompt rows by expert so prefill uses a faster kernel. In tests, 4K and 16K prompts reached the first token about 2× sooner. Output can differ slightly from the default. Requires Prefill acceleration.";
+"Sorted expert prefill is inactive while Prefill acceleration is off or experts per wave is above 0. Its saved choice is retained." = "Sorted expert prefill is inactive while Prefill acceleration is off or experts per wave is above 0. Its saved choice is retained.";
 "Qwen Flash experiments" = "Qwen Flash experiments";
-"Experimental; full-model speed and quality are not yet verified. All four controls default to off or mmap." = "Experimental; full-model speed and quality are not yet verified. All four controls default to off or mmap.";
 "Saved automatically for this model. Changes apply on the next model load. Unload the model before editing." = "Saved automatically for this model. Changes apply on the next model load. Unload the model before editing.";
 "Unload this model to edit these settings. Loading and unloading also lock the controls." = "Unload this model to edit these settings. Loading and unloading also lock the controls.";
 "Experts per wave" = "Experts per wave";
@@ -633,9 +638,11 @@
 "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change.";
 
 // QSA throughput experiments.
-"Experimental; full-model speed and quality are not yet verified. New QSA controls retain the original chunk size and disable indexed attention by default." = "Experimental; full-model speed and quality are not yet verified. New QSA controls retain the original chunk size and disable indexed attention by default.";
 "QSA queries per chunk" = "QSA queries per chunk";
-"1–128 queries per attention chunk; default 4. Try 16 or 32 for prefill. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit. Numerical rounding may differ." = "1–128 queries per attention chunk; default 4. Try 16 or 32 for prefill. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit. Numerical rounding may differ.";
+"1–128 queries per attention chunk; default 16. Larger batches cut per-chunk overhead; 24 and above measured slower. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit." = "1–128 queries per attention chunk; default 16. Larger batches cut per-chunk overhead; 24 and above measured slower. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit.";
+"Experimental; full-model speed and quality are not yet verified. QSA queries per chunk defaults to 16 and indexed attention stays off." = "Experimental; full-model speed and quality are not yet verified. QSA queries per chunk defaults to 16 and indexed attention stays off.";
+"Skip the identity QSA key copy" = "Skip the identity QSA key copy";
+"When the indexer selects every visible key, use the prefix directly instead of one gathered copy per query. Measured output is byte-identical; contexts above the sparse threshold are unchanged." = "When the indexer selects every visible key, use the prefix directly instead of one gathered copy per query. Measured output is byte-identical; contexts above the sparse threshold are unchanged.";
 "Use indexed QSA decode" = "Use indexed QSA decode";
 "Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text." = "Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text.";
 "QSA queries per chunk must be an integer from 1 to 128." = "QSA queries per chunk must be an integer from 1 to 128.";

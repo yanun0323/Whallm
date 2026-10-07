@@ -208,6 +208,22 @@ final class ChatStreamDecoderTests: XCTestCase {
     )
   }
 
+  func testHeartbeatDoesNotChangeMessageOrSupplyUsage() throws {
+    let line = #"data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"qwen-3.8","choices":[{"index":0,"delta":{},"finish_reason":null}]}"#
+    let event = try ChatStreamDecoder.decode(line: line)
+    XCTAssertEqual(event, .delta(ChatDelta(content: "", reasoningContent: "")))
+    var message = ChatMessage(role: "assistant", content: "answer", reasoningContent: "plan")
+    if case .delta(let delta) = event {
+      message.append(delta)
+      XCTAssertTrue(delta.content.isEmpty)
+      XCTAssertTrue(delta.reasoningContent.isEmpty)
+      XCTAssertTrue(delta.toolCalls.isEmpty)
+    }
+    XCTAssertEqual(message.content, "answer")
+    XCTAssertEqual(message.reasoningContent, "plan")
+    XCTAssertTrue(message.toolCalls.isEmpty)
+  }
+
   func testChatHistoryPersistenceRestoresLocalFields() throws {
     let suite = "ChatStreamDecoderTests.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

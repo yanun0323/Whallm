@@ -35,6 +35,12 @@ public struct ModelKind: RawRepresentable, Codable, Hashable, Sendable {
   public static let deepSeekV41 = Self(rawValue: "deepseek-v4.1")!
   public static let qwen3_8FlashNext = Self(rawValue: "qwen3.8-flash-next")!
   public static let mimoV26FlashRL = Self(rawValue: "mimo-v2.6-flash-rl")!
+  public static let swift1_5Qwen3_8FlashNext = Self(rawValue: "swift1.5-qwen3.8-flash-next")!
+
+  /// Shared inference implementation, not shared model identity or settings.
+  public var usesQwenEngine: Bool {
+    self == .qwen3_8FlashNext || self == .swift1_5Qwen3_8FlashNext
+  }
 }
 
 enum ModelContract {
@@ -448,7 +454,7 @@ public struct InstalledManifest: Codable, Equatable, Sendable {
   public let expertRegions: [ExpertRegion]
   public let dspark: DSparkDescriptor?
   public let mtp: MTPDescriptor?
-  public let modelKind: ModelKind?
+  public internal(set) var modelKind: ModelKind?
   public let maximumContext: Int?
   public let expertQuantization: ExpertQuantizationDescriptor?
   public let ngram: NGramDescriptor?

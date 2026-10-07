@@ -397,7 +397,7 @@
 "Verify or repair the model before starting the server." = "启动 server 前，请先验证或修复模型。";
 
 "Prefill acceleration" = "Prefill 加速";
-"Speeds up prompt processing. Requires layer-major prefill with MTP off. Changes apply on next load." = "加快提示词处理。需要启用 layer-major prefill，并关闭 MTP。更改会在下次载入模型时生效。";
+"Speeds up prompt processing. Requires layer-major prefill. Changes apply on next load." = "加快提示词处理。需要启用 layer-major prefill。更改会在下次载入模型时生效。";
 
 "Keep recently used experts" = "保留最近使用的专家数据";
 
@@ -557,7 +557,7 @@
 "May shorten prefill, but needs extra memory and may slightly change output." = "可能缩短 prefill 时间，但需要额外内存，输出可能略有差异。";
 "More ANE work may shorten prefill, but adds memory use and may change output. 0 uses GPU only." = "调高可能缩短 prefill 时间，但会增加内存用量，输出可能略有差异。0 仅使用 GPU。";
 "Shorten prefill, but peak memory may rise and output may differ slightly." = "缩短 prefill 时间，但内存峰值可能上升，输出可能略有差异。";
-"Shorten prefill, but may use more memory. Requires layer-major prefill with MTP off." = "缩短 prefill 时间，但可能增加内存用量。需启用 layer-major prefill 并关闭 MTP。";
+"Shorten prefill, but may use more memory. Requires layer-major prefill." = "缩短 prefill 时间，但可能增加内存用量。需启用 layer-major prefill。";
 "Larger batches may shorten prefill, but raise peak memory. 0 selects automatically." = "调高可能缩短 prefill 时间，但会提高内存峰值。0 为自动选择。";
 "Avoid whole-layer overhead on shorter prompts, but fewer prompts benefit from faster prefill." = "调高可减少短输入的整层加载开销，但较少请求能享有 prefill 加速。";
 "Reduce SSD waiting, but may need more temporary memory." = "减少等待 SSD 的时间，但可能需要更多临时内存。";
@@ -610,8 +610,13 @@
 "Enter a whole number from 0 to 4294967295, or leave blank for automatic." = "请输入 0 到 4294967295 的整数，或留空使用自动值。";
 
 /* Qwen Flash opt-in experiments */
+"Use packed GDN prefill" = "使用 Packed GDN Prefill";
+"Off by default. M5 text prefill only, 2–1024 tokens per call. Tested outputs matched, but whole-model gains were below 5%. Requires MTP off; other calls use the original kernel." = "默认关闭。仅用于 M5 的文本 Prefill，每次调用处理 2–1024 个 token。已测案例的输出一致，但完整模型加速未达 5%。须关闭 MTP；其他调用沿用原运算。";
+"Packed GDN prefill is inactive while MTP is enabled. Its saved choice is retained." = "启用 MTP 时，Packed GDN Prefill 暂不生效，已保存的选择会保留。";
+"Use sorted expert prefill" = "使用排序专家 Prefill";
+"Off by default. Groups prompt rows by expert so prefill uses a faster kernel. In tests, 4K and 16K prompts reached the first token about 2× sooner. Output can differ slightly from the default. Requires Prefill acceleration." = "默认关闭。Prefill 时按专家分组排序，改用较快的运算。实测 4K 与 16K 提示词的首 token 约快 2 倍。输出可能与默认略有不同。需开启 Prefill 加速。";
+"Sorted expert prefill is inactive while Prefill acceleration is off or experts per wave is above 0. Its saved choice is retained." = "Prefill 加速关闭，或每波专家数大于 0 时，排序专家 Prefill 暂不生效，已保存的选择会保留。";
 "Qwen Flash experiments" = "Qwen Flash 实验功能";
-"Experimental; full-model speed and quality are not yet verified. All four controls default to off or mmap." = "实验性功能；尚未验证完整模型的速度与质量。这四个控件默认均为关闭或 mmap。";
 "Saved automatically for this model. Changes apply on the next model load. Unload the model before editing." = "设置会按模型自动保存，并于下次加载模型时生效。修改前请先卸载模型。";
 "Unload this model to edit these settings. Loading and unloading also lock the controls." = "请先卸载此模型再修改设置。加载与卸载过程中也无法修改。";
 "Experts per wave" = "每波专家数";
@@ -633,9 +638,11 @@
 "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "编译分组归一化与单 token 的超连接运算。多 token 批次保留原本的混合路径。浮点舍入与生成文本可能改变。";
 
 // QSA throughput experiments.
-"Experimental; full-model speed and quality are not yet verified. New QSA controls retain the original chunk size and disable indexed attention by default." = "实验功能；完整模型的速度与质量尚未验证。新的 QSA 控件默认保持原有批次大小，并关闭索引注意力。";
 "QSA queries per chunk" = "每批 QSA 查询数";
-"1–128 queries per attention chunk; default 4. Try 16 or 32 for prefill. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit. Numerical rounding may differ." = "每批注意力处理 1–128 个查询，默认 4。Prefill 可试 16 或 32；每批工作区估算上限为 256 MiB，不是进程内存上限。浮点舍入可能不同。";
+"1–128 queries per attention chunk; default 16. Larger batches cut per-chunk overhead; 24 and above measured slower. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit." = "每批注意力处理 1–128 个查询，默认 16。批次越大，每批开销越低；实测 24 以上反而变慢。每批工作区估算上限为 256 MiB，不是进程内存上限。";
+"Experimental; full-model speed and quality are not yet verified. QSA queries per chunk defaults to 16 and indexed attention stays off." = "实验性功能；完整模型的速度与质量尚未验证。QSA 每批查询数默认为 16，索引式注意力保持关闭。";
+"Skip the identity QSA key copy" = "跳过 QSA 重复的键复制";
+"When the indexer selects every visible key, use the prefix directly instead of one gathered copy per query. Measured output is byte-identical; contexts above the sparse threshold are unchanged." = "当索引器选取全部可见键时，直接使用前缀，不再为每个查询各复制一份。实测输出逐位元相同；超过稀疏阈值的较长上下文不受影响。";
 "Use indexed QSA decode" = "使用索引式 QSA 解码";
 "Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text." = "需启用融合 QSA SDPA。超过稀疏阈值且不超过 8 个查询时，直接读取选中的 KV 行。Prefill 与不支持的格式保持 gather 路径。FP32 归约可能改变生成文本。";
 "QSA queries per chunk must be an integer from 1 to 128." = "每批 QSA 查询数必须为 1 到 128 的整数。";

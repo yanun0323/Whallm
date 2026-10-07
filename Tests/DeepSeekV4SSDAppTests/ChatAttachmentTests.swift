@@ -78,7 +78,10 @@ final class ChatAttachmentTests: XCTestCase {
 
   func testAttachmentKindsFollowImplementedModelCapabilities() {
     XCTAssertEqual(ChatAttachmentKind.supported(modelID: "mimo-v2.6-flash-rl"), [.image, .document, .audio])
-    for id in [nil, "unknown", "qwen3.8-flash-next-fp8", "deepseek-v4-flash-0731"] {
+    for id in ["qwen3.8-flash-next-fp8", "swift1.5-qwen3.8-flash-next-mxfp4"] {
+      XCTAssertEqual(ChatAttachmentKind.supported(modelID: id), [.image])
+    }
+    for id in [nil, "unknown", "deepseek-v4-flash-0731"] {
       XCTAssertTrue(ChatAttachmentKind.supported(modelID: id).isEmpty)
     }
     XCTAssertEqual(ChatAttachmentKind.audio.contentTypes.compactMap(\.preferredFilenameExtension), ["wav"])

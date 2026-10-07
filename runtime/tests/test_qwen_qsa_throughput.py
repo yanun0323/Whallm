@@ -135,11 +135,12 @@ class NativeMTPSettingsTests(unittest.TestCase):
         from deepseek_v4_ssd import model as loader
         installed = SimpleNamespace(root=Path("/synthetic-model"),
             mtp=SimpleNamespace(common_tensors=()))
-        cases = ((True,4,False,False), (True,16,False,True),
+        cases = ((True,4,False,True), (True,16,False,True),
                  (True,32,True,True), (False,16,False,False))
         for sdpa,chunk,indexed,expected_sdpa in cases:
             with self.subTest(sdpa=sdpa,chunk=chunk,indexed=indexed):
-                attention = SimpleNamespace(sparse_sdpa=False, query_chunk=4, indexed_decode=False)
+                attention = SimpleNamespace(sparse_sdpa=False, query_chunk=4, indexed_decode=False,
+                    dense_within_budget=False, dense_threshold=0, skip_complete_gather=False)
                 draft = MagicMock()
                 draft.layers = [SimpleNamespace(self_attn=attention)]
                 draft.sanitize.return_value = {}
@@ -157,5 +158,8 @@ class NativeMTPSettingsTests(unittest.TestCase):
                 self.assertEqual(attention.sparse_sdpa,expected_sdpa)
                 self.assertEqual(attention.query_chunk,chunk)
                 self.assertEqual(attention.indexed_decode,indexed)
+                self.assertTrue(attention.skip_complete_gather)
+                self.assertFalse(attention.dense_within_budget)
+                self.assertEqual(attention.dense_threshold,0)
                 draft.load_weights.assert_called_once_with([],strict=True)
                 cache.close.assert_not_called()
