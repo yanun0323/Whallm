@@ -33,8 +33,8 @@ class QwenOptimizationTests(unittest.TestCase):
         raw = asdict(config)
         for name in ("qwen_pooled_index_cache", "qwen_ngram_lookup_optimized", "qwen_compile_tensor_ops", "qwen_phase_memory"):
             self.assertFalse(raw.pop(name))
-        self.assertEqual(raw.pop("qwen_mtp_draft_tokens"), 5)
-        self.assertEqual(raw.pop("qwen_mtp_zero_acceptance_limit"), 1)
+        self.assertEqual(raw.pop("qwen_mtp_draft_tokens"), 2)
+        self.assertEqual(raw.pop("qwen_mtp_zero_acceptance_limit"), 32)
         self.assertEqual(_parse_runtime(raw, "runtime", "qwen3.8-flash-next"), config)
 
     def test_invalid_research_settings(self):

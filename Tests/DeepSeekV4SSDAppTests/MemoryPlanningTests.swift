@@ -170,7 +170,7 @@ final class MemoryPlanningTests: XCTestCase {
     }
   }
 
-  func testPromptCacheCountsGroupedSnapshotsAndIsDisabledForMTP() throws {
+  func testPromptCacheCountsGroupedSnapshotsAndMTPDraftState() throws {
     let p = try profile()
     var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
     s.promptCacheMode = .off
@@ -183,7 +183,10 @@ final class MemoryPlanningTests: XCTestCase {
     XCTAssertEqual(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 1_024)?.total, one.total)
     s.mtpEnabled = true
     let mtp = try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 1_024))
-    XCTAssertEqual(mtp.decoding.conversation, off.decoding.conversation)
+    // MTP retains a prompt-end and a final state, each with its draft attention.
+    let draftState = 1_024.0 * (2 * 2 * 256 * 2 + 2 * 128 * 2)
+    XCTAssertEqual(mtp.decoding.conversation,
+      off.decoding.conversation + 2 * (off.decoding.conversation + draftState), accuracy: 1)
     XCTAssertGreaterThan(mtp.decoding.auxiliary, mtp.prefill.auxiliary)
     XCTAssertEqual(mtp.decoding.auxiliary - mtp.prefill.auxiliary, off.decoding.conversation, accuracy: 1)
   }

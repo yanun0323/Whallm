@@ -273,7 +273,7 @@
 "Reads repeated N-gram rows once per lookup and uses a decoding table." = "每次查找只读取一次重复的 N-gram 数据行，并通过查表解码。";
 "Reuses a compiled normalization calculation, not the whole generation graph." = "重用已编译的归一化计算；不是重用整个生成流程。";
 "Limits the expert cache to half its capacity while reading a prompt, keeping room for one layer when possible. Restores full capacity for answers. May cause extra SSD reads." = "读取问题时，专家缓存上限降至一半，但预算足够时至少保留一层的容量。生成回答时恢复完整容量，可能增加 SSD 读取。";
-"MTP output differs from non-MTP in a full-model test; the cause is unresolved. Off uses 5 draft tokens and stops after one zero-acceptance round." = "完整模型测试中，MTP 与未启用 MTP 的输出不同，原因尚未查明。关闭时使用 5 个草稿 token，一轮完全未接受就停止 MTP。";
+"MTP output can differ slightly from non-MTP. Off uses 2 draft tokens and stops after 32 zero-acceptance rounds in a row." = "MTP 的输出可能与未启用 MTP 时略有不同。关闭时使用 2 个草稿 token，连续 32 轮完全未接受才停止 MTP。";
 "Speed improvements are not yet verified. Changes apply on next model load." = "尚未证实能加速。更改在下次加载模型时生效。";
 "MTP draft tokens" = "MTP 草稿 token 数";
 "Zero-acceptance rounds before stopping MTP" = "连续几轮未接受后停止 MTP";

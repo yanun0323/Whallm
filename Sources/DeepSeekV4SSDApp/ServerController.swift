@@ -281,7 +281,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var qwenSharedExpertOverlap: Bool? = false
   var qwenMTPPolicy: Bool? = false
   var qwenMTPDraftTokens: Int? = 2
-  var qwenMTPZeroAcceptanceLimit: Int? = 2
+  var qwenMTPZeroAcceptanceLimit: Int? = 32
   var recentExpertCache: Bool?
   var routeAwareExpertCache: Bool?
   var mtpEnabled: Bool? = false
@@ -416,8 +416,9 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     defaults.set(data, forKey: Self.preferenceKey(for: modelKind))
   }
 
-  var effectiveQwenMTPDraftTokens: Int { qwenMTPPolicy == true ? (qwenMTPDraftTokens ?? 2) : 5 }
-  var effectiveQwenMTPZeroAcceptanceLimit: Int { qwenMTPPolicy == true ? (qwenMTPZeroAcceptanceLimit ?? 2) : 1 }
+  // Default 2 drafts, 32 zero-acceptance rounds: one zero round stopped MTP within the first few rounds.
+  var effectiveQwenMTPDraftTokens: Int { qwenMTPPolicy == true ? (qwenMTPDraftTokens ?? 2) : 2 }
+  var effectiveQwenMTPZeroAcceptanceLimit: Int { qwenMTPPolicy == true ? (qwenMTPZeroAcceptanceLimit ?? 32) : 32 }
 
   func validate(for modelKind: ModelKind) throws {
     if modelKind.usesQwenEngine { try validateQwenFlashSettings() }

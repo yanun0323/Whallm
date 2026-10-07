@@ -442,6 +442,47 @@ class QwenTests(unittest.TestCase):
         self.assertEqual(rounds[0][:2], (1, 0))
         self.assertTrue(rounds[0][-1])
 
+    def test_mtp_prompt_state_matches_the_target_and_resumes(self):
+        def run(prompt, depth, retries, reject, max_tokens, cached=None, target_cache=None):
+            target, mtp = FakeGreedyTarget(), FakeGreedyMTP(reject_input_token=reject)
+            cache = target_cache or [FakeTargetCache()]
+            state, ends = {}, []
+            output = [token for token, _ in generate_mtp_tokens(
+                prompt, target, mtp, cache, max_tokens=max_tokens, prefill_step_size=2,
+                draft_tokens=depth, zero_acceptance_limit=retries,
+                cached_tokens=len(cached.tokens) if cached else 0,
+                mtp_cache=cached.cache if cached else None,
+                boundary_hidden=cached.hidden if cached else None,
+                on_prompt_end=ends.append, state=state)]
+            return output, state["finish"](), ends, cache
+
+        for depth in (1, 2, 5):
+            for retries in (1, 32):
+                for reject in (None, 4, 7):
+                    for max_tokens in (1, 2, 7, 15):
+                        with self.subTest(depth=depth, retries=retries, reject=reject, max_tokens=max_tokens):
+                            output, final, ends, cache = run([1, 2, 3], depth, retries, reject, max_tokens)
+                            self.assertEqual(ends[0].tokens, [1, 2, 3])
+                            # The cache holds every consumed token; the last anchor may be pending.
+                            self.assertEqual(len(final.tokens), cache[0].offset)
+                            self.assertEqual(final.cache.offset, len(final.tokens) - 1)
+                            self.assertEqual(final.tokens, list(range(1, len(final.tokens) + 1)))
+                            self.assertEqual(float(final.hidden.reshape(-1)[0].item()), final.tokens[-1])
+                            self.assertEqual(output[: len(final.tokens) - 3], final.tokens[3:])
+                            follow = final.tokens + [9]
+                            resumed, resumed_final, _, resumed_cache = run(
+                                follow, depth, retries, reject, 6, final, cache)
+                            fresh, fresh_final, _, fresh_cache = run(follow, depth, retries, reject, 6)
+                            self.assertEqual(resumed, fresh)
+                            self.assertEqual(resumed_final.tokens, fresh_final.tokens)
+                            self.assertEqual(resumed_cache[0].offset, fresh_cache[0].offset)
+                            self.assertEqual(resumed_final.cache.offset, fresh_final.cache.offset)
+
+    def test_mtp_cached_prefix_requires_its_draft_state(self):
+        with self.assertRaises(ValueError):
+            list(generate_mtp_tokens([1, 2, 3], FakeGreedyTarget(), FakeGreedyMTP(),
+                [FakeTargetCache()], max_tokens=2, prefill_step_size=2, cached_tokens=2))
+
     def test_mtp_generation_falls_back_after_zero_acceptance(self):
         target = FakeGreedyTarget()
         mtp = FakeGreedyMTP(reject_first_draft=True)

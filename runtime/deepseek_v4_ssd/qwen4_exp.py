@@ -1204,7 +1204,13 @@ def generate_mtp_tokens(
     draft_tokens: int = 5,
     zero_acceptance_limit: int = 1,
 ) -> Iterator[tuple[int, bool]]:
-    """Yield tokens from exact target-distribution MTP verification."""
+    """Yield tokens from exact target-distribution MTP verification.
+
+    A cached prefix supplies the target cache for prompt[:cached_tokens], the
+    draft cache for the first cached_tokens - 1 pairs and the target hidden at
+    position cached_tokens - 1. ``state["finish"]()`` returns the same triple
+    for every token the target cache holds when the generator stops at a yield.
+    """
     from .qwen_mtp_policy import MTPDraftPolicy
     policy = MTPDraftPolicy(draft_tokens, zero_acceptance_limit)
     if not prompt or max_tokens < 1:
@@ -1233,12 +1239,29 @@ def generate_mtp_tokens(
     lm_head_weight = main_model.lm_head.weight
     # Roll back rejected drafts without replaying accepted tokens through the MoE.
     rewind = getattr(main_model, "supports_verification_rewind", False) is True
-    mtp_cache = mtp_model.make_cache()
+    if cached_tokens:
+        if not 0 < cached_tokens < len(prompt) or mtp_cache is None or boundary_hidden is None:
+            raise ValueError("Qwen MTP cached prefix needs a draft cache and boundary hidden state")
+    else:
+        mtp_cache = mtp_model.make_cache()
     cache_slots = int(getattr(mtp_model.expert_cache, "slots", 0))
     selected_experts = int(getattr(mtp_model.args, "num_experts_per_tok", 0))
     mtp_prefill_step = (
         max(1, cache_slots // selected_experts)
         if cache_slots and selected_experts
+# Draft pairs left behind by plain decode are appended in one whole-layer read
+# when there are enough of them; fewer use the bounded slot-sized chunks.
+MTP_LAYER_MAJOR_CATCH_UP = 64
+
+
+@dataclass
+class MTPPromptState:
+    """Draft cache and boundary hidden that continue a cached MTP prefix."""
+    tokens: list[int]
+    cache: Any
+    hidden: mx.array
+
+
         else prefill_step_size
     )
 
@@ -1256,6 +1279,11 @@ def generate_mtp_tokens(
     def prefill_mtp(paired_hidden: mx.array, paired_tokens: mx.array) -> None:
         for start in range(0, paired_tokens.shape[1], mtp_prefill_step):
             check_cancelled()
+    cached_tokens: int = 0,
+    mtp_cache=None,
+    boundary_hidden: mx.array | None = None,
+    on_prompt_end: Callable[[MTPPromptState], None] | None = None,
+    state: dict | None = None,
             end = min(start + mtp_prefill_step, paired_tokens.shape[1])
             advance_mtp(paired_hidden[:, start:end], paired_tokens[:, start:end])
 
@@ -1275,12 +1303,15 @@ def generate_mtp_tokens(
                 advance_mtp(paired_hidden[:, start:end], paired_tokens[:, start:end])
 
     if prefilled_hidden is not None:
-        if prefilled_hidden.shape[1] != len(prompt) - 1:
+        if prefilled_hidden.shape[1] != len(prompt) - cached_tokens - 1:
             raise ValueError("Qwen MTP Prefill hidden state length does not match")
         # The draft layer attends over the whole prompt, as in training. A short
         # tail window leaves its KV cache nearly empty and lowers acceptance.
-        prefill_mtp_layer_major(
-            prefilled_hidden, mx.array([prompt[1:]], dtype=mx.int32))
+        history = (mx.concatenate([boundary_hidden, prefilled_hidden], axis=1)
+                   if cached_tokens else prefilled_hidden)
+        history_tokens = prompt[cached_tokens:] if cached_tokens else prompt[1:]
+        if history_tokens:
+            prefill_mtp_layer_major(history, mx.array([history_tokens], dtype=mx.int32))
         final_logits, final_hidden = main_model.forward_with_hidden(
             mx.array([[prompt[-1]]], dtype=mx.int32),
             target_cache,
@@ -1289,8 +1320,8 @@ def generate_mtp_tokens(
         processed = len(prompt)
     else:
         final_logits = final_hidden = None
-        processed = 0
-    previous_hidden = None
+        processed = cached_tokens
+    previous_hidden = None if prefilled_hidden is not None else boundary_hidden
     while processed < len(prompt):
         check_cancelled()
         count = min(prefill_step_size, len(prompt) - processed)
@@ -1373,6 +1404,27 @@ def generate_mtp_tokens(
         verified_ids = mx.array([[anchor, *draft_tokens]], dtype=mx.int32)
         layer_inputs = [] if rewind else None
         verified_logits, verified_hidden = (
+    # Tokens in the target cache, and (hidden, token) draft pairs the target
+    # consumed without MTP; finish() appends those pairs before a snapshot.
+    committed = list(prompt)
+    pending: list[tuple[mx.array, int]] = []
+
+    def snapshot() -> MTPPromptState:
+        if pending:
+            hidden = mx.concatenate([item[0] for item in pending], axis=1)
+            tokens = mx.array([[item[1] for item in pending]], dtype=mx.int32)
+            pending.clear()
+            if tokens.shape[1] >= MTP_LAYER_MAJOR_CATCH_UP:
+                prefill_mtp_layer_major(hidden, tokens)
+            else:
+                prefill_mtp(hidden, tokens)
+        return MTPPromptState(list(committed), mtp_cache, predecessor_hidden)
+
+    if state is not None:
+        state["finish"] = snapshot
+    if on_prompt_end is not None:
+        mx.eval(predecessor_hidden)
+        on_prompt_end(MTPPromptState(list(committed), mtp_cache, predecessor_hidden))
             main_model.forward_with_hidden(verified_ids, verified_cache, layer_inputs)
             if rewind
             else main_model.forward_with_hidden(verified_ids, verified_cache)
@@ -1381,6 +1433,8 @@ def generate_mtp_tokens(
         target_logprobs = mx.stack(
             [
                 adjusted_logprobs(
+            pending.append((predecessor_hidden, anchor))
+            committed.append(anchor)
                     verified_logits[:, index],
                     sampling_tokens + draft_tokens[:index],
                 )
@@ -1449,6 +1503,7 @@ def generate_mtp_tokens(
         yield anchor, False
         sampling_tokens.append(anchor)
         generated += 1
+        committed.extend([anchor, *draft_tokens[:accepted]])
 
         if fallback:
             # Default remains one zero-acceptance round. A higher opt-in
@@ -1508,6 +1563,8 @@ def load(
             "ngram_embedding.weight_scale"
         )
         if scale_name not in weights or weights[scale_name].shape != (1,):
+                pending.append((predecessor_hidden, anchor))
+                committed.append(anchor)
             raise ValueError("Qwen common tensors have no valid N-gram weight scale")
         weight_scale = float(weights[scale_name].astype(mx.float32).item())
         ngram_store = NGramStore(

@@ -142,6 +142,9 @@ class _PromptCacheEntry:
     # Entries stored by one request share a number. The entry limit counts
     # requests, so a prompt-end snapshot survives next to its final state.
     request: int | None = None
+    # Qwen MTP only: draft cache for len(tokens) - 1 pairs and the target hidden
+    # at the last cached position, so drafting continues without a replay.
+    mtp: Any = None
 
 
 @dataclass(frozen=True)
@@ -210,6 +213,22 @@ def _load_prompt_cache_file(path: Path):
         if not str(error).startswith(("[load_safetensors]", "[read] Unable to read ")):
             raise
         raise ValueError(f"Invalid prompt cache file: {path}") from error
+
+
+def _clone_mtp_state(state):
+    from .model import _fork_prompt_cache
+    from .qwen4_exp import MTPPromptState
+    (cache,), copied = _fork_prompt_cache([state.cache])
+    hidden = state.hidden + mx.zeros((), state.hidden.dtype)
+    mx.eval(*copied, hidden)
+    return MTPPromptState(list(state.tokens), cache, hidden)
+
+
+def _mtp_state_nbytes(state) -> int:
+    if state is None:
+        return 0
+    from .model import _cache_arrays
+    return int(state.hidden.nbytes) + sum(int(array.nbytes) for array in _cache_arrays([state.cache]))
 
 
 def _sha256_json(value: Any) -> str:
@@ -1262,7 +1281,7 @@ class ModelRuntime:
                 self._persistent_dspark_prompt_caches = (
                     self._scan_persistent_dspark_prompt_caches(dspark)
                 )
-            elif dspark is None and mtp is None:
+            elif dspark is None:
                 self._persistent_prompt_caches = (
                     self._scan_persistent_prompt_caches()
                 )
@@ -1385,11 +1404,7 @@ class ModelRuntime:
                     )
                     dspark.restore_cache_state(dspark_entry.context_state)
                 elif mtp is not None:
-                    entry = _PromptCacheEntry(
-                        self.support.new_cache(self.model),
-                        [],
-                        options.approximation_mode,
-                    )
+                    entry = self._acquire_prompt_cache(prompt_tokens, options.approximation_mode)
                 else:
                     entry = (
                         _PromptCacheEntry(
@@ -1503,10 +1518,31 @@ class ModelRuntime:
                         if use_layer_major:
                             with _route_phase(self.expert_cache, "prefill"):
                                 prefilled_hidden = self.support.prefill(
-                                    self.model, prompt_tokens[:-1], prompt_cache,
+                                    self.model, generation_prompt[:-1], prompt_cache,
                                     step_size, self.expert_cache, self.config,
                                 )
                         yield from self._stream_mtp(
+                        mtp_state: dict[str, Any] = {}
+                        # Only a state finished by this request may be stored.
+                        cached_mtp, entry.mtp = (entry.mtp if reused_tokens else None), None
+
+                        def store_prompt_end(state) -> None:
+                            nonlocal prefill_persist_entry
+                            if not self._prompt_cache_enabled():
+                                return
+                            snapshot_started = time.perf_counter()
+                            prefill_persist_entry = _PromptCacheEntry(
+                                self.support.clone_cache(prompt_cache),
+                                list(state.tokens),
+                                options.approximation_mode,
+                                request,
+                                _clone_mtp_state(state),
+                            )
+                            self.metrics.record_prompt_cache_snapshot(
+                                time.perf_counter() - snapshot_started
+                            )
+                            self._store_prompt_cache(prefill_persist_entry, persist=False)
+
                             prompt_tokens,
                             prompt_cache,
                             mtp,
@@ -1515,7 +1551,18 @@ class ModelRuntime:
                             prefilled_hidden,
                             logits_processors,
                         )
+                            cached=cached_mtp,
+                            on_prompt_end=store_prompt_end,
+                            state=mtp_state,
                         completed = True
+                        finish = mtp_state.get("finish")
+                        if finish is not None and self._prompt_cache_enabled():
+                            final = finish()
+                            self.support.evaluate_cache(prompt_cache)
+                            mx.eval(final.hidden, *_cache_state_arrays(
+                                self.support.snapshot_cache([final.cache])))
+                            cache_tokens[:] = final.tokens
+                            entry.mtp = final
                         return
                     if use_layer_major:
                         with _route_phase(self.expert_cache, "prefill"):
@@ -1593,7 +1640,7 @@ class ModelRuntime:
                         # expert buffers. Never run MLX cleanup on the observer.
                         mx.synchronize(self._generation_stream)
                     self.metrics.finish(self._expert_metrics())
-                    if completed and not has_media and dspark is None and mtp is None:
+                    if completed and not has_media and dspark is None and (mtp is None or entry.mtp is not None):
                         if (
                             options.approximation_mode == EXACT_APPROXIMATION_MODE
                             and prefill_persist_entry is not None
@@ -1620,6 +1667,10 @@ class ModelRuntime:
         prefilled_hidden: mx.array | None,
         logits_processors,
     ) -> Iterator[GeneratedPiece]:
+        *,
+        cached=None,
+        on_prompt_end=None,
+        state: dict[str, Any] | None = None,
         from .qwen4_exp import generate_mtp_tokens
 
         tokenizer = TokenizerWrapper(self.tokenizer)
@@ -1639,8 +1690,13 @@ class ModelRuntime:
                 logits_processors=logits_processors,
                 prefilled_hidden=prefilled_hidden,
                 record_round=self.metrics.record_mtp_round,
-                draft_tokens=getattr(self.config, "qwen_mtp_draft_tokens", 5),
-                zero_acceptance_limit=getattr(self.config, "qwen_mtp_zero_acceptance_limit", 1),
+                draft_tokens=getattr(self.config, "qwen_mtp_draft_tokens", 2),
+                zero_acceptance_limit=getattr(self.config, "qwen_mtp_zero_acceptance_limit", 32),
+                cached_tokens=len(cached.tokens) if cached is not None else 0,
+                mtp_cache=cached.cache if cached is not None else None,
+                boundary_hidden=cached.hidden if cached is not None else None,
+                on_prompt_end=on_prompt_end,
+                state=state,
             )
         )
         with closing(responses):
@@ -1857,12 +1913,14 @@ class ModelRuntime:
                 approximation_mode,
             )
         matches = [
+        mtp = getattr(self.model, "mtp", None) is not None
             entry
             for entry in self._prompt_caches
             if entry.approximation_mode == approximation_mode
             and len(entry.tokens) < len(prompt_tokens)
             and prompt_tokens[: len(entry.tokens)] == entry.tokens
         ]
+            and (entry.mtp is not None) == mtp
         if matches:
             entry = max(matches, key=lambda item: len(item.tokens))
             return _PromptCacheEntry(
@@ -1870,6 +1928,7 @@ class ModelRuntime:
                 list(entry.tokens),
                 approximation_mode,
             )
+                mtp=_clone_mtp_state(entry.mtp) if entry.mtp is not None else None,
         if approximation_mode != EXACT_APPROXIMATION_MODE:
             return _PromptCacheEntry(
                 self.support.new_cache(self.model),
@@ -2084,6 +2143,7 @@ class ModelRuntime:
         return sum(
             sum(int(getattr(cache, "nbytes", 0)) for cache in entry.cache)
             for entry in self._prompt_caches
+            + _mtp_state_nbytes(entry.mtp)
         )
 
     def _expert_metrics(self) -> CacheMetrics:
@@ -2126,6 +2186,9 @@ class ModelRuntime:
         if cached is None:
             cached = _prompt_cache_contract(self.installed, self.config)
             self._prompt_cache_contract_value = cached
+            if getattr(self.model, "mtp", None) is not None:
+                # Target, draft cache and boundary hidden; never mixed with plain entries.
+                cached["qwenMTPPromptCache"] = "target-draft-hidden-v1"
         return cached
 
     @staticmethod
@@ -2323,6 +2386,9 @@ class ModelRuntime:
             state = _decode_cache_state(schema, arrays)
             cache = self.support.new_cache(self.model)
             if entry.format == 1:
+            mtp = getattr(self.model, "mtp", None)
+            if mtp is not None:
+                return self._restore_mtp_prompt_cache(cache, state, entry.tokens, mtp)
                 if len(cache) != len(state):
                     return None
                 for target, saved in zip(cache, state):
@@ -2335,6 +2401,25 @@ class ModelRuntime:
             return None
 
     def _load_persistent_dspark_prompt_cache(
+    def _restore_mtp_prompt_cache(self, cache, state, tokens, mtp) -> _PromptCacheEntry | None:
+        from .model_support.state import restore_persistence_cache
+        from .qwen4_exp import MTPPromptState
+        if not isinstance(state, dict) or set(state) != {"target", "mtp", "hidden"}:
+            return None
+        hidden = state["hidden"]
+        width = self.model.args.hc_count * self.model.args.hidden_size
+        if not isinstance(hidden, mx.array) or hidden.shape != (1, 1, width):
+            return None
+        self.support.restore_cache(cache, state["target"])
+        draft = mtp.make_cache()
+        restore_persistence_cache([draft], state["mtp"])
+        if draft.size() != len(tokens) - 1:
+            return None
+        self.support.evaluate_cache(cache)
+        mx.eval(hidden, *_cache_state_arrays(state["mtp"]))
+        return _PromptCacheEntry(cache, list(tokens),
+                                 mtp=MTPPromptState(list(tokens), draft, hidden))
+
         self,
         entry: _PersistentDSparkPromptCacheEntry,
         dspark,
@@ -2368,10 +2453,11 @@ class ModelRuntime:
             return None
 
     def _persist_prompt_cache(self, entry: _PromptCacheEntry) -> None:
-        self._persist_prompt_cache_state(
-            entry.tokens,
-            self.support.snapshot_cache(entry.cache),
-        )
+        state = self.support.snapshot_cache(entry.cache)
+        if entry.mtp is not None:
+            state = {"target": state, "mtp": self.support.snapshot_cache([entry.mtp.cache]),
+                     "hidden": entry.mtp.hidden}
+        self._persist_prompt_cache_state(entry.tokens, state)
 
     def _persist_prompt_cache_snapshot(
         self,

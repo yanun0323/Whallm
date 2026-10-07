@@ -105,14 +105,18 @@ caches and rerunning only the linear-attention mixers, without reading routed
 experts again. In a historical M4 Max / 36 GB measurement with a 1.3 GiB MTP cache,
 MTP helped code (+18.5% decode versus MTP off) but hurt prose (-14%), where draft
 acceptance was about 43%. This measurement predates the final rewind-timing fix;
-it is not a measurement of the corrected runtime or v1.1.10. Measure your own workload. The zero-acceptance
-strategy can also switch MTP off early after two unlucky rounds; see
-[BENCHMARK.md](../BENCHMARK.md#qwen-mtp-draft-context-and-rewind-2026-09-29).
+it is not a measurement of the corrected runtime or v1.1.10. Measure your own workload. The earlier default
+stopped MTP after one zero-acceptance round, which often switched it off within the first few rounds; see
+[BENCHMARK.md](../BENCHMARK.md#qwen-mtp-draft-context-and-rewind-2026-09-29). The default is now 2 draft
+tokens and 32 zero-acceptance rounds in a row.
 
 Test draft depth 3 only after depth 2 improves accepted output tokens/second at
 the same quality. Additional draft/verify reads can outweigh acceptance gains.
-The App currently disables ordinary prompt-cache reuse for MTP; repeated-turn
-TTFT can therefore worsen even when one long answer decodes faster. Recheck both.
+Prompt Cache works with MTP: each saved state includes the draft layer's
+attention cache and the last target hidden state, kept apart from non-MTP
+entries. Memory keeps it in RAM; Disk also writes it to the cache directory.
+A request keeps its prompt-end state and its final state. Continuing from a
+cached prefix can change later tokens, as with ordinary cache reuse.
 Do not set fewer generated tokens, change sampling, or skip reasoning to report
 an engine speed improvement.
 

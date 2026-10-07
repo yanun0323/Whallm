@@ -98,8 +98,8 @@ class RuntimeConfig:
     qwen_qsa_skip_complete_gather: bool = True
     qwen_packed_gdn_prefill: bool = False
     qwen_sorted_expert_prefill: bool = False
-    qwen_mtp_draft_tokens: int = 5
-    qwen_mtp_zero_acceptance_limit: int = 1
+    qwen_mtp_draft_tokens: int = 2
+    qwen_mtp_zero_acceptance_limit: int = 32
 
 
 def _apply_prompt_cache_mode(config: RuntimeConfig, mode: str | None) -> RuntimeConfig:

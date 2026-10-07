@@ -88,11 +88,11 @@ final class ServerConfigurationTests: XCTestCase {
       XCTAssertEqual(runtime.qwenNgramLookupOptimized, enabled)
       XCTAssertEqual(runtime.qwenCompileTensorOps, enabled)
       XCTAssertEqual(runtime.qwenPhaseMemory, enabled)
-      XCTAssertEqual(runtime.qwenMTPDraftTokens, enabled ? 3 : 5)
-      XCTAssertEqual(runtime.qwenMTPZeroAcceptanceLimit, enabled ? 4 : 1)
+      XCTAssertEqual(runtime.qwenMTPDraftTokens, enabled ? 3 : 2)
+      XCTAssertEqual(runtime.qwenMTPZeroAcceptanceLimit, enabled ? 4 : 32)
       let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(runtime)) as? [String: Any])
       XCTAssertEqual(json["qwen_phase_memory"] as? Bool, enabled)
-      XCTAssertEqual(json["qwen_mtp_draft_tokens"] as? Int, enabled ? 3 : 5)
+      XCTAssertEqual(json["qwen_mtp_draft_tokens"] as? Int, enabled ? 3 : 2)
     }
   }
 
@@ -105,14 +105,14 @@ final class ServerConfigurationTests: XCTestCase {
     }
     let legacy = try JSONDecoder().decode(ModelAdvancedSettings.self, from: JSONSerialization.data(withJSONObject: old))
     for feature in QwenOptimization.allCases { XCTAssertFalse(legacy[keyPath: feature.keyPath] == true) }
-    XCTAssertEqual(legacy.effectiveQwenMTPDraftTokens, 5)
-    XCTAssertEqual(legacy.effectiveQwenMTPZeroAcceptanceLimit, 1)
+    XCTAssertEqual(legacy.effectiveQwenMTPDraftTokens, 2)
+    XCTAssertEqual(legacy.effectiveQwenMTPZeroAcceptanceLimit, 32)
     settings.qwenMTPPolicy = true
     settings.qwenMTPDraftTokens = 3
     settings.qwenMTPZeroAcceptanceLimit = 4
     settings.qwenMTPPolicy = false
-    XCTAssertEqual(settings.effectiveQwenMTPDraftTokens, 5)
-    XCTAssertEqual(settings.effectiveQwenMTPZeroAcceptanceLimit, 1)
+    XCTAssertEqual(settings.effectiveQwenMTPDraftTokens, 2)
+    XCTAssertEqual(settings.effectiveQwenMTPZeroAcceptanceLimit, 32)
     settings.qwenMTPPolicy = true
     XCTAssertEqual(settings.effectiveQwenMTPDraftTokens, 3)
     XCTAssertEqual(settings.effectiveQwenMTPZeroAcceptanceLimit, 4)

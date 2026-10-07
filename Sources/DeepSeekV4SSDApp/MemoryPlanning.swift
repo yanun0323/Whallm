@@ -249,15 +249,16 @@ struct MemoryPlanningProfile {
       auxiliaryState = Double(descriptor.layerCount) * window * dim * (v41 ? 4 : 2 * activationBytes)
     }
     let auxiliary = auxiliaryWeights + auxiliaryExperts + auxiliaryState
-    // V4.1 DSpark retains one target + draft snapshot per request. The App still
-    // disables reuse for V4 DSpark and Qwen MTP.
-    let promptCacheEnabled = s.promptCacheMode != .off && !mtp && (!dspark || v41)
-    let snapshotBytes = cache.bytes + (dspark ? auxiliaryState : 0)
+    // V4.1 DSpark retains one target + draft snapshot per request; Qwen MTP keeps
+    // target + draft cache + boundary hidden. The App still disables V4 DSpark reuse.
+    let promptCacheEnabled = s.promptCacheMode != .off && (!dspark || v41)
+    let snapshotBytes = cache.bytes + (dspark || mtp ? auxiliaryState : 0)
     // Ordinary entries count requests, each retaining up to three states: first
     // prefill checkpoint, prompt end, and final output. A prefix hit can send a
     // short suffix through chunked prefill even when layer-major is enabled;
     // that first checkpoint can already contain nearly the entire context.
-    let statesPerRequest = dspark ? 1.0 : 3.0
+    // MTP keeps no prefill checkpoint, only prompt end and final output.
+    let statesPerRequest = dspark ? 1.0 : mtp ? 2.0 : 3.0
     // Reserve only retained states that fit the budget, not an empty arena.
     // Runtime always keeps one newest state, even when it exceeds the budget.
     let retained = !promptCacheEnabled ? 0
