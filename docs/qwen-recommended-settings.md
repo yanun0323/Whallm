@@ -16,7 +16,7 @@ The new controls and source audit are described in [the implementation note](qwe
 
 | App setting | M2 Max, 64 GB | M5 Pro, 64 GB | M5 Ultra, 96 GB planning |
 | --- | ---: | ---: | ---: |
-| Expert cache GiB | 24 | 24 | 40 |
+| Experts in memory (Qwen, 59.8 GiB = 100%) | 40% (≈ 23.9 GiB) | 40% (≈ 23.9 GiB) | 67% (≈ 40.0 GiB) |
 | Memory limit GiB (MLX, not process RSS) | 48 | 48 | 72 |
 | Read workers | 8 | 16 | 16 |
 | Prefetch read workers | 2 | 2 | 2 |

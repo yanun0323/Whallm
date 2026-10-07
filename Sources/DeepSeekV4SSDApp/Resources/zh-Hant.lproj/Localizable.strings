@@ -278,7 +278,7 @@
 "MTP draft tokens" = "MTP 草稿 token 數";
 "Zero-acceptance rounds before stopping MTP" = "連續幾輪未接受後停止 MTP";
 "Choose 1–5 MTP draft tokens and 1–32 zero-acceptance rounds." = "請選擇 1–5 個 MTP 草稿 token，以及 1–32 輪連續未接受上限。";
-"Use integer slot inputs instead of GiB sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity." = "將專家、MTP 與 DSpark 快取的 GiB 滑桿改為整數 slots 輸入框。切換不會改動已儲存的容量。";
+"Use integer slot inputs instead of percentage sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity." = "將專家、MTP 與 DSpark 快取的百分比滑桿改為整數 slots 輸入框。切換不會改動已儲存的容量。";
 "Enter the number of experts to retain. Applies on next model load." = "輸入要保留的專家數量。下次載入模型時生效。";
 "Number of MTP experts kept in memory. More slots use more memory. The default is 32." = "保留在記憶體中的 MTP expert 數量。較多 slot 會使用較多記憶體。預設值為 32。";
 "MTP slots must be at least 10." = "MTP slot 必須至少為 10。";
@@ -671,3 +671,10 @@
 "Expert bytes are logical payload, not SSD traffic. Wait counts consumer blocking, not total I/O service time. Asynchronous work may cross the first-token boundary." = "專家資料量是邏輯資料量，不是 SSD 實體流量。等待時間只計算消費端阻塞，不是總 I/O 服務時間。非同步工作可能跨越第一個 token 的時間分界。";
 "Configuration hash" = "設定雜湊";
 "Source files hash" = "來源檔案雜湊";
+"Experts in memory" = "常駐記憶體的專家";
+"MTP experts in memory" = "常駐記憶體的 MTP 專家";
+"DSpark experts in memory" = "常駐記憶體的 DSpark 專家";
+"≈ %@ GiB · %@ slots · Estimated total (64K) %@ GiB / This Mac %@ GiB" = "≈ %@ GiB · %@ slots · 預估總記憶體（64K）%@ GiB / 本機 %@ GiB";
+"The estimated total exceeds this Mac's memory. macOS may swap and slow down; lower the percentage." = "預估總記憶體超過這台 Mac 的記憶體，macOS 可能改用 swap 而變慢，請調低百分比。";
+"100% keeps every routed expert of this model in memory. The slider stops at this Mac's physical memory, which is not a safe allocation limit." = "100% 代表把這個模型的所有專家都放進記憶體。滑桿上限是這台 Mac 的實體記憶體，不代表可以安全全數使用。";
+"Share of this model's routed experts kept in memory; the rest stream from the SSD. Excludes common weights and temporary buffers. Default: about %@. More memory means fewer SSD reads, but the speed gain shrinks. Applies on next load." = "這個模型的專家有多少比例放在記憶體，其餘從 SSD 串流讀取。不含常駐權重與暫存。預設約 %@。放越多，讀 SSD 越少，但加速效果會越來越小。下次載入模型時生效。";

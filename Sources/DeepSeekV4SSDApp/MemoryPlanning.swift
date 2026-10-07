@@ -50,6 +50,69 @@ enum ExpertMemory {
   static func legacyGiB(slots: Int, blobBytes: UInt64) -> Double {
     Double(slots) * Double(blobBytes) / gib
   }
+
+  // Percent controls: share of one cache's routed experts kept in memory.
+  static let percentStep = 0.5
+
+  /// Every routed expert the cache could hold; the manifest is authoritative.
+  static func totalExperts(for control: ExpertCacheControl, kind: ModelKind,
+                           manifest: InstalledManifest?) -> Int {
+    let perLayer = manifest?.expertCount ?? fallbackExpertsPerLayer(kind)
+    let layers: Int = switch control {
+    case .expert: manifest?.layerCount ?? fallbackLayers(kind)
+    case .mtp: manifest?.mtp?.layerCount ?? 1
+    case .dspark: manifest?.dspark?.layerCount ?? 3
+    }
+    return max(1, perLayer * layers)
+  }
+
+  private static func fallbackExpertsPerLayer(_ kind: ModelKind) -> Int {
+    switch kind {
+    case .deepSeekV41: 384
+    case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 512
+    default: 256
+    }
+  }
+
+  private static func fallbackLayers(_ kind: ModelKind) -> Int {
+    switch kind {
+    case .deepSeekV4: 43
+    case .deepSeekV41: 40
+    case .mimoV26FlashRL: 47
+    case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 48
+    default: 1
+    }
+  }
+
+  static func percent(slots: Int, totalExperts: Int) -> Double {
+    Double(slots) / Double(max(1, totalExperts)) * 100
+  }
+
+  static func slots(percent: Double, totalExperts: Int) -> Int {
+    Int((percent / 100 * Double(totalExperts)).rounded())
+  }
+
+  /// Lowest step that keeps the minimum experts; highest step within 100% and RAM.
+  static func percentRange(totalExperts: Int, blobBytes: UInt64, physicalMemory: UInt64,
+                           minimum: Int) -> ClosedRange<Double> {
+    let total = Double(max(1, totalExperts))
+    let lower = max(percentStep, (Double(minimum) / total * 100 / percentStep).rounded(.up) * percentStep)
+    let fitting = blobBytes > 0 ? Double(physicalMemory / blobBytes) / total * 100 : 100
+    let upper = (min(100, fitting) / percentStep).rounded(.down) * percentStep
+    return lower...max(lower, upper)
+  }
+
+  static func snapped(_ value: Double, step: Double, in range: ClosedRange<Double>) -> Double {
+    guard value.isFinite else { return range.lowerBound }
+    // Divide by an integral scale so 0.1 steps stay exact decimals (7.6, not 7.6000000000000005).
+    let scale = (1 / step).rounded()
+    return min(range.upperBound, max(range.lowerBound, (value * scale).rounded() / scale))
+  }
+
+  /// A GiB budget that floors back to exactly this many slots.
+  static func exactGiB(slots: Int, blobBytes: UInt64) -> Double {
+    (Double(slots) * Double(blobBytes) + Double(blobBytes) / 2) / gib
+  }
 }
 
 /// Planning arithmetic only: no model loading, GPU allocations, or measured claims.

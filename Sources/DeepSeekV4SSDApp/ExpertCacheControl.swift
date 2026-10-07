@@ -12,6 +12,14 @@ enum ExpertCacheControl: CaseIterable {
     }
   }
 
+  var percentTitle: String {
+    switch self {
+    case .expert: "Experts in memory"
+    case .mtp: "MTP experts in memory"
+    case .dspark: "DSpark experts in memory"
+    }
+  }
+
   var slotsTitle: String {
     switch self {
     case .expert: "Slots"
@@ -49,6 +57,15 @@ enum ExpertCacheControl: CaseIterable {
     }
     // Slot counts must not be overridden by an older GiB budget.
     settings[keyPath: budgetKey] = nil
+  }
+
+  /// Store the slot count and a GiB budget that resolves to it; the backend keeps GiB.
+  func setPercent(_ value: Double, in settings: inout ModelAdvancedSettings,
+                  blobBytes: UInt64, totalExperts: Int, range: ClosedRange<Double>) {
+    let percent = ExpertMemory.snapped(value, step: ExpertMemory.percentStep, in: range)
+    let count = ExpertMemory.slots(percent: percent, totalExperts: totalExperts)
+    setSlots(count, in: &settings)
+    settings[keyPath: budgetKey] = ExpertMemory.exactGiB(slots: count, blobBytes: blobBytes)
   }
 
   func setGiB(_ value: Double, in settings: inout ModelAdvancedSettings,

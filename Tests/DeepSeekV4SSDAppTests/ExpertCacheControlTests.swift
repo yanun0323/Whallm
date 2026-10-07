@@ -89,6 +89,53 @@ final class ExpertCacheControlTests: XCTestCase {
     }
   }
 
+  func testPercentTotalsAndDefaultsPerModel() {
+    XCTAssertEqual(ExpertMemory.totalExperts(for: .expert, kind: .swift1_5Qwen3_8FlashNext, manifest: nil), 24_576)
+    XCTAssertEqual(ExpertMemory.totalExperts(for: .expert, kind: .deepSeekV4, manifest: nil), 11_008)
+    XCTAssertEqual(ExpertMemory.totalExperts(for: .expert, kind: .deepSeekV41, manifest: nil), 15_360)
+    XCTAssertEqual(ExpertMemory.totalExperts(for: .mtp, kind: .qwen3_8FlashNext, manifest: nil), 512)
+    XCTAssertEqual(ExpertMemory.totalExperts(for: .dspark, kind: .deepSeekV4, manifest: nil), 768)
+    // The 7.5 GiB Qwen default is 3084 of 24576 experts.
+    let kind = ModelKind.swift1_5Qwen3_8FlashNext
+    let blob = ExpertMemory.blobBytes(for: kind)
+    let slots = ExpertCacheControl.expert.slots(in: .defaults(for: kind), blobBytes: blob)
+    XCTAssertEqual(slots, 3_084)
+    XCTAssertEqual(ExpertMemory.percent(slots: slots, totalExperts: 24_576), 12.55, accuracy: 0.01)
+  }
+
+  func testPercentRangeKeepsTheMinimumAndThisMacsMemory() {
+    let blob = ExpertMemory.blobBytes(for: .qwen3_8FlashNext)
+    let gib: UInt64 = 1_073_741_824
+    XCTAssertEqual(ExpertMemory.percentRange(totalExperts: 24_576, blobBytes: blob,
+      physicalMemory: 128 * gib, minimum: 10), 0.5...100)
+    let small = ExpertMemory.percentRange(totalExperts: 24_576, blobBytes: blob, physicalMemory: 16 * gib, minimum: 10)
+    XCTAssertEqual(small.upperBound, 26.5) // 6579 slots fit in 16 GiB: 26.77% rounded down to 0.5
+    XCTAssertEqual(ExpertMemory.percentRange(totalExperts: 512, blobBytes: blob,
+      physicalMemory: 64 * gib, minimum: 10).lowerBound, 2) // 10 of 512 is 1.95%
+    XCTAssertEqual(CacheBudgetSlider.adjusted(12.5, by: 0.5, in: 0.5...100, step: 0.5), 13)
+    XCTAssertEqual(CacheBudgetSlider.adjusted(100, by: 0.5, in: 0.5...100, step: 0.5), 100)
+  }
+
+  func testPercentStoresAGiBBudgetThatResolvesToTheSameSlots() throws {
+    let blob = ExpertMemory.blobBytes(for: .qwen3_8FlashNext)
+    let range = 0.5...100.0
+    for control in ExpertCacheControl.allCases {
+      for (percent, total) in [(12.5, 24_576), (0.5, 24_576), (100, 24_576), (8, 512), (33.3, 15_360)] {
+        var settings = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+        control.setPercent(percent, in: &settings, blobBytes: blob, totalExperts: total, range: range)
+        let snapped = ExpertMemory.snapped(percent, step: ExpertMemory.percentStep, in: range)
+        let expected = ExpertMemory.slots(percent: snapped, totalExperts: total)
+        XCTAssertEqual(control.legacySlots(in: settings), expected)
+        let budget = try XCTUnwrap(settings[keyPath: control.budgetKey])
+        // The catalog floors this budget to whole experts, as the runtime does.
+        XCTAssertEqual(try ExpertMemory.bytes(gib: budget) / blob, UInt64(expected))
+        XCTAssertEqual(control.slots(in: settings, blobBytes: blob), expected)
+        let decoded = try JSONDecoder().decode(ModelAdvancedSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(control.slots(in: decoded, blobBytes: blob), expected)
+      }
+    }
+  }
+
   func testPreferenceIsOffByDefaultPersistsAndDoesNotChangeModelSettings() throws {
     let name = "ExpertCacheControlTests.\(UUID().uuidString)"
     let store = try XCTUnwrap(UserDefaults(suiteName: name))
@@ -107,7 +154,7 @@ final class ExpertCacheControlTests: XCTestCase {
   func testPreferenceCopyIsLocalized() {
     for language in [AppLanguage.traditionalChinese, .simplifiedChinese] {
       for key in ["Edit expert caches in slots",
-                  "Use integer slot inputs instead of GiB sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity.",
+                  "Use integer slot inputs instead of percentage sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity.",
                   "Enter the number of experts to retain. Applies on next model load."] {
         XCTAssertNotEqual(L10n.string(key, language: language), key)
       }

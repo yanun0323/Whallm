@@ -278,7 +278,7 @@
 "MTP draft tokens" = "MTP 草稿 token 数";
 "Zero-acceptance rounds before stopping MTP" = "连续几轮未接受后停止 MTP";
 "Choose 1–5 MTP draft tokens and 1–32 zero-acceptance rounds." = "请选择 1–5 个 MTP 草稿 token，以及 1–32 轮连续未接受上限。";
-"Use integer slot inputs instead of GiB sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity." = "将专家、MTP 和 DSpark 缓存的 GiB 滑块改为整数 slots 输入框。切换不会改动已保存的容量。";
+"Use integer slot inputs instead of percentage sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity." = "将专家、MTP 和 DSpark 缓存的百分比滑块改为整数 slots 输入框。切换不会改动已保存的容量。";
 "Enter the number of experts to retain. Applies on next model load." = "输入要保留的专家数量。下次加载模型时生效。";
 "Number of MTP experts kept in memory. More slots use more memory. The default is 32." = "保留在内存中的 MTP 专家数量。更多槽位会使用更多内存。默认值为 32。";
 "MTP slots must be at least 10." = "MTP 槽位必须至少为 10。";
@@ -671,3 +671,10 @@
 "Expert bytes are logical payload, not SSD traffic. Wait counts consumer blocking, not total I/O service time. Asynchronous work may cross the first-token boundary." = "专家数据量是逻辑数据量，不是 SSD 实体流量。等待时间只计算消费端阻塞，不是总 I/O 服务时间。异步工作可能跨越第一个 token 的时间分界。";
 "Configuration hash" = "设置哈希";
 "Source files hash" = "源文件哈希";
+"Experts in memory" = "常驻内存的专家";
+"MTP experts in memory" = "常驻内存的 MTP 专家";
+"DSpark experts in memory" = "常驻内存的 DSpark 专家";
+"≈ %@ GiB · %@ slots · Estimated total (64K) %@ GiB / This Mac %@ GiB" = "≈ %@ GiB · %@ slots · 预估总内存（64K）%@ GiB / 本机 %@ GiB";
+"The estimated total exceeds this Mac's memory. macOS may swap and slow down; lower the percentage." = "预估总内存超过这台 Mac 的内存，macOS 可能改用 swap 而变慢，请调低百分比。";
+"100% keeps every routed expert of this model in memory. The slider stops at this Mac's physical memory, which is not a safe allocation limit." = "100% 代表把这个模型的所有专家都放进内存。滑块上限是这台 Mac 的物理内存，不代表可以安全全部使用。";
+"Share of this model's routed experts kept in memory; the rest stream from the SSD. Excludes common weights and temporary buffers. Default: about %@. More memory means fewer SSD reads, but the speed gain shrinks. Applies on next load." = "这个模型的专家有多少比例放在内存，其余从 SSD 流式读取。不含常驻权重与暂存。默认约 %@。放得越多，读 SSD 越少，但加速效果会越来越小。下次加载模型时生效。";

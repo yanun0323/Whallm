@@ -1655,7 +1655,7 @@ private struct AdvancedView: View {
 }
 
 struct ModelAdvancedView: View {
-  @AppStorage(ExpertCacheControl.slotsPreferenceKey) private var editCachesInSlots = true
+  @AppStorage(ExpertCacheControl.slotsPreferenceKey) private var editCachesInSlots = false
   @Binding var settings: ModelAdvancedSettings
   @Binding var alias: String
   let aliasError: String?
@@ -2116,31 +2116,53 @@ struct ModelAdvancedView: View {
     let capacityText = capacity.map { L10n.string("Capacity: %lld experts", language: language, Int64($0)) }
       ?? L10n.string("Expert cache memory is too small or invalid.", language: language)
     if !editCachesInSlots {
-      let range = ExpertMemory.sliderRange(physicalMemory: ProcessInfo.processInfo.physicalMemory)
+      let physicalMemory = ProcessInfo.processInfo.physicalMemory
+      let total = ExpertMemory.totalExperts(for: control, kind: modelKind, manifest: memoryProfile?.manifest)
+      let range = ExpertMemory.percentRange(totalExperts: total, blobBytes: blobBytes,
+        physicalMemory: physicalMemory, minimum: minimum)
+      let slots = control.slots(in: settings, blobBytes: blobBytes)
+      let percent = ExpertMemory.percent(slots: slots, totalExperts: total)
+      let percentText = String(format: "%.1f%%", locale: language.locale, percent)
+      let estimate = memoryProfile?.estimate(settings, mtpAvailable: mtpAvailable,
+        dsparkAvailable: dsparkAvailable, contextTokens: 65_536)
+      let exceeds = estimate.map { $0.total > Double(physicalMemory) } ?? false
+      let summary = L10n.string("≈ %@ GiB · %@ slots · Estimated total (64K) %@ GiB / This Mac %@ GiB",
+        language: language,
+        String(format: "%.1f", locale: language.locale, ExpertMemory.legacyGiB(slots: slots, blobBytes: blobBytes)),
+        slots.formatted(.number.locale(language.locale)),
+        estimate.map { String(format: "%.1f", locale: language.locale, $0.total / ExpertMemory.gib) } ?? "—",
+        String(format: "%.0f", locale: language.locale, Double(physicalMemory) / ExpertMemory.gib))
       VStack(alignment: .leading, spacing: 14) {
         HStack(alignment: .firstTextBaseline) {
-          SettingLabel(label,
-            hint: impactHint(label, "Expert blob capacity only; excludes common weights and temporary buffers. Rounded down to whole experts. Applies on next model load."),
-            language: language)
+          SettingLabel(control.percentTitle, hint: percentHint(control, total: total), language: language)
           Spacer()
-          Text(String(format: "%.1f GiB", locale: language.locale, value))
+          Text(percentText)
             .font(.body.weight(.semibold).monospacedDigit())
             .fixedSize()
         }
         VStack(spacing: 6) {
           CacheBudgetSlider(value: Binding(
-            get: { ExpertMemory.sliderValue(value, in: range) },
-            set: { control.setGiB($0, in: &settings, blobBytes: blobBytes, range: range) }
-          ), range: range)
-          .accessibilityLabel(L10n.string(label, language: language))
-          .accessibilityValue(String(format: "%.1f GiB", locale: language.locale, value))
-          .accessibilityHint(capacityText)
-          Text(capacityText)
-            .font(.caption)
-            .foregroundStyle(capacity == nil ? .red : .secondary)
+            get: { ExpertMemory.snapped(percent, step: ExpertMemory.percentStep, in: range) },
+            set: { control.setPercent($0, in: &settings, blobBytes: blobBytes, totalExperts: total, range: range) }
+          ), range: range, step: ExpertMemory.percentStep)
+          .accessibilityLabel(L10n.string(control.percentTitle, language: language))
+          .accessibilityValue(percentText)
+          .accessibilityHint(summary)
+          .accessibilityIdentifier("expert-cache-percent-\(control)")
+          Text(capacity == nil ? capacityText : summary)
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(capacity == nil ? .red : exceeds ? .orange : .secondary)
             .frame(maxWidth: .infinity, alignment: .trailing)
-          Text(L10n.string("The maximum is this Mac's physical memory, not a safe allocation limit. Leave room for the system and other model memory.", language: language))
+          if exceeds {
+            Label(L10n.string("The estimated total exceeds this Mac's memory. macOS may swap and slow down; lower the percentage.", language: language),
+              systemImage: "exclamationmark.triangle.fill")
+              .font(.caption).foregroundStyle(.orange)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          Text(L10n.string("100% keeps every routed expert of this model in memory. The slider stops at this Mac's physical memory, which is not a safe allocation limit.", language: language))
             .font(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
@@ -2167,6 +2189,13 @@ struct ModelAdvancedView: View {
         }
       }
     }
+  }
+
+  private func percentHint(_ control: ExpertCacheControl, total: Int) -> String {
+    let defaultSlots = control.slots(in: .defaults(for: modelKind), blobBytes: blobBytes)
+    let value = String(format: "%.1f%%", locale: language.locale,
+      ExpertMemory.percent(slots: defaultSlots, totalExperts: total))
+    return L10n.string("Share of this model's routed experts kept in memory; the rest stream from the SSD. Excludes common weights and temporary buffers. Default: about %@. More memory means fewer SSD reads, but the speed gain shrinks. Applies on next load.", language: language, value)
   }
 
   private var memoryOverview: some View {
@@ -2367,7 +2396,7 @@ private struct LogsView: View {
 }
 
 struct SettingsView: View {
-  @AppStorage(ExpertCacheControl.slotsPreferenceKey) private var editCachesInSlots = true
+  @AppStorage(ExpertCacheControl.slotsPreferenceKey) private var editCachesInSlots = false
   @Binding var languageCode: String
   let language: AppLanguage
   @ObservedObject var appUpdater: AppUpdater
@@ -2395,7 +2424,7 @@ struct SettingsView: View {
           }
           Divider()
           SettingRow("Edit expert caches in slots",
-            hint: "Use integer slot inputs instead of GiB sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity.",
+            hint: "Use integer slot inputs instead of percentage sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity.",
             language: language
           ) {
             Toggle(L10n.string("Edit expert caches in slots", language: language), isOn: $editCachesInSlots)

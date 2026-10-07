@@ -278,7 +278,7 @@
 "MTP draft tokens" = "MTP draft tokens";
 "Zero-acceptance rounds before stopping MTP" = "Zero-acceptance rounds before stopping MTP";
 "Choose 1–5 MTP draft tokens and 1–32 zero-acceptance rounds." = "Choose 1–5 MTP draft tokens and 1–32 zero-acceptance rounds.";
-"Use integer slot inputs instead of GiB sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity." = "Use integer slot inputs instead of GiB sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity.";
+"Use integer slot inputs instead of percentage sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity." = "Use integer slot inputs instead of percentage sliders for expert, MTP, and DSpark caches. Switching does not change saved capacity.";
 "Enter the number of experts to retain. Applies on next model load." = "Enter the number of experts to retain. Applies on next model load.";
 "Number of MTP experts kept in memory. More slots use more memory. The default is 32." = "Number of MTP experts kept in memory. More slots use more memory. The default is 32.";
 "MTP slots must be at least 10." = "MTP slots must be at least 10.";
@@ -671,3 +671,10 @@
 "Expert bytes are logical payload, not SSD traffic. Wait counts consumer blocking, not total I/O service time. Asynchronous work may cross the first-token boundary." = "Expert bytes are logical payload, not SSD traffic. Wait counts consumer blocking, not total I/O service time. Asynchronous work may cross the first-token boundary.";
 "Configuration hash" = "Configuration hash";
 "Source files hash" = "Source files hash";
+"Experts in memory" = "Experts in memory";
+"MTP experts in memory" = "MTP experts in memory";
+"DSpark experts in memory" = "DSpark experts in memory";
+"≈ %@ GiB · %@ slots · Estimated total (64K) %@ GiB / This Mac %@ GiB" = "≈ %@ GiB · %@ slots · Estimated total (64K) %@ GiB / This Mac %@ GiB";
+"The estimated total exceeds this Mac's memory. macOS may swap and slow down; lower the percentage." = "The estimated total exceeds this Mac's memory. macOS may swap and slow down; lower the percentage.";
+"100% keeps every routed expert of this model in memory. The slider stops at this Mac's physical memory, which is not a safe allocation limit." = "100% keeps every routed expert of this model in memory. The slider stops at this Mac's physical memory, which is not a safe allocation limit.";
+"Share of this model's routed experts kept in memory; the rest stream from the SSD. Excludes common weights and temporary buffers. Default: about %@. More memory means fewer SSD reads, but the speed gain shrinks. Applies on next load." = "Share of this model's routed experts kept in memory; the rest stream from the SSD. Excludes common weights and temporary buffers. Default: about %@. More memory means fewer SSD reads, but the speed gain shrinks. Applies on next load.";
