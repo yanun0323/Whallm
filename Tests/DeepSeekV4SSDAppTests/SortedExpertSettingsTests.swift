@@ -70,6 +70,27 @@ final class SortedExpertSettingsTests: XCTestCase {
   }
 
   @MainActor
+  func testMaskedQSAPrefillDefaultsOffAndReachesOnlyQwen() throws {
+    for kind in qwenKinds {
+      var settings = ModelAdvancedSettings.defaults(for: kind)
+      XCTAssertEqual(settings.qwenQSAMaskedPrefill, false)
+      XCTAssertEqual(try object(catalog(settings, kind: kind).models[0].runtime)["qwen_qsa_masked_prefill"] as? Bool, false)
+      settings.qwenQSAMaskedPrefill = true
+      XCTAssertEqual(try object(catalog(settings, kind: kind).models[0].runtime)["qwen_qsa_masked_prefill"] as? Bool, true)
+      var legacy = try object(settings)
+      legacy.removeValue(forKey: "qwenQSAMaskedPrefill")
+      let old = try JSONDecoder().decode(ModelAdvancedSettings.self,
+        from: JSONSerialization.data(withJSONObject: legacy)).normalized(for: kind)
+      XCTAssertEqual(old.qwenQSAMaskedPrefill, false)
+    }
+    var enabled = ModelAdvancedSettings.defaults(for: .swift1_5Qwen3_8FlashNext)
+    enabled.qwenQSAMaskedPrefill = true
+    for kind in [ModelKind.deepSeekV4, .deepSeekV41, .mimoV26FlashRL] {
+      XCTAssertEqual(enabled.normalized(for: kind).qwenQSAMaskedPrefill, false)
+    }
+  }
+
+  @MainActor
   func testLegacyCatalogEmitsFalse() throws {
     let kind = ModelKind.qwen3_8FlashNext
     var raw = try object(catalog(.defaults(for: kind), kind: kind).models[0].runtime)

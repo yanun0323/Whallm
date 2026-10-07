@@ -373,6 +373,10 @@ class PLELayer(nn.Module):
         return value + nn.silu(self.conv1d(convolution_input))
 
 
+# Below this many queries the per-query gather reads fewer bytes than full KV.
+MASKED_PREFILL_MIN_QUERIES = 16
+
+
 def qsa_causal_block_mask(
     query_positions: np.ndarray,
     block_count: int,
@@ -452,6 +456,7 @@ class QSAAttention(nn.Module):
         self.dense_within_budget = False
         self.dense_threshold = 0
         self.skip_complete_gather = False
+        self.masked_prefill = False
         self.q_proj = nn.Linear(
             args.hidden_size,
             args.num_attention_heads * args.head_dim * 2,
@@ -535,6 +540,10 @@ class QSAAttention(nn.Module):
             # per query or build unused index pools. Raw index cache was updated
             # by __call__, so crossing the sparse threshold remains valid.
             return dense_causal_attention(query, key, value, offset)
+        masked = self.masked_prefill and query.shape[2] >= MASKED_PREFILL_MIN_QUERIES
+        if masked and key.shape[2] <= self.args.indexer_budget:
+            from .qwen_tensor_ops import dense_causal_attention
+            return dense_causal_attention(query, key, value, offset)
         ratio = self.args.indexer_compress_ratio
         blocks = raw_index_keys.shape[1] // ratio
         def pool_rows(raw, first_block):
@@ -553,6 +562,8 @@ class QSAAttention(nn.Module):
             pooled = index_cache.pooled(raw_index_keys, ratio, pool_rows)
         else:
             pooled = pool_rows(raw_index_keys[:, :blocks * ratio], 0)
+        if masked:
+            return self._masked_attention(query, key, value, index_query, pooled, offset)
         outputs = []
         from .qwen_qsa_schedule import query_chunk_size
         # Keep the legacy scheduling cost when the option is unchanged.
@@ -662,6 +673,48 @@ class QSAAttention(nn.Module):
                 self.args.head_dim,
             )
             outputs.append(current.transpose(1, 0, 2)[None])
+        return mx.concatenate(outputs, axis=2)
+
+    def _masked_attention(self, query, key, value, index_query, pooled, offset):
+        """Fused SDPA over the full KV with a mask of exactly the selected keys.
+
+        The indexer, top-k blocks, complete-block limit and causal tail are the
+        same as the gathered path, so each query sees the same key set. Only the
+        reduction differs: FP32 softmax without BF16 probability rounding. Opt-in.
+        """
+        ratio = self.args.indexer_compress_ratio
+        blocks = pooled.shape[1]
+        key_length = key.shape[2]
+        count = min(self.args.indexer_budget // ratio, blocks)
+        positions = mx.arange(key_length)
+        # Bound the boolean mask and SDPA scores near 64 MiB per chunk.
+        chunk = max(MASKED_PREFILL_MIN_QUERIES, (64 << 20) // (key_length * 4))
+        outputs = []
+        for start in range(0, query.shape[2], chunk):
+            end = min(start + chunk, query.shape[2])
+            absolute = mx.arange(start, end) + offset
+            scores = (
+                index_query[:, start:end].astype(mx.float32)
+                @ pooled.swapaxes(-1, -2).astype(mx.float32)
+            )
+            scores = mx.maximum(scores, 0).sum(axis=2)[0]
+            visible = mx.arange(blocks)[None] * ratio + ratio - 1 <= absolute[:, None]
+            scores = mx.where(visible, scores, mx.finfo(scores.dtype).min)
+            chosen = mx.argpartition(-scores, kth=count - 1, axis=-1)[..., :count]
+            block_mask = mx.put_along_axis(
+                mx.zeros((end - start, blocks), dtype=mx.bool_), chosen,
+                mx.array(True), axis=-1)
+            key_mask = mx.repeat(block_mask, ratio, axis=-1)
+            if key_mask.shape[1] < key_length:
+                key_mask = mx.concatenate([key_mask, mx.zeros(
+                    (end - start, key_length - key_mask.shape[1]), dtype=mx.bool_)], axis=-1)
+            complete_length = ((absolute + 1) // ratio) * ratio
+            inside = positions[None] < complete_length[:, None]
+            causal = positions[None] <= absolute[:, None]
+            mask = (key_mask & inside) | (~inside & causal)
+            outputs.append(mx.fast.scaled_dot_product_attention(
+                query[:, :, start:end], key, value,
+                scale=self.args.head_dim**-0.5, mask=mask[None, None]))
         return mx.concatenate(outputs, axis=2)
 
 
@@ -1186,6 +1239,19 @@ class MTPModel(nn.Module):
         return sanitized
 
 
+# Draft pairs left behind by plain decode are appended in one whole-layer read
+# when there are enough of them; fewer use the bounded slot-sized chunks.
+MTP_LAYER_MAJOR_CATCH_UP = 64
+
+
+@dataclass
+class MTPPromptState:
+    """Draft cache and boundary hidden that continue a cached MTP prefix."""
+    tokens: list[int]
+    cache: Any
+    hidden: mx.array
+
+
 def generate_mtp_tokens(
     prompt: list[int],
     main_model: Model,
@@ -1203,6 +1269,11 @@ def generate_mtp_tokens(
     record_round: Callable[[int, int, float, float, float, bool], None] | None = None,
     draft_tokens: int = 5,
     zero_acceptance_limit: int = 1,
+    cached_tokens: int = 0,
+    mtp_cache=None,
+    boundary_hidden: mx.array | None = None,
+    on_prompt_end: Callable[[MTPPromptState], None] | None = None,
+    state: dict | None = None,
 ) -> Iterator[tuple[int, bool]]:
     """Yield tokens from exact target-distribution MTP verification.
 
@@ -1249,19 +1320,6 @@ def generate_mtp_tokens(
     mtp_prefill_step = (
         max(1, cache_slots // selected_experts)
         if cache_slots and selected_experts
-# Draft pairs left behind by plain decode are appended in one whole-layer read
-# when there are enough of them; fewer use the bounded slot-sized chunks.
-MTP_LAYER_MAJOR_CATCH_UP = 64
-
-
-@dataclass
-class MTPPromptState:
-    """Draft cache and boundary hidden that continue a cached MTP prefix."""
-    tokens: list[int]
-    cache: Any
-    hidden: mx.array
-
-
         else prefill_step_size
     )
 
@@ -1279,11 +1337,6 @@ class MTPPromptState:
     def prefill_mtp(paired_hidden: mx.array, paired_tokens: mx.array) -> None:
         for start in range(0, paired_tokens.shape[1], mtp_prefill_step):
             check_cancelled()
-    cached_tokens: int = 0,
-    mtp_cache=None,
-    boundary_hidden: mx.array | None = None,
-    on_prompt_end: Callable[[MTPPromptState], None] | None = None,
-    state: dict | None = None,
             end = min(start + mtp_prefill_step, paired_tokens.shape[1])
             advance_mtp(paired_hidden[:, start:end], paired_tokens[:, start:end])
 
@@ -1351,6 +1404,27 @@ class MTPPromptState:
     final_logprobs = adjusted_logprobs(final_logits[:, -1], sampling_tokens)
     anchor = _sample(final_logprobs, temperature)
     predecessor_hidden = final_hidden[:, -1:]
+    # Tokens in the target cache, and (hidden, token) draft pairs the target
+    # consumed without MTP; finish() appends those pairs before a snapshot.
+    committed = list(prompt)
+    pending: list[tuple[mx.array, int]] = []
+
+    def snapshot() -> MTPPromptState:
+        if pending:
+            hidden = mx.concatenate([item[0] for item in pending], axis=1)
+            tokens = mx.array([[item[1] for item in pending]], dtype=mx.int32)
+            pending.clear()
+            if tokens.shape[1] >= MTP_LAYER_MAJOR_CATCH_UP:
+                prefill_mtp_layer_major(hidden, tokens)
+            else:
+                prefill_mtp(hidden, tokens)
+        return MTPPromptState(list(committed), mtp_cache, predecessor_hidden)
+
+    if state is not None:
+        state["finish"] = snapshot
+    if on_prompt_end is not None:
+        mx.eval(predecessor_hidden)
+        on_prompt_end(MTPPromptState(list(committed), mtp_cache, predecessor_hidden))
     yield anchor, False
     sampling_tokens.append(anchor)
     generated = 1
@@ -1359,6 +1433,8 @@ class MTPPromptState:
         check_cancelled()
         remaining = max_tokens - generated
         if remaining == 1:
+            pending.append((predecessor_hidden, anchor))
+            committed.append(anchor)
             logits, predecessor_hidden = main_model.forward_with_hidden(
                 mx.array([[anchor]], dtype=mx.int32),
                 target_cache,
@@ -1404,27 +1480,6 @@ class MTPPromptState:
         verified_ids = mx.array([[anchor, *draft_tokens]], dtype=mx.int32)
         layer_inputs = [] if rewind else None
         verified_logits, verified_hidden = (
-    # Tokens in the target cache, and (hidden, token) draft pairs the target
-    # consumed without MTP; finish() appends those pairs before a snapshot.
-    committed = list(prompt)
-    pending: list[tuple[mx.array, int]] = []
-
-    def snapshot() -> MTPPromptState:
-        if pending:
-            hidden = mx.concatenate([item[0] for item in pending], axis=1)
-            tokens = mx.array([[item[1] for item in pending]], dtype=mx.int32)
-            pending.clear()
-            if tokens.shape[1] >= MTP_LAYER_MAJOR_CATCH_UP:
-                prefill_mtp_layer_major(hidden, tokens)
-            else:
-                prefill_mtp(hidden, tokens)
-        return MTPPromptState(list(committed), mtp_cache, predecessor_hidden)
-
-    if state is not None:
-        state["finish"] = snapshot
-    if on_prompt_end is not None:
-        mx.eval(predecessor_hidden)
-        on_prompt_end(MTPPromptState(list(committed), mtp_cache, predecessor_hidden))
             main_model.forward_with_hidden(verified_ids, verified_cache, layer_inputs)
             if rewind
             else main_model.forward_with_hidden(verified_ids, verified_cache)
@@ -1433,8 +1488,6 @@ class MTPPromptState:
         target_logprobs = mx.stack(
             [
                 adjusted_logprobs(
-            pending.append((predecessor_hidden, anchor))
-            committed.append(anchor)
                     verified_logits[:, index],
                     sampling_tokens + draft_tokens[:index],
                 )
@@ -1450,6 +1503,7 @@ class MTPPromptState:
         )
         accepted, next_token, _ = _verify(draft, target_logprobs, temperature)
         verification_seconds = time.perf_counter() - verification_started
+        committed.extend([anchor, *draft_tokens[:accepted]])
         replay_seconds = 0.0
 
         if accepted == len(draft_tokens):
@@ -1503,13 +1557,14 @@ class MTPPromptState:
         yield anchor, False
         sampling_tokens.append(anchor)
         generated += 1
-        committed.extend([anchor, *draft_tokens[:accepted]])
 
         if fallback:
             # Default remains one zero-acceptance round. A higher opt-in
             # threshold permits retries, without changing rejection sampling.
             while generated < max_tokens:
                 check_cancelled()
+                pending.append((predecessor_hidden, anchor))
+                committed.append(anchor)
                 logits, predecessor_hidden = main_model.forward_with_hidden(
                     mx.array([[anchor]], dtype=mx.int32),
                     target_cache,
@@ -1563,8 +1618,6 @@ def load(
             "ngram_embedding.weight_scale"
         )
         if scale_name not in weights or weights[scale_name].shape != (1,):
-                pending.append((predecessor_hidden, anchor))
-                committed.append(anchor)
             raise ValueError("Qwen common tensors have no valid N-gram weight scale")
         weight_scale = float(weights[scale_name].astype(mx.float32).item())
         ngram_store = NGramStore(
@@ -1599,6 +1652,7 @@ def load(
                 attention.dense_within_budget = getattr(config, "qwen_qsa_dense_within_budget", False)
                 attention.dense_threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
                 attention.skip_complete_gather = getattr(config, "qwen_qsa_skip_complete_gather", True)
+                attention.masked_prefill = getattr(config, "qwen_qsa_masked_prefill", False)
         model.eval()
         model.load_weights(list(model.sanitize(weights).items()), strict=True)
         model.dspark = None

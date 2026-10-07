@@ -407,6 +407,7 @@ final class ModelLibrary: ObservableObject {
           qwenQSASkipCompleteGather: settings.qwenQSASkipCompleteGather ?? true,
           qwenPackedGDNPrefill: modelKind == .swift1_5Qwen3_8FlashNext && settings.effectiveQwenPackedGDNPrefill,
           qwenSortedExpertPrefill: modelKind.usesQwenEngine && settings.effectiveQwenSortedExpertPrefill,
+          qwenQSAMaskedPrefill: modelKind.usesQwenEngine && settings.qwenQSAMaskedPrefill == true,
           qwenQSAIndexed: settings.qwenSparseSDPA == true && settings.qwenQSAIndexed == true,
             qwenPrefillReadExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillReadExperts ?? 1 : 1,
             qwenPrefillSeedExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillSeedExperts ?? 0 : 0,

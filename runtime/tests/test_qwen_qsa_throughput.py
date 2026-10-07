@@ -120,6 +120,46 @@ class IndexedQSATests(unittest.TestCase):
                             for branch in other.caches:branch.trim(3)
                         close(attn(hidden[:,25:28],restored),expected,tol)
 
+    def test_masked_prefill_keeps_the_selected_key_set(self):
+        args = tiny_args(indexer_budget=16)
+        attn = QSAAttention(args)
+        mx.random.seed(1007)
+        for key_length, queries in ((40, 16), (64, 33), (64, 64), (16, 16), (40, 15)):
+            offset = key_length - queries
+            # Equal scores weight every selected key alike, so the output is the
+            # mean of the selected values and exposes any change in the key set.
+            for zero_query in (True, False):
+                with self.subTest(key_length=key_length, queries=queries, zero_query=zero_query):
+                    q = mx.random.normal((1, 4, queries, 32))
+                    if zero_query:
+                        q = mx.zeros_like(q)
+                    k = mx.random.normal((1, 2, key_length, 32))
+                    v = mx.random.normal((1, 2, key_length, 32))
+                    iq = mx.random.normal((1, queries, 2, 32))
+                    raw = mx.random.normal((1, key_length, 32))
+                    attn.masked_prefill = False
+                    expected = attn._bounded_attention(q, k, v, iq, raw, offset)
+                    attn.masked_prefill = True
+                    if queries < 16:
+                        with patch.object(attn, "_masked_attention", side_effect=AssertionError("decode used mask")):
+                            actual = attn._bounded_attention(q, k, v, iq, raw, offset)
+                    else:
+                        actual = attn._bounded_attention(q, k, v, iq, raw, offset)
+                    mx.eval(expected, actual)
+                    np.testing.assert_allclose(np.asarray(actual), np.asarray(expected), rtol=2e-5, atol=2e-5)
+
+    def test_masked_prefill_config_and_cache_contract(self):
+        from deepseek_v4_ssd.generation import _prompt_cache_contract
+        from deepseek_v4_ssd.qwen_flash_config import validate_flash_config
+        from types import SimpleNamespace
+        with self.assertRaises(ValueError):
+            validate_flash_config(SimpleNamespace(qwen_qsa_masked_prefill=1))
+        installed = SimpleNamespace(root="/missing", revision="r", model_id="m")
+        off = _prompt_cache_contract(installed, RuntimeConfig())
+        on = _prompt_cache_contract(installed, RuntimeConfig(qwen_qsa_masked_prefill=True))
+        self.assertNotIn("qwenQSAMaskedPrefill", off)
+        self.assertNotEqual(off, on)
+
     def test_runtime_catalog_legacy_fields_and_qwen_only(self):
         from deepseek_v4_ssd.model_support import get_support
         for kind in ('deepseek-v4','deepseek-v4.1'):

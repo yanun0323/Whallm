@@ -96,6 +96,7 @@ class RuntimeConfig:
     qwen_qsa_dense_within_budget: bool = False
     qwen_qsa_dense_threshold: int = 0
     qwen_qsa_skip_complete_gather: bool = True
+    qwen_qsa_masked_prefill: bool = False
     qwen_packed_gdn_prefill: bool = False
     qwen_sorted_expert_prefill: bool = False
     qwen_mtp_draft_tokens: int = 2
@@ -1070,6 +1071,7 @@ def _load_qwen_mtp(
                 attention.dense_within_budget = getattr(config, "qwen_qsa_dense_within_budget", False)
                 attention.dense_threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
                 attention.skip_complete_gather = getattr(config, "qwen_qsa_skip_complete_gather", True)
+                attention.masked_prefill = getattr(config, "qwen_qsa_masked_prefill", False)
         model.eval()
         mx.eval(model.parameters())
         return model, expert_cache

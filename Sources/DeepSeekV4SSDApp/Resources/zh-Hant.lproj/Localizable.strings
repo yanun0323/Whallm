@@ -616,6 +616,8 @@
 "Use sorted expert prefill" = "使用排序專家 Prefill";
 "Off by default. Groups prompt rows by expert so prefill uses a faster kernel. In tests, 4K and 16K prompts reached the first token about 2× sooner. Output can differ slightly from the default. Requires Prefill acceleration." = "預設關閉。Prefill 時依專家分組排序，改用較快的運算。實測 4K 與 16K 提示詞的首 token 約快 2 倍。輸出可能與預設略有不同。需開啟 Prefill 加速。";
 "Sorted expert prefill is inactive while Prefill acceleration is off or experts per wave is above 0. Its saved choice is retained." = "Prefill 加速關閉，或每波專家數大於 0 時，排序專家 Prefill 暫不生效，已保存的選擇會保留。";
+"Use masked QSA prefill" = "使用遮罩 QSA Prefill";
+"Off by default. Prompt chunks of 16 or more tokens use the same selected keys through one fused attention call instead of a copy per token. In tests, 4K and 16K prompts reached the first token about 1.7× sooner with sorted expert prefill on. Output can differ slightly from the default." = "預設關閉。一次 16 個以上 token 的 Prefill 改用一次融合注意力運算，看同樣被選中的 key，不再為每個 token 複製一份。實測在開啟排序專家 Prefill 時，4K 與 16K 提示詞的首 token 約快 1.7 倍。輸出可能與預設略有不同。";
 "Qwen Flash experiments" = "Qwen Flash 實驗功能";
 "Saved automatically for this model. Changes apply on the next model load. Unload the model before editing." = "設定會依模型自動儲存，並於下次載入模型時生效。修改前請先卸載模型。";
 "Unload this model to edit these settings. Loading and unloading also lock the controls." = "請先卸載此模型再修改設定。載入與卸載過程中也無法修改。";

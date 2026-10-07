@@ -65,6 +65,17 @@ struct QwenFlashSettingsSection: View {
               .padding(.bottom, 8)
           }
           Divider()
+          SettingRow(QwenFlashCopy.maskedQSA, hint: text(QwenFlashCopy.maskedQSAHint), language: language) {
+            Toggle(text(QwenFlashCopy.maskedQSA), isOn: Binding(
+              get: { settings.qwenQSAMaskedPrefill ?? false },
+              set: { settings.qwenQSAMaskedPrefill = $0 }
+            ))
+            .labelsHidden()
+            .accessibilityLabel(text(QwenFlashCopy.maskedQSA))
+            .accessibilityHint(text(QwenFlashCopy.maskedQSAHint))
+            .accessibilityIdentifier("qwen-qsa-masked-prefill")
+          }
+          Divider()
           numberRow(QwenFlashCopy.waves, hint: QwenFlashCopy.wavesHint,
             key: \.qwenExpertWaveSlots, identifier: "qwen-flash-waves")
           if settings.qwenFlashWavesEnabled {

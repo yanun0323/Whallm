@@ -275,6 +275,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var qwenQSASkipCompleteGather: Bool?
   var qwenPackedGDNPrefill: Bool? = false
   var qwenSortedExpertPrefill: Bool? = false
+  var qwenQSAMaskedPrefill: Bool? = false
   var qwenQSAIndexed: Bool? = false
   var qwenPrefillReadExperts: Int? = 1
   var qwenPrefillSeedExperts: Int? = 0
@@ -383,6 +384,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.qwenPackedGDNPrefill = modelKind == .swift1_5Qwen3_8FlashNext
       ? (settings.qwenPackedGDNPrefill ?? false) : false
     settings.qwenSortedExpertPrefill = qwen ? (settings.qwenSortedExpertPrefill ?? false) : false
+    settings.qwenQSAMaskedPrefill = qwen ? (settings.qwenQSAMaskedPrefill ?? false) : false
     settings.qwenQSAIndexed = qwen ? (settings.qwenQSAIndexed ?? false) : false
     settings.qwenPrefillReadExperts = qwen ? qwenPrefillReadExperts ?? 1 : 1
     settings.qwenPrefillSeedExperts = qwen ? qwenPrefillSeedExperts ?? 0 : 0
@@ -789,6 +791,7 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       var qwenQSASkipCompleteGather: Bool? = nil
       var qwenPackedGDNPrefill: Bool? = nil
       var qwenSortedExpertPrefill: Bool? = nil
+      var qwenQSAMaskedPrefill: Bool? = nil
       var qwenQSAIndexed: Bool? = nil
       var qwenPrefillReadExperts: Int? = nil
       var qwenPrefillSeedExperts: Int? = nil
@@ -857,6 +860,7 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         case qwenQSASkipCompleteGather = "qwen_qsa_skip_complete_gather"
         case qwenPackedGDNPrefill = "qwen_packed_gdn_prefill"
         case qwenSortedExpertPrefill = "qwen_sorted_expert_prefill"
+        case qwenQSAMaskedPrefill = "qwen_qsa_masked_prefill"
         case qwenQSAIndexed = "qwen_qsa_indexed"
         case qwenPrefillReadExperts = "qwen_prefill_read_experts"
         case qwenPrefillSeedExperts = "qwen_prefill_seed_experts"
@@ -892,6 +896,7 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         try values.encode(qwenQSASkipCompleteGather ?? true, forKey: .qwenQSASkipCompleteGather)
         try values.encode(qwenPackedGDNPrefill ?? false, forKey: .qwenPackedGDNPrefill)
         try values.encode(qwenSortedExpertPrefill ?? false, forKey: .qwenSortedExpertPrefill)
+        try values.encode(qwenQSAMaskedPrefill ?? false, forKey: .qwenQSAMaskedPrefill)
         try values.encode(qwenQSAIndexed ?? false, forKey: .qwenQSAIndexed)
         try values.encode(qwenPrefillReadExperts ?? 1, forKey: .qwenPrefillReadExperts)
         try values.encode(qwenPrefillSeedExperts ?? 0, forKey: .qwenPrefillSeedExperts)

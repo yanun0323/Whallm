@@ -19,6 +19,7 @@ DEFAULTS = {
     "qwen_qsa_dense_within_budget": False,
     "qwen_qsa_skip_complete_gather": True,
     "qwen_qsa_dense_threshold": 0,
+    "qwen_qsa_masked_prefill": False,
 }
 
 
@@ -63,6 +64,8 @@ def validate_flash_config(config) -> None:
         raise ValueError("qwen_qsa_dense_within_budget must be a boolean")
     if type(getattr(config, "qwen_qsa_skip_complete_gather", False)) is not bool:
         raise ValueError("qwen_qsa_skip_complete_gather must be a boolean")
+    if type(getattr(config, "qwen_qsa_masked_prefill", False)) is not bool:
+        raise ValueError("qwen_qsa_masked_prefill must be a boolean")
     threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
     if type(threshold) is not int or not 0 <= threshold <= 262_144:
         raise ValueError("qwen_qsa_dense_threshold must be an integer from 0 through 262144")
@@ -114,6 +117,10 @@ def _add_qsa_arguments(parser):
                         help="skip the identity per-query gather when QSA selects every visible key")
     parser.add_argument("--qwen-qsa-dense-threshold", type=int, default=0,
                         help="0 keeps the indexer budget; otherwise dense SDPA up to this key length")
+    parser.add_argument("--qwen-qsa-masked-prefill", action=argparse.BooleanOptionalAction,
+                        default=False,
+                        help="experimental fused SDPA with the unchanged QSA selection as a mask for "
+                        "prompt chunks of 16+ tokens; output is not bit-identical")
 
 
 def flash_arguments(arguments: argparse.Namespace) -> dict:

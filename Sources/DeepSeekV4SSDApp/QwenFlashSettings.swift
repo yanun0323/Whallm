@@ -51,6 +51,8 @@ enum QwenFlashCopy {
   static let sortedExperts = "Use sorted expert prefill"
   static let sortedExpertsHint = "Off by default. Groups prompt rows by expert so prefill uses a faster kernel. In tests, 4K and 16K prompts reached the first token about 2× sooner. Output can differ slightly from the default. Requires Prefill acceleration."
   static let sortedExpertsInactive = "Sorted expert prefill is inactive while Prefill acceleration is off or experts per wave is above 0. Its saved choice is retained."
+  static let maskedQSA = "Use masked QSA prefill"
+  static let maskedQSAHint = "Off by default. Prompt chunks of 16 or more tokens use the same selected keys through one fused attention call instead of a copy per token. In tests, 4K and 16K prompts reached the first token about 1.7× sooner with sorted expert prefill on. Output can differ slightly from the default."
   static let title = "Qwen Flash experiments"
   static let warning = "Experimental; full-model speed and quality are not yet verified. QSA queries per chunk defaults to 16 and indexed attention stays off."
   static let lifecycle = "Saved automatically for this model. Changes apply on the next model load. Unload the model before editing."
@@ -85,7 +87,7 @@ enum QwenFlashCopy {
   static let wholeLayerDependency = "Read batching and warm handoff are inactive without layer-major whole-layer prefill, or while expert waves are enabled. Saved choices are retained."
   static let invalidReadBatch = "Experts per prefill read must be an integer from 1 to 32."
   static let invalidSeeds = "Warm decode experts per layer must be an integer from 0 to 128."
-  static let allKeys = [packedGDN, packedGDNHint, packedGDNInactive, sortedExperts, sortedExpertsHint, sortedExpertsInactive, readBatch, readBatchHint, seeds, seedsHint, sharedOverlap,
+  static let allKeys = [packedGDN, packedGDNHint, packedGDNInactive, sortedExperts, sortedExpertsHint, sortedExpertsInactive, maskedQSA, maskedQSAHint, readBatch, readBatchHint, seeds, seedsHint, sharedOverlap,
     sharedOverlapHint, wholeLayerDependency, invalidReadBatch, invalidSeeds,queryChunk, queryChunkHint, skipGather, skipGatherHint, indexed, indexedHint, invalidQueryChunk,title, warning, lifecycle, locked, waves, wavesHint,
     wavesConflict, backend, backendHint, mmap, pread, cache, cacheHint,
     sdpa, sdpaHint, invalidWaves, invalidBackend, invalidCache]
