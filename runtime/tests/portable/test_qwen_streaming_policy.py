@@ -49,11 +49,11 @@ class StreamingPolicyTests(unittest.TestCase):
         parser = argparse.ArgumentParser()
         settings.add_flash_arguments(parser)
         raw = settings.flash_arguments(parser.parse_args([]))
-        self.assertEqual((raw['qwen_prefill_read_experts'],raw['qwen_prefill_seed_experts'],raw['qwen_shared_expert_overlap']), (1,0,False))
-        raw = settings.flash_arguments(parser.parse_args(['--qwen-prefill-read-experts','4','--qwen-prefill-seed-experts','32','--qwen-shared-expert-overlap']))
+        self.assertEqual((raw['qwen_prefill_read_experts'],raw['qwen_prefill_seed_experts']), (1,0))
+        raw = settings.flash_arguments(parser.parse_args(['--qwen-prefill-read-experts','4','--qwen-prefill-seed-experts','32']))
         settings.validate_flash_config(SimpleNamespace(**raw))
         for changes in ({'layer_major_prefill':False}, {'batched_expert_prefill':False}, {'qwen_expert_wave_slots':32},
-                        {'qwen_prefill_read_experts':True}, {'qwen_prefill_seed_experts':129}, {'qwen_shared_expert_overlap':1}):
+                        {'qwen_prefill_read_experts':True}, {'qwen_prefill_seed_experts':129}):
             with self.assertRaises(ValueError): settings.validate_flash_config(SimpleNamespace(**(raw|changes)))
         settings.validate_flash_config(SimpleNamespace(layer_major_prefill=False,batched_expert_prefill=False))
 

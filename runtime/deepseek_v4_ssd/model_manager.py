@@ -200,6 +200,7 @@ def _parse_runtime(value: Any, prefix: str, model_kind: str) -> RuntimeConfig:
     if isinstance(value, dict):
         value = dict(value)
         for removed in ("qwen_grouped_decode", "qwen_short_block",
+                        "qwen_shared_expert_overlap", "qwen_sparse_sdpa", "qwen_qsa_indexed",
                         "dspark_hash_prefetch", "dspark_adaptive_block", "dspark_hybrid_verification"):
             if removed in value:
                 if value.pop(removed) is not False:
@@ -208,7 +209,7 @@ def _parse_runtime(value: Any, prefix: str, model_kind: str) -> RuntimeConfig:
             if value.pop("adaptive_expert_prefill_threshold") is not None:
                 raise ModelCatalogError(f"{prefix}.adaptive_expert_prefill_threshold has been removed; remove this setting")
     names = {field.name for field in fields(RuntimeConfig)}
-    required = names - {'qwen_packed_gdn_prefill', 'qwen_sorted_expert_prefill', 'qwen_prefill_read_experts', 'qwen_prefill_seed_experts', 'qwen_shared_expert_overlap', 'qwen_qsa_query_chunk', 'qwen_qsa_indexed', 'qwen_qsa_dense_within_budget', 'qwen_qsa_skip_complete_gather', 'qwen_qsa_dense_threshold', 'qwen_qsa_masked_prefill', 'qwen_expert_wave_slots', 'qwen_ngram_io', 'qwen_ngram_cache_bytes', 'qwen_sparse_sdpa', 'qwen_phase_memory', 'qwen_pooled_index_cache', 'qwen_ngram_lookup_optimized', 'qwen_compile_tensor_ops', 'qwen_mtp_draft_tokens', 'qwen_mtp_zero_acceptance_limit', 'expert_cache_bytes', 'mtp_cache_bytes', 'dspark_cache_bytes', 'separate_prefill_io', 'qwen_quantized_kv', 'qwen_quantized_index', 'v41_ced_prefill', 'v41_packed_kv', 'v41_packed_index', 'deepseek_ane_prefill', 'qwen_grouped_experts', 'expert_eviction_policy', 'v41_layer_major_prefill', 'v41_candidate_index', 'v41_next_layer_prefetch'}
+    required = names - {'qwen_packed_gdn_prefill', 'qwen_sorted_expert_prefill', 'qwen_prefill_read_experts', 'qwen_prefill_seed_experts', 'qwen_qsa_query_chunk', 'qwen_qsa_dense_within_budget', 'qwen_qsa_skip_complete_gather', 'qwen_qsa_dense_threshold', 'qwen_qsa_masked_prefill', 'qwen_expert_wave_slots', 'qwen_ngram_io', 'qwen_ngram_cache_bytes', 'qwen_phase_memory', 'qwen_pooled_index_cache', 'qwen_ngram_lookup_optimized', 'qwen_compile_tensor_ops', 'qwen_mtp_draft_tokens', 'qwen_mtp_zero_acceptance_limit', 'qwen_mtp_draft_min_probability', 'qwen_mtp_first_draft_min_probability', 'expert_cache_bytes', 'mtp_cache_bytes', 'dspark_cache_bytes', 'separate_prefill_io', 'qwen_quantized_kv', 'qwen_quantized_index', 'v41_ced_prefill', 'v41_packed_kv', 'v41_packed_index', 'deepseek_ane_prefill', 'qwen_grouped_experts', 'expert_eviction_policy', 'v41_layer_major_prefill', 'v41_candidate_index', 'v41_next_layer_prefetch'}
     if not isinstance(value, dict) or not required <= set(value) <= names:
         raise ModelCatalogError(f"{prefix} must contain every required RuntimeConfig field")
     try:
@@ -289,6 +290,10 @@ def validate_runtime_config(config: RuntimeConfig) -> None:
         value = getattr(config, name)
         if type(value) is not int or not 1 <= value <= maximum:
             raise ValueError(f"{name} must be an integer from 1 through {maximum}")
+    for name in ("qwen_mtp_draft_min_probability", "qwen_mtp_first_draft_min_probability"):
+        value = getattr(config, name)
+        if type(value) not in (int, float) or not 0 <= value < 1:
+            raise ValueError(f"{name} must be a number from 0 up to, not including, 1")
 
     if (
         isinstance(config.ane_prefill_ratio, bool)

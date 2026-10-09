@@ -450,9 +450,7 @@ class QSAAttention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.args = args
-        self.sparse_sdpa = False
         self.query_chunk = 4
-        self.indexed_decode = False
         self.dense_within_budget = False
         self.dense_threshold = 0
         self.skip_complete_gather = False
@@ -533,7 +531,7 @@ class QSAAttention(nn.Module):
     ) -> mx.array:
         if query.shape[0] != 1:
             raise ValueError("Qwen SSD runtime supports batch size one")
-        if ((self.sparse_sdpa or self.dense_within_budget)
+        if (self.dense_within_budget
                 and key.shape[2] <= (self.dense_threshold or self.args.indexer_budget)):
             from .qwen_tensor_ops import dense_causal_attention
             # The selection is every visible key here. Do not duplicate K/V once
@@ -609,14 +607,6 @@ class QSAAttention(nn.Module):
                     [selected_valid, tail_valid], axis=-1
                 )
             selected = mx.clip(selected, 0, key.shape[2] - 1)
-            causal = selected_valid & (selected <= absolute[:, None])
-            if self.sparse_sdpa and self.indexed_decode and query.shape[2] <= 8:
-                from .qwen_qsa_indexed import indexed_attention
-                current = indexed_attention(query[:, :, start:end], key, value,
-                    selected.astype(mx.int32), causal, offset + start)
-                if current is not None:
-                    outputs.append(current)
-                    continue
             if self.skip_complete_gather and key.shape[2] <= self.args.indexer_budget:
                 # Selection is every visible key, so the per-query gather only
                 # reproduces the same rows for each query. Broadcasting the whole
@@ -636,17 +626,6 @@ class QSAAttention(nn.Module):
             repeats = self.args.num_attention_heads // selected_key.shape[1]
             current_query = query[0, :, start:end].transpose(1, 0, 2)
             causal = selected_valid & (selected <= absolute[:, None])
-            if self.sparse_sdpa:
-                # Each query is a separate batch; GQA shares its selected KV rows.
-                # Keep the baseline indexer, selected cells and causal membership.
-                # Different reduction precision can change logits: opt-in only.
-                current = mx.fast.scaled_dot_product_attention(
-                    current_query[:, :, None, :], selected_key, selected_value,
-                    scale=self.args.head_dim**-0.5,
-                    mask=causal[:, None, None, :],
-                ).squeeze(-2)
-                outputs.append(current.transpose(1, 0, 2)[None])
-                continue
             grouped_query = current_query.reshape(
                 end - start,
                 selected_key.shape[1],
@@ -900,7 +879,6 @@ class SparseMoE(nn.Module):
         self.shared_expert_gate = nn.Linear(args.hidden_size, 1, bias=False)
         self.top_k = args.num_experts_per_tok
         self.norm_topk_prob = args.norm_topk_prob
-        self.shared_overlap = False
         self.cache = cache
         self.layer = layer
 
@@ -913,24 +891,7 @@ class SparseMoE(nn.Module):
         if getattr(self.cache, "route_trace_enabled", False):
             self.cache.record_routes(self.layer, np.asarray(indices, dtype=np.int32))
         shared = mx.sigmoid(self.shared_expert_gate(value)) * self.shared_expert(value)
-        if (self.shared_overlap and value.size // value.shape[-1] == 1
-                and self.cache.current_batched(self.layer) is None):
-            # Resolve routing FIRST. Co-evaluating indices and shared could make
-            # the CPU route wait also wait for the shared branch to complete.
-            sync_started = time.perf_counter()
-            selected = np.asarray(indices, dtype=np.int32)
-            record_sync = getattr(self.cache, "record_routing_sync", None)
-            if record_sync is not None:
-                record_sync(time.perf_counter() - sync_started)
-            # Shared weights do not alias mutable expert slots. No subsequent
-            # route conversion may synchronize this submission before the I/O.
-            mx.async_eval(shared)
-            record = getattr(self.cache, "record_shared_overlap", None)
-            if record is not None:
-                record()
-            routed = self.experts._routed(value, selected)
-        else:
-            routed = self.experts(value, indices)
+        routed = self.experts(value, indices)
         routed = (routed * scores[..., None].astype(routed.dtype)).sum(axis=-2)
         return routed + shared
 
@@ -1269,6 +1230,8 @@ def generate_mtp_tokens(
     record_round: Callable[[int, int, float, float, float, bool], None] | None = None,
     draft_tokens: int = 5,
     zero_acceptance_limit: int = 1,
+    draft_min_probability: float = 0.0,
+    first_draft_min_probability: float = 0.0,
     cached_tokens: int = 0,
     mtp_cache=None,
     boundary_hidden: mx.array | None = None,
@@ -1281,6 +1244,12 @@ def generate_mtp_tokens(
     draft cache for the first cached_tokens - 1 pairs and the target hidden at
     position cached_tokens - 1. ``state["finish"]()`` returns the same triple
     for every token the target cache holds when the generator stops at a yield.
+
+    A positive ``draft_min_probability`` stops drafting before the first position
+    whose chained top draft probability falls below it. The test reads only the
+    draft distribution, never the sampled token, so verification stays exact.
+    A positive ``first_draft_min_probability`` replaces that limit for the first
+    position only; zero applies the same limit to every position.
     """
     from .qwen_mtp_policy import MTPDraftPolicy
     policy = MTPDraftPolicy(draft_tokens, zero_acceptance_limit)
@@ -1288,6 +1257,9 @@ def generate_mtp_tokens(
         return
     if prefill_step_size < 1:
         raise ValueError("Qwen MTP Prefill step size must be positive")
+    if not (0.0 <= draft_min_probability < 1.0 and 0.0 <= first_draft_min_probability < 1.0):
+        raise ValueError("Qwen MTP draft minimum probabilities must be in [0, 1)")
+    first_draft_limit = first_draft_min_probability or draft_min_probability
 
     from .dspark import DraftResult, _sample, _verify, sampling_logprobs
     from .model import _fork_prompt_cache, eval_prompt_cache
@@ -1453,6 +1425,10 @@ def generate_mtp_tokens(
         draft_logprobs: list[mx.array] = []
         draft_hidden = predecessor_hidden
         draft_input = anchor
+        chain_probability = 1.0
+        # True when the draft layer consumed the last kept token to produce a
+        # distribution that was then left unsampled.
+        stopped_early = False
         for _ in range(draft_limit):
             check_cancelled()
             draft_logits, draft_hidden = mtp_model(
@@ -1467,6 +1443,13 @@ def generate_mtp_tokens(
                 draft_logits[:, -1],
                 sampling_tokens + draft_tokens,
             )
+            if first_draft_limit > 0.0:
+                # Greedy requests carry raw logits here, so normalize explicitly.
+                chain_probability *= math.exp(
+                    (mx.max(draft_distribution) - mx.logsumexp(draft_distribution)).item())
+                if chain_probability < (draft_min_probability if draft_tokens else first_draft_limit):
+                    stopped_early = True
+                    break
             draft_input = _sample(draft_distribution, temperature)
             draft_tokens.append(draft_input)
             draft_logprobs.append(draft_distribution)
@@ -1474,6 +1457,24 @@ def generate_mtp_tokens(
 
         check_cancelled()
         verification_started = time.perf_counter()
+        if not draft_tokens:
+            # The draft layer already holds (predecessor_hidden, anchor); take an
+            # ordinary target step with no fork, batch or rewind.
+            committed.append(anchor)
+            logits, predecessor_hidden = main_model.forward_with_hidden(
+                mx.array([[anchor]], dtype=mx.int32),
+                target_cache,
+            )
+            eval_prompt_cache(target_cache, logits, predecessor_hidden)
+            logprobs = adjusted_logprobs(logits[:, -1], sampling_tokens)
+            anchor = _sample(logprobs, temperature)
+            if record_round is not None:
+                record_round(0, 0, draft_seconds,
+                             time.perf_counter() - verification_started, 0.0, False)
+            yield anchor, False
+            sampling_tokens.append(anchor)
+            generated += 1
+            continue
         verified_cache, copied = _fork_prompt_cache(target_cache)
         if copied:
             mx.eval(*copied)
@@ -1509,7 +1510,8 @@ def generate_mtp_tokens(
         if accepted == len(draft_tokens):
             target_cache[:] = verified_cache
             predecessor_hidden = verified_hidden[:, -1:]
-            advance_mtp(draft_hidden, mx.array([[draft_tokens[-1]]], dtype=mx.int32))
+            if not stopped_early:
+                advance_mtp(draft_hidden, mx.array([[draft_tokens[-1]]], dtype=mx.int32))
         elif rewind:
             rollback_mtp_cache(mtp_cache, checkpoint + accepted + 1)
             replay_started = time.perf_counter()
@@ -1640,15 +1642,12 @@ def load(
         grouped_prefill = bool(getattr(config, "qwen_grouped_experts", True))
         sorted_prefill = grouped_prefill and getattr(config, "qwen_sorted_expert_prefill", False) is True
         for layer in model.model.layers:
-            layer.mlp.shared_overlap = getattr(config, "qwen_shared_expert_overlap", False)
             layer.mlp.experts.grouped_prefill = grouped_prefill
             layer.mlp.experts.sorted_prefill = sorted_prefill
             layer.mlp.experts.wave_slots = getattr(config, "qwen_expert_wave_slots", 0)
             attention = getattr(layer, "self_attn", None)
             if isinstance(attention, QSAAttention):
-                attention.sparse_sdpa = getattr(config, "qwen_sparse_sdpa", False)
                 attention.query_chunk = getattr(config, "qwen_qsa_query_chunk", 16)
-                attention.indexed_decode = getattr(config, "qwen_qsa_indexed", False)
                 attention.dense_within_budget = getattr(config, "qwen_qsa_dense_within_budget", False)
                 attention.dense_threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
                 attention.skip_complete_gather = getattr(config, "qwen_qsa_skip_complete_gather", True)

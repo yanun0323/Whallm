@@ -1,5 +1,7 @@
 """Portable configuration and per-chunk workspace tests."""
 import argparse
+import contextlib
+import io
 import unittest
 from types import SimpleNamespace
 import importlib.util
@@ -24,22 +26,19 @@ class QSAScheduleTests(unittest.TestCase):
         self.assertEqual(defaults["qwen_qsa_query_chunk"], 16)
         self.assertTrue(defaults["qwen_qsa_skip_complete_gather"])
         self.assertFalse(defaults["qwen_qsa_dense_within_budget"])
-        self.assertFalse(defaults["qwen_qsa_indexed"])
+        self.assertNotIn("qwen_qsa_indexed", defaults)
         config.validate_flash_config(SimpleNamespace(**defaults))
-        args = parser.parse_args(["--qwen-qsa-query-chunk", "32", "--qwen-qsa-indexed", "--qwen-sparse-sdpa"])
+        args = parser.parse_args(["--qwen-qsa-query-chunk", "32"])
         config.validate_flash_config(SimpleNamespace(**config.flash_arguments(args)))
-        self.assertTrue(args.qwen_qsa_indexed)
-        self.assertFalse(parser.parse_args(["--no-qwen-qsa-indexed"]).qwen_qsa_indexed)
-        with self.assertRaises(ValueError):
-            config.validate_flash_config(SimpleNamespace(qwen_qsa_indexed=True))
+        for removed in ("--qwen-qsa-indexed", "--qwen-sparse-sdpa", "--qwen-shared-expert-overlap"):
+            with self.subTest(removed=removed), self.assertRaises(SystemExit), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                parser.parse_args([removed])
 
     def test_invalid_values(self):
         for value in (0, -1, 129, True, False, 4.0, None, "32"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 config.validate_flash_config(SimpleNamespace(qwen_qsa_query_chunk=value))
-        for value in (1, "true", None):
-            with self.assertRaises(ValueError):
-                config.validate_flash_config(SimpleNamespace(qwen_qsa_indexed=value))
 
     def test_schedule_stays_bounded(self):
         for tokens in (2048, 8192, 32768, 262144):

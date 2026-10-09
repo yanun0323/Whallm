@@ -237,18 +237,15 @@ class FlashConfigTests(unittest.TestCase):
         settings.add_flash_arguments(parser)
         self.assertEqual(settings.flash_arguments(parser.parse_args([])), settings.DEFAULTS)
         args = parser.parse_args(["--qwen-expert-wave-slots", "16", "--qwen-ngram-io", "pread",
-                                  "--qwen-ngram-cache-bytes", "1048576", "--qwen-sparse-sdpa"])
+                                  "--qwen-ngram-cache-bytes", "1048576"])
         settings.validate_flash_config(args)
         self.assertEqual(args.qwen_expert_wave_slots, 16)
-        self.assertTrue(args.qwen_sparse_sdpa)
-        self.assertFalse(parser.parse_args(["--no-qwen-sparse-sdpa"]).qwen_sparse_sdpa)
 
     def test_config_validation(self):
         for name, values in {
             "qwen_expert_wave_slots": (-1, 513, True, 1.0),
             "qwen_ngram_cache_bytes": (-1, 512 * 1024**2 + 1, True, 1.0),
             "qwen_ngram_io": (None, [], "direct"),
-            "qwen_sparse_sdpa": (None, 1, "false"),
         }.items():
             for value in values:
                 with self.subTest(name=name, value=value), self.assertRaises(ValueError):
@@ -259,7 +256,7 @@ class FlashConfigTests(unittest.TestCase):
                 settings.validate_flash_config(SimpleNamespace(**{**settings.DEFAULTS, **changes}))
         settings.validate_flash_config(SimpleNamespace())
         settings.validate_flash_config(SimpleNamespace(qwen_expert_wave_slots=512,
-            qwen_ngram_io="pread", qwen_ngram_cache_bytes=512 * 1024**2, qwen_sparse_sdpa=True))
+            qwen_ngram_io="pread", qwen_ngram_cache_bytes=512 * 1024**2))
 
 
 if __name__ == "__main__":

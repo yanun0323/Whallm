@@ -414,7 +414,7 @@ class QwenSamplingServerTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(json.loads(body)["error"]["param"], "presence_penalty")
 
-    def test_qwen_request_accepts_explicit_approximation(self):
+    def test_qwen_request_rejects_removed_approximation(self):
         status, body = self.request(
             "/v1/chat/completions",
             {
@@ -423,8 +423,8 @@ class QwenSamplingServerTests(unittest.TestCase):
                 "approximation": {"mode": "learned-route-drop-lowest-1"},
             },
         )
-        self.assertEqual(status, 200)
-        self.assertEqual(self.runtime.last_options.approximation_mode, "learned-route-drop-lowest-1")
+        self.assertEqual(status, 400)
+        self.assertIn(b"approximation", body if isinstance(body, bytes) else json.dumps(body).encode())
 
     def test_qwen_chat_stream_preserves_multiple_calls_across_newline_chunks(self):
         tool = {

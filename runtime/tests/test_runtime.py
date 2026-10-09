@@ -144,8 +144,16 @@ class ModelRuntimeTests(unittest.TestCase):
         self.assertEqual([layer.ffn.gate.top_k for layer in layers], [6] * 43)
 
     def test_approximation_scopes_all_learned_routers_and_restores_after_failure(self):
-        for kind, count, field in (("qwen3.8-flash-next", 10, "top_k"), ("deepseek-v4.1", 6, "topk")):
-            from deepseek_v4_ssd.model_support import get_support
+        from deepseek_v4_ssd.model_support import get_support
+        # Removed from both Qwen models on 2026-10-08; the router must stay untouched.
+        for kind in ("qwen3.8-flash-next", "swift1.5-qwen3.8-flash-next"):
+            router = SimpleNamespace(top_k=10)
+            model = SimpleNamespace(model=SimpleNamespace(layers=[SimpleNamespace(mlp=router)]))
+            with self.assertRaisesRegex(ValueError, "not supported"):
+                with get_support(kind).approximation(model, "learned-route-drop-lowest-1"):
+                    pass
+            self.assertEqual(router.top_k, 10)
+        for kind, count, field in (("deepseek-v4.1", 6, "topk"),):
             router = SimpleNamespace(**{field: count})
             layer = (SimpleNamespace(mlp=router) if field == "top_k"
                      else SimpleNamespace(ffn=SimpleNamespace(gate=router)))

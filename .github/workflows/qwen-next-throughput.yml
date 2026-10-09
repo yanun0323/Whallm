@@ -71,11 +71,6 @@ jobs:
           Path('validation/qwen-summary.json').write_text(json.dumps(metadata, indent=2) + '\n')
           raise SystemExit(not result.wasSuccessful())
           PY
-      - name: Measure interleaved QSA components, not model throughput
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -u Scripts/benchmark_qwen_qsa_throughput.py --output validation/qsa.json 2>&1 | tee validation/qsa.log
       - name: Validate App controls, full Swift suite and runtime catalogs
         shell: bash
         run: |

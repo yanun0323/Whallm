@@ -150,7 +150,9 @@ def main():
         new_attention.set_dtype(mx.bfloat16)
         # Only indexer.k_layernorm is used by the bounded-attention component.
         new_attention.indexer.k_layernorm.weight = old_attention.indexer.k_layernorm.weight
-        new_attention.sparse_sdpa = True
+        # The fused gathered path was removed on 2026-10-08; the candidate keeps
+        # its dense route within the indexer budget.
+        new_attention.dense_within_budget = True
         for length, total in ((1, 128), (1, 2048), (128, 128), (128, 2048), (1, 8192), (128, 8192)):
             query = (mx.random.normal((1, 24, length, 256)) * .1).astype(mx.bfloat16)
             key = (mx.random.normal((1, 2, total, 256)) * .1).astype(mx.bfloat16)

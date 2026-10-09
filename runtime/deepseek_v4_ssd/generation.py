@@ -1693,6 +1693,9 @@ class ModelRuntime:
                 record_round=self.metrics.record_mtp_round,
                 draft_tokens=getattr(self.config, "qwen_mtp_draft_tokens", 2),
                 zero_acceptance_limit=getattr(self.config, "qwen_mtp_zero_acceptance_limit", 32),
+                draft_min_probability=getattr(self.config, "qwen_mtp_draft_min_probability", 0.0),
+                first_draft_min_probability=getattr(
+                    self.config, "qwen_mtp_first_draft_min_probability", 0.0),
                 cached_tokens=len(cached.tokens) if cached is not None else 0,
                 mtp_cache=cached.cache if cached is not None else None,
                 boundary_hidden=cached.hidden if cached is not None else None,

@@ -33,7 +33,6 @@ def _clear_memory_cache() -> None:
 class RuntimeConfig:
     qwen_prefill_read_experts: int = 1
     qwen_prefill_seed_experts: int = 0
-    qwen_shared_expert_overlap: bool = False
     slots: int = 1_152
     read_workers: int = 4
     prefetch_read_workers: int = 2
@@ -90,9 +89,7 @@ class RuntimeConfig:
     qwen_expert_wave_slots: int = 0
     qwen_ngram_io: str = "mmap"
     qwen_ngram_cache_bytes: int = 0
-    qwen_sparse_sdpa: bool = False
     qwen_qsa_query_chunk: int = 16
-    qwen_qsa_indexed: bool = False
     qwen_qsa_dense_within_budget: bool = False
     qwen_qsa_dense_threshold: int = 0
     qwen_qsa_skip_complete_gather: bool = True
@@ -101,6 +98,8 @@ class RuntimeConfig:
     qwen_sorted_expert_prefill: bool = False
     qwen_mtp_draft_tokens: int = 2
     qwen_mtp_zero_acceptance_limit: int = 32
+    qwen_mtp_draft_min_probability: float = 0.0
+    qwen_mtp_first_draft_min_probability: float = 0.0
 
 
 def _apply_prompt_cache_mode(config: RuntimeConfig, mode: str | None) -> RuntimeConfig:
@@ -1056,18 +1055,12 @@ def _load_qwen_mtp(
             installed_model.mtp.common_tensors,
         )
         model.load_weights(list(model.sanitize(weights).items()), strict=True)
-        for layer in model.layers:
-            mlp = getattr(layer, "mlp", None)
-            if mlp is not None:
-                mlp.shared_overlap = getattr(config, "qwen_shared_expert_overlap", False)
         # The QSA controls apply to the native draft head and to the target alike,
         # because the configured defaults are the shipped attention path.
         for layer in model.layers:
             attention = getattr(layer, "self_attn", None)
             if attention is not None:
-                attention.sparse_sdpa = config.qwen_sparse_sdpa
                 attention.query_chunk = getattr(config, "qwen_qsa_query_chunk", 16)
-                attention.indexed_decode = getattr(config, "qwen_qsa_indexed", False)
                 attention.dense_within_budget = getattr(config, "qwen_qsa_dense_within_budget", False)
                 attention.dense_threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
                 attention.skip_complete_gather = getattr(config, "qwen_qsa_skip_complete_gather", True)

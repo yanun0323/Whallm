@@ -83,7 +83,7 @@ class SwiftQwenTests(unittest.TestCase):
         self.assertIsInstance(self.support, QwenSupport)
         self.assertIsNot(self.support, get_support(FP8))
         installed = object()
-        config = RuntimeConfig(mtp_enabled=True, qwen_ngram_io="pread", qwen_sparse_sdpa=True)
+        config = RuntimeConfig(mtp_enabled=True, qwen_ngram_io="pread", qwen_qsa_masked_prefill=True)
         raw_config, weights, limiter = {}, {}, object()
         model, experts, mtp, mtp_experts = SimpleNamespace(), object(), object(), object()
         with patch("deepseek_v4_ssd.qwen4_exp.load", return_value=(model, experts)) as load, \
@@ -96,7 +96,7 @@ class SwiftQwenTests(unittest.TestCase):
             self.assertIs(model.mtp_expert_cache, mtp_experts)
 
     def test_qwen_options_and_sampling_remain_independently_configurable(self):
-        config = RuntimeConfig(qwen_ngram_io="pread", qwen_sparse_sdpa=True,
+        config = RuntimeConfig(qwen_ngram_io="pread", qwen_qsa_masked_prefill=True,
                                qwen_quantized_kv=True, qwen_quantized_index=True,
                                qwen_prefill_read_experts=4, mtp_enabled=True)
         self.support.validate_config(config)

@@ -35,12 +35,16 @@ class QwenOptimizationTests(unittest.TestCase):
             self.assertFalse(raw.pop(name))
         self.assertEqual(raw.pop("qwen_mtp_draft_tokens"), 2)
         self.assertEqual(raw.pop("qwen_mtp_zero_acceptance_limit"), 32)
+        self.assertEqual(raw.pop("qwen_mtp_draft_min_probability"), 0.0)
+        self.assertEqual(raw.pop("qwen_mtp_first_draft_min_probability"), 0.0)
         self.assertEqual(_parse_runtime(raw, "runtime", "qwen3.8-flash-next"), config)
 
     def test_invalid_research_settings(self):
         for name, values in {
             "qwen_mtp_draft_tokens": (0, 6, True, 2.0),
             "qwen_mtp_zero_acceptance_limit": (0, 33, True, 2.0),
+            "qwen_mtp_draft_min_probability": (-0.1, 1, 1.5, True, "0.5", None),
+            "qwen_mtp_first_draft_min_probability": (-0.1, 1, 1.5, True, "0.5", None),
             "qwen_pooled_index_cache": (1, None),
             "qwen_ngram_lookup_optimized": (1, None),
             "qwen_compile_tensor_ops": (1, None),
@@ -160,6 +164,88 @@ class QwenOptimizationTests(unittest.TestCase):
                         if reject == 3:
                             self.assertEqual(rounds[0][-1], retries == 1)
                             self.assertEqual(len(rounds) > 1, retries > 1)
+
+    def test_mtp_confidence_gate_keeps_outputs_and_cache_offsets(self):
+        class UncertainMTP(FakeGreedyMTP):
+            """Right about the next token, but nearly flat after the listed inputs."""
+            def __init__(self, uncertain):
+                super().__init__()
+                self.uncertain, self.calls = uncertain, 0
+
+            def __call__(self, hidden, token_ids, *rest):
+                self.calls += 1
+                logits, hidden = super().__call__(hidden, token_ids, *rest)
+                if int(np.asarray(token_ids)[0, -1]) in self.uncertain:
+                    logits = logits * 1e-4
+                return logits, hidden
+
+        expected = list(range(3, 18))
+        for uncertain, proposed in (
+            (set(), [3, 3, 3, 1]),
+            ({5}, [2, 3, 3, 2]),            # stops before the third draft of round one
+            ({3}, [0, 3, 3, 3]),            # no draft at all: one ordinary target step
+            (set(range(32)), [0] * 13),   # the 15th token takes the ordinary last-token step
+        ):
+            with self.subTest(uncertain=sorted(uncertain)[:3]):
+                target, mtp = FakeGreedyTarget(), UncertainMTP(uncertain)
+                cache, rounds, state = [FakeTargetCache()], [], {}
+                result = list(generate_mtp_tokens([1, 2], target, mtp, cache, max_tokens=15,
+                    prefill_step_size=2, draft_tokens=3, zero_acceptance_limit=32,
+                    draft_min_probability=0.5, record_round=lambda *args: rounds.append(args),
+                    state=state))
+                self.assertEqual([token for token, _ in result], expected)
+                self.assertEqual([round_[0] for round_ in rounds], proposed)
+                self.assertTrue(all(round_[1] == round_[0] and not round_[-1] for round_ in rounds))
+                # After the deferred pairs are flushed, the target holds every token
+                # before the last yielded one and the draft layer one pair fewer.
+                snapshot = state["finish"]()
+                self.assertEqual(snapshot.tokens, [1, 2, *expected[:-1]])
+                self.assertEqual(cache[0].offset, 16)
+                self.assertEqual(mtp.cache.offset, 15)
+        with self.assertRaises(ValueError):
+            list(generate_mtp_tokens([1, 2], FakeGreedyTarget(), FakeGreedyMTP(), [FakeTargetCache()],
+                max_tokens=2, prefill_step_size=2, draft_min_probability=1.0))
+
+    def test_mtp_first_draft_limit_is_separate_from_the_chain_limit(self):
+        class GradedMTP(FakeGreedyMTP):
+            """Right about the next token with top probability 0.6 at every position."""
+            def __call__(self, hidden, token_ids, *rest):
+                logits, hidden = super().__call__(hidden, token_ids, *rest)
+                # One logit at log(46.5) against 31 zeros: 46.5 / 77.5 = 0.6.
+                return mx.where(logits > 0, 3.8395, 0.0), hidden
+
+        for chain, first, proposed in (
+            (0.0, 0.0, [3, 3, 3, 1]),      # gate off
+            (0.5, 0.0, [1] * 7),           # 0.6 passes, 0.36 does not
+            (0.7, 0.0, [0] * 13),          # the first draft already fails
+            (0.7, 0.5, [1] * 7),           # looser first position, strict chain
+            (0.3, 0.7, [0] * 13),          # stricter first position
+            (0.0, 0.5, [3, 3, 3, 1]),      # first-position limit only
+            (0.2, 0.5, [3, 3, 3, 1]),      # 0.216 still passes at depth three
+        ):
+            with self.subTest(chain=chain, first=first):
+                target, mtp = FakeGreedyTarget(), GradedMTP()
+                cache, rounds, state = [FakeTargetCache()], [], {}
+                result = list(generate_mtp_tokens([1, 2], target, mtp, cache, max_tokens=15,
+                    prefill_step_size=2, draft_tokens=3, zero_acceptance_limit=32,
+                    draft_min_probability=chain, first_draft_min_probability=first,
+                    record_round=lambda *args: rounds.append(args), state=state))
+                self.assertEqual([token for token, _ in result], list(range(3, 18)))
+                self.assertEqual([round_[0] for round_ in rounds], proposed)
+                state["finish"]()
+                self.assertEqual((cache[0].offset, mtp.cache.offset), (16, 15))
+
+    def test_mtp_confidence_gate_is_off_by_default_and_keeps_rejections_exact(self):
+        for gate in (0.0, 0.5):
+            for reject in (3, 4, 6):
+                with self.subTest(gate=gate, reject=reject):
+                    target, mtp = FakeGreedyTarget(), FakeGreedyMTP(reject_input_token=reject)
+                    cache = [FakeTargetCache()]
+                    result = list(generate_mtp_tokens([1, 2], target, mtp, cache, max_tokens=15,
+                        prefill_step_size=2, draft_tokens=3, zero_acceptance_limit=32,
+                        draft_min_probability=gate))
+                    self.assertEqual([token for token, _ in result], list(range(3, 18)))
+                    self.assertEqual(cache[0].offset, 16)
 
     def test_mtp_cancel_after_anchor_does_not_advance_target(self):
         event = Event()

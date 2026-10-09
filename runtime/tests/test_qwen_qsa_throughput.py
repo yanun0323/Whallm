@@ -1,10 +1,9 @@
-"""Synthetic Metal and cache-lifecycle checks for QSA throughput experiments."""
+"""Synthetic cache-lifecycle checks for QSA throughput controls."""
 import unittest
 from unittest.mock import patch
 import mlx.core as mx
 import numpy as np
 from mlx_lm.models.cache import CacheList, KVCache
-from deepseek_v4_ssd import qwen_qsa_indexed as native
 from deepseek_v4_ssd.qwen4_exp import QSAAttention
 from deepseek_v4_ssd.qwen_quantized_cache import QSAQuantizedCache
 from deepseek_v4_ssd.qwen_pooled_cache import QSAPooledIndexCache
@@ -13,74 +12,7 @@ from deepseek_v4_ssd.model_support.state import persistence_cache_state, restore
 from runtime.tests.test_qwen_speed import tiny_args, bits, close
 
 
-def reference(q, k, v, selected, valid, offset):
-    q, k, v = [np.asarray(a.astype(mx.float32)).astype(np.float64) for a in (q,k,v)]
-    ids, mask = np.asarray(selected), np.asarray(valid)
-    out = np.zeros_like(q)
-    for t in range(q.shape[2]):
-        visible = ids[t][mask[t] & (ids[t]>=0) & (ids[t]<k.shape[2]) & (ids[t]<=offset+t)]
-        if not len(visible):
-            continue
-        for h in range(q.shape[1]):
-            kh = h // (q.shape[1]//k.shape[1])
-            scores = k[0,kh,visible] @ q[0,h,t] / np.sqrt(q.shape[-1])
-            weights = np.exp(scores - scores.max()); weights /= weights.sum()
-            out[0,h,t] = weights @ v[0,kh,visible]
-    return out
-
-
-class IndexedQSATests(unittest.TestCase):
-    def test_metal_precision_masks_strides_and_gqa(self):
-        self.assertTrue(mx.metal.is_available(), "This test requires real Metal")
-        mx.random.seed(624)
-        for dtype,tol in ((mx.float32, 2e-5),(mx.float16, .002),(mx.bfloat16,.012)):
-            for length in (1,3,8):
-                for dim in (32,256):
-                    with self.subTest(dtype=dtype,length=length,dim=dim):
-                        # All inputs include non-contiguous cache/query views.
-                        q = mx.random.normal((1,4,length*2,dim)).astype(dtype)[:,:,::2]
-                        k = mx.random.normal((1,2,138,dim)).astype(dtype)[:,:,::2]
-                        v = mx.random.normal((1,2,138,dim)).astype(dtype)[:,:,::2]
-                        ids = np.tile(np.array([0,3,5,10,30,64,65,67,68,-1,99,5],np.int32),(length,1))
-                        mask = np.ones(ids.shape,bool); mask[:,2] = False
-                        if length>1: mask[1]=False
-                        ids, mask = mx.array(ids),mx.array(mask)
-                        actual = native.indexed_attention(q,k,v,ids,mask,69-length)
-                        self.assertIsNotNone(actual)
-                        mx.eval(actual)
-                        np.testing.assert_allclose(np.asarray(actual.astype(mx.float32)),
-                            reference(q,k,v,ids,mask,69-length),rtol=tol,atol=tol)
-                        self.assertTrue(mx.all(mx.isfinite(actual)).item())
-
-    def test_narrow_admission_and_invalid_offset(self):
-        q=mx.ones((1,4,1,32)); k=mx.ones((1,2,20,32))
-        ids=mx.array([[1,2]],dtype=mx.int32); valid=mx.ones((1,2),dtype=mx.bool_)
-        with self.assertRaises(ValueError): native.indexed_attention(q,k,k,ids,valid,-1)
-        with self.assertRaises(ValueError): native.indexed_attention(q,k,k,ids,valid,20)
-        self.assertIsNone(native.indexed_attention(mx.ones((1,4,9,32)),k,k,ids,valid,0))
-        with patch.object(native.mx, 'default_device', return_value=mx.cpu):
-            self.assertIsNone(native.indexed_attention(q,k,k,ids,valid,0))
-
-    def test_kernel_cache_does_not_specialize_on_context_length(self):
-        self.assertIs(native._partials_kernel(), native._partials_kernel())
-        self.assertIs(native._merge_kernel(), native._merge_kernel())
-
-    def test_direct_route_avoids_kv_gather_and_preserves_inputs(self):
-        args=tiny_args(); attn=QSAAttention(args); attn.sparse_sdpa=True; attn.indexed_decode=True
-        q=mx.ones((1,4,3,32));kv=mx.ones((1,2,17,32))
-        raw=mx.ones((1,17,32)); iq=mx.ones((1,3,2,32))
-        before=bits(kv).copy()
-        with patch('deepseek_v4_ssd.qwen4_exp.mx.take', side_effect=AssertionError('KV gather')):
-            out=attn._bounded_attention(q,kv,kv,iq,raw,14)
-            mx.eval(out)
-        np.testing.assert_array_equal(bits(kv),before)
-        np.testing.assert_allclose(np.asarray(out),1,atol=1e-6)
-
-    def test_prefill_does_not_use_narrow_kernel(self):
-        attn=QSAAttention(tiny_args());attn.sparse_sdpa=True;attn.indexed_decode=True;attn.query_chunk=16
-        with patch.object(native,'indexed_attention',side_effect=AssertionError('prefill entered decode kernel')):
-            mx.eval(attn(mx.ones((1,17,64)),None))
-
+class QSAThroughputTests(unittest.TestCase):
     def test_stored_axis_gather_is_byte_exact(self):
         mx.random.seed(26)
         for dtype in (mx.float32,mx.bfloat16):
@@ -103,9 +35,9 @@ class IndexedQSATests(unittest.TestCase):
                         start=0
                         for length in (5,8,1,3,8):
                             x=hidden[:,start:start+length]
-                            attn.sparse_sdpa=False;attn.indexed_decode=False;attn.query_chunk=4
+                            attn.query_chunk=4
                             expected=attn(x,baseline)
-                            attn.sparse_sdpa=True;attn.indexed_decode=True;attn.query_chunk=chunk
+                            attn.query_chunk=chunk
                             actual=attn(x,fast)
                             eval_prompt_cache([baseline,fast],actual,expected)
                             close(actual,expected,tol)
@@ -164,7 +96,21 @@ class IndexedQSATests(unittest.TestCase):
         from deepseek_v4_ssd.model_support import get_support
         for kind in ('deepseek-v4','deepseek-v4.1'):
             with self.assertRaises(ValueError): get_support(kind).validate_config(RuntimeConfig(qwen_qsa_query_chunk=32))
-        get_support('qwen3.8-flash-next').validate_config(RuntimeConfig(qwen_qsa_query_chunk=32,qwen_sparse_sdpa=True,qwen_qsa_indexed=True))
+        get_support('qwen3.8-flash-next').validate_config(RuntimeConfig(qwen_qsa_query_chunk=32))
+
+    def test_removed_qsa_and_overlap_fields(self):
+        from dataclasses import asdict
+        from deepseek_v4_ssd.model_manager import ModelCatalogError, _parse_runtime
+        removed = ("qwen_shared_expert_overlap", "qwen_sparse_sdpa", "qwen_qsa_indexed")
+        raw = asdict(RuntimeConfig())
+        for name in removed:
+            self.assertNotIn(name, raw)
+            # Catalogs written before the removal still load when the switch was off.
+            self.assertEqual(_parse_runtime(raw | {name: False}, "runtime", "qwen3.8-flash-next"), RuntimeConfig())
+            with self.assertRaisesRegex(ModelCatalogError, "has been removed"):
+                _parse_runtime(raw | {name: True}, "runtime", "qwen3.8-flash-next")
+        attention = QSAAttention(tiny_args())
+        self.assertFalse(hasattr(attention, "sparse_sdpa") or hasattr(attention, "indexed_decode"))
 
 
 class NativeMTPSettingsTests(unittest.TestCase):
@@ -175,19 +121,16 @@ class NativeMTPSettingsTests(unittest.TestCase):
         from deepseek_v4_ssd import model as loader
         installed = SimpleNamespace(root=Path("/synthetic-model"),
             mtp=SimpleNamespace(common_tensors=()))
-        cases = ((True,4,False,True), (True,16,False,True),
-                 (True,32,True,True), (False,16,False,False))
-        for sdpa,chunk,indexed,expected_sdpa in cases:
-            with self.subTest(sdpa=sdpa,chunk=chunk,indexed=indexed):
-                attention = SimpleNamespace(sparse_sdpa=False, query_chunk=4, indexed_decode=False,
+        for chunk in (4, 16, 32):
+            with self.subTest(chunk=chunk):
+                attention = SimpleNamespace(query_chunk=4,
                     dense_within_budget=False, dense_threshold=0, skip_complete_gather=False)
                 draft = MagicMock()
                 draft.layers = [SimpleNamespace(self_attn=attention)]
                 draft.sanitize.return_value = {}
                 draft.parameters.return_value = []
                 cache = MagicMock()
-                config = RuntimeConfig(qwen_sparse_sdpa=sdpa,
-                    qwen_qsa_query_chunk=chunk, qwen_qsa_indexed=indexed)
+                config = RuntimeConfig(qwen_qsa_query_chunk=chunk)
                 with patch.object(loader,"replace",return_value=installed), \
                      patch.object(loader,"ExpertCache",return_value=cache), \
                      patch.object(loader,"_load_tensor_file",return_value={}), \
@@ -195,9 +138,7 @@ class NativeMTPSettingsTests(unittest.TestCase):
                     actual, actual_cache = loader._load_qwen_mtp(installed,tiny_args(),config,None)
                 self.assertIs(actual,draft)
                 self.assertIs(actual_cache,cache)
-                self.assertEqual(attention.sparse_sdpa,expected_sdpa)
                 self.assertEqual(attention.query_chunk,chunk)
-                self.assertEqual(attention.indexed_decode,indexed)
                 self.assertTrue(attention.skip_complete_gather)
                 self.assertFalse(attention.dense_within_budget)
                 self.assertEqual(attention.dense_threshold,0)

@@ -55,7 +55,12 @@ class AdvancedDefaultsTests(unittest.TestCase):
             model['defaults']['qwen_adaptive_sampling'] = False
             self.assertFalse(parse_model_catalog(catalog)[0].defaults.qwen_adaptive_sampling)
             model['defaults']['approximation_mode'] = 'learned-route-drop-lowest-1'
-            self.assertEqual(parse_model_catalog(catalog)[0].defaults.approximation_mode, 'learned-route-drop-lowest-1')
+            if kind == 'deepseek-v4':
+                self.assertEqual(parse_model_catalog(catalog)[0].defaults.approximation_mode, 'learned-route-drop-lowest-1')
+            else:
+                # Removed from both Qwen models on 2026-10-08.
+                with self.assertRaisesRegex(ModelCatalogError, 'approximation_mode is not supported'):
+                    parse_model_catalog(catalog)
             model['defaults']['approximation_mode'] = 'exact'
             for invalid in (None, 1, 'false'):
                 model['defaults']['qwen_adaptive_sampling'] = invalid

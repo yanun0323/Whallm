@@ -38,14 +38,14 @@ class FlashIntegrationTests(unittest.TestCase):
             self.assertEqual(raw.pop(name), value)
         self.assertEqual(_parse_runtime(raw, "runtime", "qwen3.8-flash-next"), RuntimeConfig())
         for name, value in {"qwen_expert_wave_slots": -1, "qwen_ngram_io": "direct",
-                            "qwen_ngram_cache_bytes": 1, "qwen_sparse_sdpa": 1}.items():
+                            "qwen_ngram_cache_bytes": 1, "qwen_qsa_masked_prefill": 1}.items():
             with self.assertRaises(ValueError):
                 validate_runtime_config(replace(RuntimeConfig(), **{name: value}))
 
     def test_options_are_qwen_only(self):
         for config in (RuntimeConfig(qwen_expert_wave_slots=32),
                        RuntimeConfig(qwen_ngram_io="pread"),
-                       RuntimeConfig(qwen_sparse_sdpa=True)):
+                       RuntimeConfig(qwen_qsa_masked_prefill=True)):
             get_support("qwen3.8-flash-next").validate_config(config)
             for kind in ("deepseek-v4", "deepseek-v4.1"):
                 with self.assertRaises(ValueError):
@@ -172,7 +172,7 @@ class ExpertWaveIntegrationTests(unittest.TestCase):
         self.assertEqual(output.shape, (1, 1, 2, 8))
 
 
-class SparseSDPATests(unittest.TestCase):
+class QSAChunkedDecodeTests(unittest.TestCase):
     def attention(self, head_dim=32, dtype=mx.float32):
         mx.random.seed(19)
         args = qwen.ModelArgs(hidden_size=32, num_attention_heads=4, num_key_value_heads=2,
@@ -183,28 +183,8 @@ class SparseSDPATests(unittest.TestCase):
         attention.set_dtype(dtype)
         return attention
 
-    def test_same_selected_cells_and_causality_with_fused_attention(self):
-        for head_dim in (32, 256):
-            for dtype, tolerance in ((mx.float32, 2e-5), (mx.bfloat16, 5e-3)):
-                with self.subTest(head_dim=head_dim, dtype=dtype):
-                    attention = self.attention(head_dim, dtype)
-                    hidden = (mx.random.normal((1, 17, 32)) * 0.1).astype(dtype)
-                    for length in (1, 3, 8, 9, 17):
-                        attention.sparse_sdpa = False
-                        expected = attention(hidden[:, :length], None)
-                        attention.sparse_sdpa = True
-                        actual = attention(hidden[:, :length], None)
-                        np.testing.assert_allclose(np.asarray(actual.astype(mx.float32)),
-                            np.asarray(expected.astype(mx.float32)), atol=tolerance, rtol=tolerance)
-                    # Alter only future tokens: causal prefix must be identical.
-                    changed = mx.concatenate([hidden[:, :9], hidden[:, 9:] * -30], axis=1)
-                    original = attention(hidden, None)
-                    future_changed = attention(changed, None)
-                    np.testing.assert_array_equal(bits(original[:, :9]), bits(future_changed[:, :9]))
-
     def test_chunked_decode_and_cache_rollback(self):
         attention = self.attention()
-        attention.sparse_sdpa = True
         hidden = mx.random.normal((1, 17, 32)) * 0.1
         expected = attention(hidden, None)
         cache = CacheList(KVCache(), KVCache())

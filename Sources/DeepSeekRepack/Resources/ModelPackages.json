@@ -117,7 +117,6 @@
         "anePrefill",
         "groupedExperts",
         "adaptiveSampling",
-        "approximation",
         "readyExpertDecode",
         "batchedExpertPrefill",
         "packedKVCache",
@@ -189,7 +188,7 @@
       ],
       "features": [
         "layerMajorPrefill", "promptCache", "mtp", "anePrefill", "groupedExperts",
-        "adaptiveSampling", "approximation", "readyExpertDecode", "batchedExpertPrefill",
+        "adaptiveSampling", "readyExpertDecode", "batchedExpertPrefill",
         "packedKVCache", "packedIndexCache", "nextLayerPrefetch", "imageInput"
       ],
       "editableSettings": ["sampling"],

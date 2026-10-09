@@ -32,9 +32,9 @@ class DenseQSACacheLifecycleTests(unittest.TestCase):
                     start = 0
                     for count in (3, 5, 1):
                         chunk = hidden[:, start:start + count]
-                        attention.sparse_sdpa = False
+                        attention.dense_within_budget = False
                         expected = attention(chunk, reference)
-                        attention.sparse_sdpa = True
+                        attention.dense_within_budget = True
                         actual = attention(chunk, optimized)
                         close(actual, expected, tolerance)
                         eval_prompt_cache([optimized, reference], actual, expected)
@@ -51,7 +51,7 @@ class DenseQSACacheLifecycleTests(unittest.TestCase):
                         actual = attention(chunk, other)
                         eval_prompt_cache([other], actual)
                         np.testing.assert_array_equal(bits(actual), bits(expected))
-                    attention.sparse_sdpa = False
+                    attention.dense_within_budget = False
                     close(expected, attention(chunk, reference), tolerance)
                     # Rewind back below the dense threshold, then cross it again.
                     for cache in (reference, optimized, restored):
@@ -59,7 +59,7 @@ class DenseQSACacheLifecycleTests(unittest.TestCase):
                             branch.trim(7)
                     chunk = hidden[:, 6:11]
                     expected = attention(chunk, reference)
-                    attention.sparse_sdpa = True
+                    attention.dense_within_budget = True
                     for cache in (optimized, restored):
                         actual = attention(chunk, cache)
                         close(actual, expected, tolerance)

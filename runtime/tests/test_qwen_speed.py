@@ -70,7 +70,7 @@ class DenseQSASpeedTests(unittest.TestCase):
 
     def test_dense_route_does_not_gather_or_pool(self):
         attention = qwen.QSAAttention(tiny_args())
-        attention.sparse_sdpa = True
+        attention.dense_within_budget = True
         query = mx.ones((1, 4, 3, 32))
         kv = mx.ones((1, 2, 7, 32))
         bad_pool = SimpleNamespace(pooled=lambda *args: self.fail('dense route pooled keys'))
@@ -82,7 +82,7 @@ class DenseQSASpeedTests(unittest.TestCase):
     def test_dense_to_sparse_pooled_cache_trim_and_continuation(self):
         mx.random.seed(38)
         attention = qwen.QSAAttention(tiny_args())
-        attention.sparse_sdpa = True
+        attention.dense_within_budget = True
         hidden = mx.random.normal((1, 17, 64)) * .1
         cache = CacheList(KVCache(), QSAPooledIndexCache())
         baseline = CacheList(KVCache(), KVCache())
@@ -90,15 +90,15 @@ class DenseQSASpeedTests(unittest.TestCase):
         for length in (3, 5, 1, 4, 4):
             chunk = hidden[:, start:start + length]
             actual = attention(chunk, cache)
-            attention.sparse_sdpa = False
+            attention.dense_within_budget = False
             expected = attention(chunk, baseline)
-            attention.sparse_sdpa = True
+            attention.dense_within_budget = True
             close(actual, expected, 2e-5)
             start += length
         for branch in (*cache.caches, *baseline.caches):
             branch.trim(11)
         actual = attention(hidden[:, 6:10], cache)
-        attention.sparse_sdpa = False
+        attention.dense_within_budget = False
         close(actual, attention(hidden[:, 6:10], baseline), 2e-5)
 
 

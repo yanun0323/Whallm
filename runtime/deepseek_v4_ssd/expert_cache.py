@@ -82,7 +82,6 @@ class CacheMetrics:
     prefill_seed_bytes: int = 0
     prefill_seed_seconds: float = 0.0
     prefill_seed_hits: int = 0
-    shared_overlap_submissions: int = 0
     hits: int = 0
     misses: int = 0
     evictions: int = 0
@@ -125,7 +124,6 @@ class CacheMetrics:
             prefill_seed_bytes=self.prefill_seed_bytes - before.prefill_seed_bytes,
             prefill_seed_seconds=self.prefill_seed_seconds - before.prefill_seed_seconds,
             prefill_seed_hits=self.prefill_seed_hits - before.prefill_seed_hits,
-            shared_overlap_submissions=self.shared_overlap_submissions - before.shared_overlap_submissions,
             hits=self.hits - before.hits,
             misses=self.misses - before.misses,
             evictions=self.evictions - before.evictions,
@@ -1386,10 +1384,6 @@ class ExpertCache:
         finally:
             if source is not None:
                 source.release()
-
-    def record_shared_overlap(self) -> None:
-        with self._lock:
-            self.metrics.shared_overlap_submissions += 1
 
     @contextmanager
     def pin_layer(self, layer: int):
