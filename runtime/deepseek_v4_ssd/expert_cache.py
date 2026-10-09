@@ -10,7 +10,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 import mlx.core as mx
 import numpy as np
@@ -1019,6 +1019,11 @@ class ExpertCache:
     def route_trace_enabled(self) -> bool:
         return self._route_trace is not None
 
+    @property
+    def route_phase(self) -> str:
+        """Phase named by the innermost trace_routes(): "prefill" or "decode"."""
+        return self._route_phase
+
     @contextmanager
     def trace_routes(self, phase: str):
         previous = self._route_phase
@@ -1476,8 +1481,13 @@ class ExpertCache:
         self,
         layer: int,
         expert_ids: list[int],
+        on_split: Callable[[int], None] | None = None,
     ) -> Iterator[tuple[int, ExpertWeights]]:
-        """Yield resident and newly read experts without waiting for the slowest read."""
+        """Yield resident and newly read experts without waiting for the slowest read.
+
+        Resident experts come first; on_split receives their count before the
+        first expert is yielded.
+        """
         if not 0 <= layer < self.layer_count:
             raise ValueError(f"invalid layer {layer}")
         frequencies = Counter(expert_ids)
@@ -1523,6 +1533,8 @@ class ExpertCache:
         ready_at = started
         completed: set[int] = set()
         try:
+            if on_split is not None:
+                on_split(len(resident))
             # Closing while yielding a cache hit must also drain missing reads.
             for expert, slot in resident:
                 pack_started = time.perf_counter()

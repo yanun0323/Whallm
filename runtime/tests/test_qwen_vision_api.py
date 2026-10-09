@@ -70,7 +70,7 @@ class QwenVisionAPITests(unittest.TestCase):
         finally:
             self.request('/api/assets/'+asset['id'],method='DELETE')
 
-    def test_missing_weights_mtp_and_invalid_image_fail_before_stream(self):
+    def test_missing_weights_and_invalid_image_fail_before_stream_with_or_without_mtp(self):
         _,asset=self.request('/api/assets',data=png(),mime='image/png')
         _,bad=self.request('/api/assets',data=b'not png',mime='image/png')
         try:
@@ -83,7 +83,8 @@ class QwenVisionAPITests(unittest.TestCase):
                 runtime=self.runtimes[spec.id];before=runtime.stream_call_count
                 runtime.model.mtp=object()
                 status,result=self.request('/v1/chat/completions',data=body)
-                self.assertEqual(status,400,result);self.assertIn('MTP',str(result))
+                self.assertEqual(status,400,result);self.assertIn('Verify and Repair',str(result))
+                self.assertNotIn('MTP',str(result))
                 runtime.model.mtp=None
                 body['messages'][0]['content'][0]['file_id']=bad['id']
                 with patch('deepseek_v4_ssd.qwen_vision.artifact.weight_path'):

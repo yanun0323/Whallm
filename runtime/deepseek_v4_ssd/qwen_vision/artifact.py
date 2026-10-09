@@ -48,8 +48,6 @@ def weight_path(installed, *, verify=False):
 
 def validate_runtime(runtime):
     # Reject before encoding or sending the HTTP streaming response.
-    if getattr(runtime.model, 'mtp', None) is not None:
-        raise MediaError('Qwen images require MTP to be off. Turn off MTP and reload the model.')
     weight_path(runtime.installed)
 
 

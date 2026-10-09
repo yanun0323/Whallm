@@ -720,6 +720,10 @@ def _qmm(value: mx.array, weight: mx.array, scales: mx.array) -> mx.array:
     )
 
 
+# MTP verifies at most six rows; larger calls keep one whole-union acquisition.
+READY_VERIFICATION_ROWS = 16
+
+
 class StreamingExperts(nn.Module):
     def __init__(self, layer: int, cache: ExpertCache):
         super().__init__()
@@ -729,6 +733,10 @@ class StreamingExperts(nn.Module):
         # Opt-in: tell gather_qmm that grouped rows are sorted. Faster for long
         # prefill, but the segmented kernel is not bit-identical to the default.
         self.sorted_prefill = False
+        # Decode calls of a few rows (MTP verification) compute each expert as
+        # soon as it is resident. Same arithmetic, earlier submission. load()
+        # turns this on for the main model; the MTP draft layer keeps it off.
+        self.ready_verification = False
         self.wave_slots = 0
         self.wave_count = 0
         self.wave_pairs = 0
@@ -841,6 +849,10 @@ class StreamingExperts(nn.Module):
                 if close is not None:
                     close()
             return mx.stack([outputs[int(expert)] for expert in selected.reshape(-1)], axis=-2)
+        if (self.ready_verification and value.size // value.shape[-1] <= READY_VERIFICATION_ROWS
+                and getattr(self.cache, "ready_expert_decode", False)
+                and getattr(self.cache, "route_phase", None) == "decode"):
+            return self._ready_rows(value, selected)
         resident = self.cache.get_many(self.layer, selected.reshape(-1).tolist())
         flat = selected.reshape(-1)
         if value.size // value.shape[-1] == 1:
@@ -866,6 +878,38 @@ class StreamingExperts(nn.Module):
             )
             outputs.append(self._one(source, weights))
         grouped = mx.concatenate(outputs, axis=0)
+        restored = mx.take(grouped, mx.array(np.argsort(order)), axis=0)
+        return restored.reshape(*selected.shape, -1)
+
+    def _ready_rows(self, value: mx.array, selected: np.ndarray) -> mx.array:
+        """The grouped path above, submitted while the remaining experts are read.
+
+        Groups, their order and the arithmetic are unchanged. Experts that are
+        already resident go to the GPU in one submission, each late read in its own.
+        """
+        check_cancelled()
+        flat = selected.reshape(-1)
+        order = np.argsort(flat, kind="stable")
+        boundaries = np.flatnonzero(np.diff(flat[order])) + 1
+        groups = {int(flat[positions[0]]): positions for positions in np.split(order, boundaries)}
+        flat_value = value.reshape(-1, value.shape[-1])
+        resident, outputs, batch = [], {}, []
+        ready = self.cache.iter_ready(self.layer, flat.tolist(), on_split=resident.append)
+        try:
+            for index, (expert, weights) in enumerate(ready):
+                source = mx.take(flat_value, mx.array(groups[expert] // selected.shape[-1]), axis=0)
+                output = outputs[expert] = self._one(source, weights)
+                if index >= resident[0]:
+                    mx.async_eval(output)
+                    continue
+                batch.append(output)
+                if index == resident[0] - 1:
+                    mx.async_eval(*batch)
+        finally:
+            close = getattr(ready, "close", None)
+            if close is not None:
+                close()
+        grouped = mx.concatenate([outputs[expert] for expert in groups], axis=0)
         restored = mx.take(grouped, mx.array(np.argsort(order)), axis=0)
         return restored.reshape(*selected.shape, -1)
 
@@ -1020,9 +1064,11 @@ class Model(nn.Module):
             input_embeddings=input_embeddings, rope_positions=rope_positions))
 
     def forward_with_hidden(
-        self, input_ids: mx.array, cache=None, capture: list | None = None
+        self, input_ids: mx.array, cache=None, capture: list | None = None,
+        *, input_embeddings=None, rope_positions=None,
     ) -> tuple[mx.array, mx.array]:
-        hidden = self.model.hidden_states(input_ids, cache, capture)
+        hidden = self.model.hidden_states(input_ids, cache, capture,
+            input_embeddings=input_embeddings, rope_positions=rope_positions)
         logits = self.lm_head(self.model.hyper_connection_mixer(hidden))
         return logits, hidden
 
@@ -1147,8 +1193,12 @@ class MTPModel(nn.Module):
         embedding_weight: mx.array,
         lm_head_weight: mx.array,
         cache: CacheList | None,
+        *,
+        next_embeddings: mx.array | None = None,
+        rope_positions=None,
     ) -> tuple[mx.array, mx.array]:
-        wide_hidden = self.advance(target_hidden, next_token_ids, embedding_weight, cache)
+        wide_hidden = self.advance(target_hidden, next_token_ids, embedding_weight, cache,
+                                   next_embeddings=next_embeddings, rope_positions=rope_positions)
         output = self.hyper_connection_mixer(wide_hidden)
         logits = output @ lm_head_weight.T
         return logits, wide_hidden
@@ -1159,21 +1209,33 @@ class MTPModel(nn.Module):
         next_token_ids: mx.array,
         embedding_weight: mx.array,
         cache: CacheList | None,
+        *,
+        next_embeddings: mx.array | None = None,
+        rope_positions=None,
     ) -> mx.array:
-        """Advance native MTP state without unused mixer/vocabulary projection."""
+        """Advance native MTP state without unused mixer/vocabulary projection.
+
+        Image prompts pass the target's input embeddings for the next tokens and
+        its multimodal positions; the pair at cache index i uses position i.
+        """
         expected = self.args.hc_count * self.args.hidden_size
         if target_hidden.shape[-1] != expected:
             raise ValueError("Qwen MTP target hidden state has an invalid width")
         if target_hidden.shape[:2] != next_token_ids.shape:
             raise ValueError("Qwen MTP hidden state and token shape do not match")
-        embedded = mx.take(embedding_weight, next_token_ids, axis=0)
+        if next_embeddings is None:
+            embedded = mx.take(embedding_weight, next_token_ids, axis=0)
+        elif next_embeddings.shape != (*next_token_ids.shape, self.args.hidden_size):
+            raise ValueError("Qwen MTP image embeddings do not align with next tokens")
+        else:
+            embedded = next_embeddings
         embedded = self.fc_embedding(self.pre_fc_norm_embedding(embedded))
         hidden = self.pre_fc_norm_hidden(target_hidden).reshape(
             *target_hidden.shape[:-1], self.args.hc_count, self.args.hidden_size
         )
         hidden = self.fc_hidden(hidden)
         mixed = (hidden + embedded[..., None, :]).reshape(*target_hidden.shape)
-        wide_hidden = self.layers[0](mixed, next_token_ids, None, cache)
+        wide_hidden = self.layers[0](mixed, next_token_ids, None, cache, rope_positions)
         return wide_hidden
 
     def make_cache(self) -> CacheList:
@@ -1237,6 +1299,7 @@ def generate_mtp_tokens(
     boundary_hidden: mx.array | None = None,
     on_prompt_end: Callable[[MTPPromptState], None] | None = None,
     state: dict | None = None,
+    input_embeddings: mx.array | None = None,
 ) -> Iterator[tuple[int, bool]]:
     """Yield tokens from exact target-distribution MTP verification.
 
@@ -1250,6 +1313,11 @@ def generate_mtp_tokens(
     draft distribution, never the sampled token, so verification stays exact.
     A positive ``first_draft_min_probability`` replaces that limit for the first
     position only; zero applies the same limit to every position.
+
+    Image prompts pass ``input_embeddings`` ([prompt, hidden]) and a
+    ``main_model`` exposing ``rope_positions``. As in vLLM's MTP proposer, the
+    draft pair (hidden[i], prompt[i + 1]) takes the target's input embedding of
+    prompt[i + 1] and the target's position i. Verification stays exact.
     """
     from .qwen_mtp_policy import MTPDraftPolicy
     policy = MTPDraftPolicy(draft_tokens, zero_acceptance_limit)
@@ -1260,6 +1328,22 @@ def generate_mtp_tokens(
     if not (0.0 <= draft_min_probability < 1.0 and 0.0 <= first_draft_min_probability < 1.0):
         raise ValueError("Qwen MTP draft minimum probabilities must be in [0, 1)")
     first_draft_limit = first_draft_min_probability or draft_min_probability
+    rope_positions = getattr(main_model, "rope_positions", None)
+    if input_embeddings is not None:
+        if rope_positions is None or input_embeddings.shape[0] != len(prompt):
+            raise ValueError("Qwen MTP image input needs prompt-aligned embeddings and positions")
+        if cached_tokens or prefilled_hidden is not None:
+            raise ValueError("Qwen MTP image input does not use cached or layer-major Prefill")
+    image_kwargs = {} if rope_positions is None else {"rope_positions": rope_positions}
+
+    def target_forward(token_ids: mx.array, cache, capture=None, start: int | None = None):
+        # Generated tokens are text; only prompt chunks carry image embeddings.
+        extra = dict(image_kwargs)
+        if input_embeddings is not None and start is not None:
+            extra["input_embeddings"] = input_embeddings[None, start:start + token_ids.shape[1]]
+        if capture is not None:
+            return main_model.forward_with_hidden(token_ids, cache, capture, **extra)
+        return main_model.forward_with_hidden(token_ids, cache, **extra)
 
     from .dspark import DraftResult, _sample, _verify, sampling_logprobs
     from .model import _fork_prompt_cache, eval_prompt_cache
@@ -1295,22 +1379,26 @@ def generate_mtp_tokens(
         else prefill_step_size
     )
 
-    def advance_mtp(hidden: mx.array, token_ids: mx.array) -> None:
+    def advance_mtp(hidden: mx.array, token_ids: mx.array, next_embeddings=None) -> None:
+        extra = dict(image_kwargs)
+        if next_embeddings is not None:
+            extra["next_embeddings"] = next_embeddings
         advance = getattr(mtp_model, "advance", None)
         if callable(advance):
-            state_hidden = advance(hidden, token_ids, embedding_weight, mtp_cache)
+            state_hidden = advance(hidden, token_ids, embedding_weight, mtp_cache, **extra)
         else:
             _, state_hidden = mtp_model(
-                hidden, token_ids, embedding_weight, lm_head_weight, mtp_cache)
+                hidden, token_ids, embedding_weight, lm_head_weight, mtp_cache, **extra)
         # Evaluate the whole layer before shared expert slots may be recycled;
         # evaluating only cache arrays would not fence the trailing MoE work.
         eval_prompt_cache([mtp_cache], state_hidden)
 
-    def prefill_mtp(paired_hidden: mx.array, paired_tokens: mx.array) -> None:
+    def prefill_mtp(paired_hidden: mx.array, paired_tokens: mx.array, paired_embeddings=None) -> None:
         for start in range(0, paired_tokens.shape[1], mtp_prefill_step):
             check_cancelled()
             end = min(start + mtp_prefill_step, paired_tokens.shape[1])
-            advance_mtp(paired_hidden[:, start:end], paired_tokens[:, start:end])
+            advance_mtp(paired_hidden[:, start:end], paired_tokens[:, start:end],
+                        None if paired_embeddings is None else paired_embeddings[:, start:end])
 
     def prefill_mtp_layer_major(paired_hidden: mx.array, paired_tokens: mx.array) -> None:
         # Read the draft layer's experts once into a whole-layer buffer, as the
@@ -1351,10 +1439,7 @@ def generate_mtp_tokens(
         check_cancelled()
         count = min(prefill_step_size, len(prompt) - processed)
         token_ids = mx.array([prompt[processed : processed + count]], dtype=mx.int32)
-        final_logits, final_hidden = main_model.forward_with_hidden(
-            token_ids,
-            target_cache,
-        )
+        final_logits, final_hidden = target_forward(token_ids, target_cache, start=processed)
         if previous_hidden is None:
             paired_hidden = final_hidden[:, :-1]
             paired_tokens = token_ids[:, 1:]
@@ -1365,7 +1450,11 @@ def generate_mtp_tokens(
             )
             paired_tokens = token_ids
         if paired_tokens.shape[1]:
-            prefill_mtp(paired_hidden, paired_tokens)
+            # Paired next tokens are prompt[end - n:end]; images use their features.
+            end = processed + count
+            paired_embeddings = (None if input_embeddings is None else
+                input_embeddings[None, end - paired_tokens.shape[1]:end])
+            prefill_mtp(paired_hidden, paired_tokens, paired_embeddings)
             mx.eval(final_hidden)
         else:
             mx.eval(final_logits, final_hidden)
@@ -1407,7 +1496,7 @@ def generate_mtp_tokens(
         if remaining == 1:
             pending.append((predecessor_hidden, anchor))
             committed.append(anchor)
-            logits, predecessor_hidden = main_model.forward_with_hidden(
+            logits, predecessor_hidden = target_forward(
                 mx.array([[anchor]], dtype=mx.int32),
                 target_cache,
             )
@@ -1437,6 +1526,7 @@ def generate_mtp_tokens(
                 embedding_weight,
                 lm_head_weight,
                 mtp_cache,
+                **image_kwargs,
             )
             eval_prompt_cache([mtp_cache], draft_logits, draft_hidden)
             draft_distribution = adjusted_logprobs(
@@ -1461,7 +1551,7 @@ def generate_mtp_tokens(
             # The draft layer already holds (predecessor_hidden, anchor); take an
             # ordinary target step with no fork, batch or rewind.
             committed.append(anchor)
-            logits, predecessor_hidden = main_model.forward_with_hidden(
+            logits, predecessor_hidden = target_forward(
                 mx.array([[anchor]], dtype=mx.int32),
                 target_cache,
             )
@@ -1481,9 +1571,9 @@ def generate_mtp_tokens(
         verified_ids = mx.array([[anchor, *draft_tokens]], dtype=mx.int32)
         layer_inputs = [] if rewind else None
         verified_logits, verified_hidden = (
-            main_model.forward_with_hidden(verified_ids, verified_cache, layer_inputs)
+            target_forward(verified_ids, verified_cache, layer_inputs)
             if rewind
-            else main_model.forward_with_hidden(verified_ids, verified_cache)
+            else target_forward(verified_ids, verified_cache)
         )
         eval_prompt_cache(verified_cache, verified_logits, verified_hidden)
         target_logprobs = mx.stack(
@@ -1527,7 +1617,7 @@ def generate_mtp_tokens(
             replay_logits = replay_hidden = None
             for input_token in [anchor, *draft_tokens[:accepted]]:
                 check_cancelled()
-                replay_logits, replay_hidden = main_model.forward_with_hidden(
+                replay_logits, replay_hidden = target_forward(
                     mx.array([[input_token]], dtype=mx.int32),
                     target_cache,
                 )
@@ -1567,7 +1657,7 @@ def generate_mtp_tokens(
                 check_cancelled()
                 pending.append((predecessor_hidden, anchor))
                 committed.append(anchor)
-                logits, predecessor_hidden = main_model.forward_with_hidden(
+                logits, predecessor_hidden = target_forward(
                     mx.array([[anchor]], dtype=mx.int32),
                     target_cache,
                 )
@@ -1644,6 +1734,7 @@ def load(
         for layer in model.model.layers:
             layer.mlp.experts.grouped_prefill = grouped_prefill
             layer.mlp.experts.sorted_prefill = sorted_prefill
+            layer.mlp.experts.ready_verification = True
             layer.mlp.experts.wave_slots = getattr(config, "qwen_expert_wave_slots", 0)
             attention = getattr(layer, "self_attn", None)
             if isinstance(attention, QSAAttention):

@@ -1371,8 +1371,9 @@ class ModelRuntime:
                     prompt if isinstance(prompt, PreparedPrompt) else None)
                 has_media = prepared is not None
                 if has_media:
-                    if getattr(self.model, "mtp", None) is not None or getattr(self.model, "dspark", None) is not None:
-                        raise MediaError("Media inputs do not support speculative decoding.")
+                    # Qwen MTP takes image embeddings and positions; DSpark does not.
+                    if getattr(self.model, "dspark", None) is not None:
+                        raise MediaError("Media inputs do not support DSpark speculative decoding.")
                     prepared.validate(self.model.args.hidden_size)
                 # Encoder initialization may consume the MLX RNG; seed sampling afterwards.
                 mx.random.seed(options.seed if options.seed is not None else secrets.randbits(32))
@@ -1404,7 +1405,7 @@ class ModelRuntime:
                         options.approximation_mode,
                     )
                     dspark.restore_cache_state(dspark_entry.context_state)
-                elif mtp is not None:
+                elif mtp is not None and not has_media:
                     entry = self._acquire_prompt_cache(prompt_tokens, options.approximation_mode)
                 else:
                     entry = (
@@ -1528,7 +1529,7 @@ class ModelRuntime:
 
                         def store_prompt_end(state) -> None:
                             nonlocal prefill_persist_entry
-                            if not self._prompt_cache_enabled():
+                            if has_media or not self._prompt_cache_enabled():
                                 return
                             snapshot_started = time.perf_counter()
                             prefill_persist_entry = _PromptCacheEntry(
@@ -1554,9 +1555,10 @@ class ModelRuntime:
                             cached=cached_mtp,
                             on_prompt_end=store_prompt_end,
                             state=mtp_state,
+                            prepared=prepared,
                         )
                         finish = mtp_state.get("finish")
-                        if finish is not None and self._prompt_cache_enabled():
+                        if finish is not None and not has_media and self._prompt_cache_enabled():
                             final = finish()
                             self.support.evaluate_cache(prompt_cache)
                             mx.eval(final.hidden, *_cache_state_arrays(
@@ -1671,6 +1673,7 @@ class ModelRuntime:
         cached=None,
         on_prompt_end=None,
         state: dict[str, Any] | None = None,
+        prepared: PreparedPrompt | None = None,
     ) -> Iterator[GeneratedPiece]:
         from .qwen4_exp import generate_mtp_tokens
 
@@ -1679,7 +1682,7 @@ class ModelRuntime:
         responses = iter(
             generate_mtp_tokens(
                 prompt_tokens,
-                self.model,
+                self.support.model_for_prompt(self.model, prepared) if prepared is not None else self.model,
                 mtp,
                 prompt_cache,
                 max_tokens=options.max_tokens,
@@ -1701,6 +1704,7 @@ class ModelRuntime:
                 boundary_hidden=cached.hidden if cached is not None else None,
                 on_prompt_end=on_prompt_end,
                 state=state,
+                input_embeddings=prepared.input_embeddings if prepared is not None else None,
             )
         )
         with closing(responses):

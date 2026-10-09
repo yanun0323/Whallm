@@ -78,6 +78,16 @@ class ImageGenerationModel:
     def __getattr__(self, name):
         return getattr(self._model, name)
 
+    @property
+    def rope_positions(self):
+        return self._positions
+
     def __call__(self, tokens, cache=None, *, input_embeddings=None):
         return self._model(tokens, cache=cache, input_embeddings=input_embeddings,
                            rope_positions=self._positions)
+
+    def forward_with_hidden(self, tokens, cache=None, capture=None, *, input_embeddings=None,
+                            rope_positions=None):
+        # MTP prefill, verification and decode all use this request's positions.
+        return self._model.forward_with_hidden(tokens, cache, capture,
+            input_embeddings=input_embeddings, rope_positions=self._positions)

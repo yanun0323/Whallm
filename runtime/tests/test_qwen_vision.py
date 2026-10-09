@@ -188,7 +188,7 @@ class QwenVisionTests(unittest.TestCase):
         np.testing.assert_allclose(np.array(actual),expected,rtol=2e-4,atol=2e-5)
         with self.assertRaises(ValueError): model(patches,(2,4,6))
 
-    def test_missing_damaged_or_escaped_weights_and_mtp_fail_before_encoder(self):
+    def test_missing_damaged_or_escaped_weights_fail_before_encoder_even_with_mtp(self):
         with tempfile.TemporaryDirectory() as root:
             install=installed(root)
             with self.assertRaisesRegex(MediaError,'Verify and Repair'): weight_path(install)
@@ -196,7 +196,8 @@ class QwenVisionTests(unittest.TestCase):
             path.write_bytes(b'bad')
             with self.assertRaises(MediaError): weight_path(install)
             runtime=SimpleNamespace(installed=install,model=SimpleNamespace(mtp=object()))
-            with self.assertRaisesRegex(MediaError,'MTP'): validate_runtime(runtime)
+            # MTP is allowed; only the damaged weights are rejected.
+            with self.assertRaisesRegex(MediaError,'damaged'): validate_runtime(runtime)
             path.unlink(); path.symlink_to(Path(root)/'config.json')
             with self.assertRaises(MediaError): weight_path(install)
 
