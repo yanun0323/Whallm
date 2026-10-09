@@ -38,7 +38,7 @@ Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo
 
 The server listens on `http://127.0.0.1:11434`. A model loads the first time you use it. The server keeps one model loaded and runs one request at a time. If a model you just installed is missing from the Chat list, restart the server.
 
-The [1.1.10 release notes](Packaging/ReleaseNotes/1.1.10.md) list the changes, upgrade steps and known limits.
+The [1.1.11 release notes](Packaging/ReleaseNotes/1.1.11.md) list the changes, upgrade steps and known limits.
 
 ## Requirements
 
@@ -71,7 +71,7 @@ Added in 1.1.10.
 ### Images
 
 - Both Qwen models accept still PNG, JPEG and WebP images in Chat, `/v1/chat/completions` and `/v1/responses`.
-- **Images need MTP off.** Because MTP is on by default, turn off **Use MTP** in **Model → Advanced Settings** and reload the model before you send images. Image requests don't use the prompt cache.
+- Images work with MTP on or off. On the full Swift1.5 model, every token MTP produced was the one the model itself would pick, and output was about 1.4× faster for two test images. Image requests don't use the prompt cache.
 - Limits per request: 8 images, 8 MiB per file, 32 MiB in total, 1,048,576 pixels per image after resizing and 2,048 image tokens.
 - New installs include the image weights. On an older install, select **Model → Verify and Repair**; it downloads only missing or damaged files. A full Qwen3.8 FP8 install is **126,189,355,659 bytes** (about **117.52 GiB**).
 - Video, audio and document input are not available for Qwen.
@@ -89,7 +89,7 @@ Whallm keeps shared weights in memory and reads the chosen experts from SSD. It 
 
 ## Benchmarks
 
-All rows use **Code** input and a **128-token** output limit. The build revision and cache state were not recorded, so treat these numbers as a reference, not as a controlled comparison between versions or speed-ups.
+Except for the image table, rows use **Code** input and a **128-token** output limit. For those rows the build revision and cache state were not recorded, so treat these numbers as a reference, not as a controlled comparison between versions or speed-ups.
 
 - **TTFT**: time until the first token appears.
 - **Prefill**: input processing speed. **Decode**: output speed. Both are in tokens per second.
@@ -112,6 +112,19 @@ All rows use **Code** input and a **128-token** output limit. The build revision
 | Qwen3.8 | 1.1.7 | 3072 | 16384 | 112353.1 | 145.8 | 8.5 | 17.18 |
 
 The Swift1.5 rows used temperature 0.0 and seed 42.
+
+### M5 Pro: Swift1.5 image prompts with MTP
+
+Measured on the 1.1.11 source with 160 output tokens, temperature 0, Prompt Cache off and 3,084 expert slots (7.5 GiB). Each number is the median of 3 rounds. Draft acceptance is the share of MTP's guesses that the model kept.
+
+| Image | Image tokens | Input tokens | MTP | Decode (tok/s) | First token (s) | Draft acceptance |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| House drawing | 384 | 404 | Off | 12.31 | 3.78 | — |
+| House drawing | 384 | 404 | On | 17.13 | 3.56 | 67% |
+| Bar chart | 256 | 281 | Off | 11.92 | 3.19 | — |
+| Bar chart | 256 | 281 | On | 17.07 | 3.09 | 74% |
+
+With MTP on, output was 1.38× and 1.43× as fast, and the first token arrived slightly sooner.
 
 ### M2 Max
 
@@ -186,7 +199,7 @@ See the [MiMo contract and limits](docs/mimo-development.md).
 
 ## Validation and limits
 
-- Tests: **694 Python tests passed**; **193 Swift tests ran, 4 skipped, none failed**.
+- Tests: **705 Python tests passed**; **193 Swift tests ran, 4 skipped, none failed**.
 - Packaging checks cover signatures, bundled files and startup in English, Simplified Chinese and Traditional Chinese, without access to the build folder. They run on both the app and the unzipped ZIP. Releases repeat them on the signed, notarized download.
 - Tool-call tests use fixed model output. They are not a full Pi or Codex session.
 - MiMo is a preview. It supports text, images, short WAV audio and some documents from a fixed prepared artifact. Video, audio-video sync and the MCP Agent interface are not finished. See the [development status](docs/mimo-development.md).
