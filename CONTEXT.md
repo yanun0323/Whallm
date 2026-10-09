@@ -43,8 +43,10 @@ identity remains `ukisai/Swift1.5-Qwen3.8-Flash-Next` at
 The published manifest retains `qwen3.8-flash-next` as its schema label. Swift
 and Python resolve that exact source identity to the new model kind without
 rewriting the artifact. Installation folders, settings, Aliases and prompt
-caches stay separate from the FP8 model. MTP weights are included in the new
-artifact; MTP remains off by default and never downloads the FP8 model's MTP.
+caches stay separate from the FP8 model. The new artifact includes its own MTP
+weights; Swift never downloads the FP8 model's MTP. Both Qwen model kinds show the same short list
+of Advanced Settings and fix their other runtime options, with MTP, sorted expert
+prefill and masked QSA prefill on.
 
 Both Qwen model kinds accept still images through App Chat and the Chat/Responses
 APIs. Each installation includes its own pinned `vision/common.bin` (897,864,704

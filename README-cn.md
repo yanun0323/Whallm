@@ -14,7 +14,7 @@
 
 Whallm 让 Apple Silicon Mac 从 SSD 读取所需的专家权重，在本地运行大语言模型。支持 DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen 和 MiMo（预览版），提供内置聊天和 OpenAI 兼容 API。
 
-1.1.10 版新增第五个模型 `Swift1.5-Qwen3.8-Flash-Next`，从 `Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4` 的固定版本 `257cb509d72ecc07519be35a8b7558fde3b31b21` 下载。它复用 Qwen FP8 模型的推理引擎，但安装目录、保存设置、Alias 与提示词缓存各自独立。API model ID 为 `swift1.5-qwen3.8-flash-next-mxfp4`。App 固定显示的下载大小为 **127,714,522,478 bytes**（约 **118.94 GiB**）：原有 59 个文本／MTP 文件，加上 **897,864,704 bytes** 的视觉权重；不下载审计文件。MTP 仍默认关闭。
+1.1.10 版新增第五个模型 `Swift1.5-Qwen3.8-Flash-Next`，从 `Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4` 的固定版本 `257cb509d72ecc07519be35a8b7558fde3b31b21` 下载。它复用 Qwen FP8 模型的推理引擎，但安装目录、保存设置、Alias 与提示词缓存各自独立。API model ID 为 `swift1.5-qwen3.8-flash-next-mxfp4`。App 固定显示的下载大小为 **127,714,522,478 bytes**（约 **118.94 GiB**）：原有 59 个文本／MTP 文件，加上 **897,864,704 bytes** 的视觉权重；不下载审计文件。两款 Qwen 的进阶设置相同，只保留 Alias、生成、内存、读取工作数、提示词缓存、预热与 MTP；其他运行选项一律使用固定值，包括 MTP 策略、排序专家 Prefill 与遮罩 QSA Prefill。MTP 默认开启，输出可能与不使用 MTP 时略有不同。
 
 两款 Qwen 都可通过 App Chat、`/v1/chat/completions` 和 `/v1/responses` 输入静态 PNG／JPEG／WebP 图片。新安装包含视觉权重；已有安装请在 **Model → Verify and Repair** 补齐缺少或损坏的文件，不会重新下载完好的文本权重。原版 Qwen 的安装大小为 **126,189,355,659 bytes**（约 **117.52 GiB**）。图片请求须关闭 MTP，且不使用提示词缓存。限制：每次 8 张、每文件 8 MiB、每次合计 32 MiB、每张解码／缩放后最多 1,048,576 像素、每次最多 2,048 个图片 tokens。Qwen 不支持视频、音频或文档输入。Swift 完整模型已通过红／蓝图片识别，以及图片请求与中止前后的短文本结果一致性检查；原版 Qwen 的完整视觉生成、广泛图片质量与视觉性能尚未验证。
 

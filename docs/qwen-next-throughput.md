@@ -53,8 +53,8 @@ outputs, SDPA scratch and resident tensors are additional. `qwen_qsa_query_chunk
 Grouped prefill already sorts routed rows by expert; this flag also passes
 `sorted_indices=True` to `gather_qmm`, so MLX uses its segmented kernel. It
 requires `qwen_grouped_experts`, applies only to grouped batches of at least 64
-rows, and leaves decode unchanged. The App shows it as **Use sorted expert
-prefill** under Qwen Flash experiments for both Qwen models.
+rows, and leaves decode unchanged. Since 2026-10-09 the App turns it on for both
+Qwen models and no longer shows a control for it.
 
 The segmented kernel is not bit-identical to the default path. Enabled mode adds
 a separate `qwenSortedExpertPrefill: mlx-v1` Prompt Cache contract, so cached
@@ -69,7 +69,11 @@ checks on four chat prompts, the size of the logit differences was similar to
 the difference between `MLX_ENABLE_TF32=0` and the App's default precision.
 This is a bounded comparison, not a scored quality evaluation.
 
-### Indexed QSA Decode / narrow MTP verification
+### Indexed QSA Decode / narrow MTP verification (removed)
+
+**Removed on 2026-10-08.** `qwen_qsa_indexed`, `qwen_sparse_sdpa` and
+`qwen_qsa_indexed.py` were deleted after a small paired Swift comparison showed
+total time 3.5% / 1.9% longer at 4K / 16K. The text below records the former design.
 
 `qwen_qsa_indexed.py` is an original two-stage Metal implementation. Each
 query/head uses 32 splits that read only selected K/V rows, maintain FP32
@@ -101,12 +105,12 @@ It is retained as negative evidence, not advertised as an additional optimizatio
 
 ## App and configuration
 
-Advanced Settings > Qwen Flash experiments adds the following controls:
+Removed from the App on 2026-10-09: both Qwen models use QSA queries per chunk 16.
+The former Advanced Settings > Qwen Flash experiments controls were:
 
 | UI | Preference | Runtime / CLI | Default |
 | --- | --- | --- | --- |
 | QSA queries per chunk | qwenQSAQueryChunk | qwen_qsa_query_chunk / --qwen-qsa-query-chunk | 16 |
-| Use indexed QSA decode | qwenQSAIndexed | qwen_qsa_indexed / --qwen-qsa-indexed | false |
 
 English, Traditional Chinese and Simplified Chinese copy, range checks and
 accessibility identifiers are included. Settings persist per model, reset with
@@ -172,12 +176,11 @@ make test-qwen-flash-portable PYTHON=python3
 make test-qwen-flash
 WHALLM_QWEN_UI_ARTIFACTS="$PWD/scratch/qsa-ui" make test
 PYTHONPATH=runtime .venv/bin/python Scripts/validate_qwen_flash_app_catalog.py scratch/qsa-ui/catalogs
-make benchmark-qwen-qsa QWEN_FLASH_OUTPUT=scratch/qsa/components.json
 ```
 
 The microbenchmark requires Apple Metal, pinned dependencies and Git history
 containing the baseline. It refuses to overwrite evidence. Installed-model
-pilots include qsa-chunk16, qsa-chunk32, qsa-indexed and qsa-throughput. Compare
+pilots include qsa-chunk16 and qsa-chunk32. Compare
 separate worktrees and identical model bytes, cache budgets, sampling, prompt
 history and MTP settings to isolate changes.
 

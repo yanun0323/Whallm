@@ -157,7 +157,10 @@ The maximum selectable payload is 512 MiB. Reads use buffered POSIX `pread`, not
 counts bytes returned by pread, **not physical SSD traffic**. File contents must
 remain immutable while a model is loaded, as with the baseline mmap contract.
 
-### 3. Fused SDPA over the existing QSA selected cells
+### 3. Fused SDPA over the existing QSA selected cells (removed)
+
+**Removed on 2026-10-08.** `qwen_sparse_sdpa` and its CLI switch no longer exist;
+the paragraphs below record the former design.
 
 An opt-in path feeds the **same** gathered K/V rows, per-query causal mask and GQA
 head layout to `mx.fast.scaled_dot_product_attention`. It avoids the explicit
@@ -177,11 +180,11 @@ quality and stochastic sampling still require validation on the installed model.
 | `qwen_expert_wave_slots` / `--qwen-expert-wave-slots` | `0` | 0 disables; 1..512 |
 | `qwen_ngram_io` / `--qwen-ngram-io` | `mmap` | mmap, pread |
 | `qwen_ngram_cache_bytes` / `--qwen-ngram-cache-bytes` | `0` | 0..536870912; requires pread |
-| `qwen_sparse_sdpa` / `--qwen-sparse-sdpa` | false | boolean; also `--no-qwen-sparse-sdpa` |
 
 Both standalone CLI and server accept the switches. Catalog fields are optional
 for backward compatibility. Nondefault settings are rejected for non-Qwen models.
-The Qwen model's [App controls](qwen-flash-app-controls.md) expose these experiments.
+The App no longer exposes these experiments for either Qwen model (2026-10-09); see
+[App controls](qwen-flash-app-controls.md) for the fixed values.
 They are saved per model; packaged defaults remain unchanged.
 
 ```sh
@@ -198,7 +201,7 @@ make benchmark-qwen-flash-host PYTHON=python3 \
 # Each pilot uses a fresh process, refuses to overwrite evidence, and records
 # prompt/output hashes, config, source hashes, cache state and memory/IO metrics.
 # Set QWEN_MODEL to an existing installed Whallm Qwen model, not raw HF shards.
-for variant in baseline waves pread sparse-sdpa flash-combined; do
+for variant in baseline waves pread flash-combined; do
   make pilot-qwen-flash QWEN_MODEL="$HOME/.dsmodel/YOUR-QWEN-MODEL" \
     PROMPT=your-prompt.txt QWEN_VARIANT="$variant" \
     QWEN_FLASH_OUTPUT="scratch/qwen-flash/$variant.json" \

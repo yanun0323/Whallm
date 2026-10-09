@@ -1,5 +1,11 @@
 # Qwen Flash Next: theoretical starting settings
 
+> **Removed from the App on 2026-10-09.** Neither Qwen model shows the Qwen Flash
+> experiments section any more. Their hidden options use fixed values (waves 0, mmap
+> N-gram reads, QSA queries per chunk 16, sorted expert prefill and masked QSA prefill
+> on, Packed GDN off). The runtime and CLI options below still exist. This page records
+> the former App controls.
+
 These are **experimental starting points, not measured optimal presets**. They
 assume one active request, Whallm's pinned MXFP4 installed model, a local SSD,
 and an otherwise mostly idle Mac. No complete checkpoint was run for this work.
@@ -22,8 +28,6 @@ The new controls and source audit are described in [the implementation note](qwe
 | Prefetch read workers | 2 | 2 | 2 |
 | Prefill step size | 512 | 1024 | 1024 |
 | QSA queries per chunk | 16 | 16 | 16 |
-| Use fused QSA SDPA | on, experimental | on, experimental | on, experimental |
-| Use indexed QSA decode | on, experimental | on, experimental | on, experimental |
 | Prompt cache | memory | memory | memory |
 | Prompt cache entries / GiB | 1 / 4 | 1 / 4 | 1 / 8 |
 
@@ -128,8 +132,8 @@ rates, p50/p95 over repeated requests, peak process/MLX memory, memory pressure
 and swap. Compare prose, code and Traditional Chinese tasks. Component timing
 percentiles are not end-user latency percentiles.
 
-If output-quality or numerical checks fail, turn off indexed QSA first; then
-restore query chunk 4 and fused SDPA off. Keep compression and MTP off while
+If output-quality or numerical checks fail, restore query chunk 4 first. Fused
+and indexed QSA were removed on 2026-10-08. Keep compression and MTP off while
 isolating the cause. Stop on nonfinite logits, failed cancellation/continuation,
 unexpected cache changes or sustained swap. No physical-device throughput or
 quality improvement is guaranteed by this document.

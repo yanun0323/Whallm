@@ -1,5 +1,11 @@
 # Qwen Flash App controls
 
+> **Removed from the App on 2026-10-09.** Neither Qwen model shows the Qwen Flash
+> experiments section any more. Their hidden options use fixed values (waves 0, mmap
+> N-gram reads, QSA queries per chunk 16, sorted expert prefill and masked QSA prefill
+> on, Packed GDN off). The runtime and CLI options below still exist. This page records
+> the former App controls.
+
 The Qwen model's Advanced Settings page now contains a **Qwen Flash experiments**
 section. It exposes opt-in runtime experiments without changing existing defaults
 or the installed-model format. It is not shown for DeepSeek models. The Packed
@@ -13,9 +19,9 @@ GDN control appears only for **Swift1.5-Qwen3.8-Flash-Next**.
 | N-gram read backend | `qwenNgramIO` | `qwen_ngram_io` | `mmap` |
 | N-gram row cache MiB | `qwenNgramCacheMiB` | `qwen_ngram_cache_bytes` | `0` (off) |
 | QSA queries per chunk | `qwenQSAQueryChunk` | `qwen_qsa_query_chunk` | `16` |
-| Use indexed QSA decode | `qwenQSAIndexed` | `qwen_qsa_indexed` | `false` |
-| Use fused QSA SDPA | `qwenSparseSDPA` | `qwen_sparse_sdpa` | `false` |
 | Skip text | `qwen_qsa_skip_complete_gather` | same name | `true` |
+
+Removed on 2026-10-08: **Use fused QSA SDPA** (`qwen_sparse_sdpa`), **Use indexed QSA decode** (`qwen_qsa_indexed`) and **Overlap shared expert compute with reads** (`qwen_shared_expert_overlap`) no longer exist for either Qwen model. Saved App preferences that still hold them are ignored. A catalog field set to `false` is accepted and dropped; `true` is rejected. Approximate mode is no longer offered for either Qwen model; DeepSeek models keep it.
 
 Wave size accepts every integer from 0 through 512. It bounds experts acquired
 per wave, not the total expert cache or process memory. The runtime also caps the
@@ -95,8 +101,8 @@ English, Traditional Chinese and Simplified Chinese cover all new labels, help,
 validation messages, dependency explanations and lifecycle messages. Number
 controls include a text field and bounded stepper; controls have accessibility
 labels and stable identifiers. The section labels the experiments explicitly:
-pread may be slower than mmap, and fused SDPA can change rounding and generated
-text. Neither speed nor full-model quality improvements are claimed.
+pread may be slower than mmap, and sorted or masked prefill can change rounding
+and generated text. Neither speed nor full-model quality improvements are claimed.
 
 ## Tests
 

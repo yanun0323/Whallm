@@ -24,7 +24,7 @@ used and needs no App switch.
 
 ### 2. No-gather QSA for the dense region
 
-When `qwen_sparse_sdpa` is enabled and the current KV length is at most the
+When `qwen_qsa_dense_within_budget` is enabled and the current KV length is at most the
 indexer budget (2048 for this pinned model), all causal keys are already selected.
 The runtime now passes the original GQA K/V tensors to SDPA instead of duplicating
 them for each four-query group and constructing unused index pools.
@@ -37,7 +37,8 @@ This is not a new long-context sparse-attention algorithm.
 
 Fused reductions are not guaranteed bit-identical to the manual path or the old
 fused batch layout. The existing opt-in warning about rounding and generated
-text remains applicable. Default `qwen_sparse_sdpa=false` is unchanged.
+text remains applicable. The default is off. `qwen_sparse_sdpa` also selected this
+route until it was removed on 2026-10-08.
 
 ### 3. Singleton routed-expert dispatch
 
@@ -160,13 +161,13 @@ against the same pinned dependencies and unchanged shared helper contracts; it
 is not a second full-model process. Reports refuse to overwrite old evidence.
 
 For an installed-model pilot, reuse `pilot-qwen-flash` with variants `baseline`,
-`sparse-sdpa`, `compiled` and the existing MTP variants. The current `baseline`
+`compiled` and the existing MTP variants. The `sparse-sdpa` variant was removed
+with `qwen_sparse_sdpa` on 2026-10-08. The current `baseline`
 variant still contains this commit's unconditional exact hash/dispatch changes;
 compare separate Git worktrees at the old and new commits to isolate those.
 Never compare with different cache budgets, quantizations or prompt-cache states.
 
 No complete checkpoint was loaded here. Full-model TTFT, Prefill/Decode rates,
-quality and physical-device behavior remain unmeasured. Keep the sparse SDPA
-experiment opt-in, and require real-prompt quality, cancellation, continuation,
+quality and physical-device behavior remain unmeasured. Require real-prompt quality, cancellation, continuation,
 and representative context-length measurements before treating these component
 wins as a production speed profile.

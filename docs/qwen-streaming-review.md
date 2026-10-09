@@ -57,13 +57,12 @@ remain relevant, but cannot establish an end-to-end Whallm gain.
 
 ## Experimental controls
 
-App: **Qwen model > Advanced Settings > Qwen Flash experiments**.
+App: removed on 2026-10-09; both Qwen models use 1 read expert and 0 warm experts. CLI options remain.
 
 | Control | Runtime field / CLI | Default | Range |
 | --- | --- | --- | --- |
 | Experts per prefill read | `qwen_prefill_read_experts` / `--qwen-prefill-read-experts` | 1 | 1..32 |
 | Warm decode experts per layer | `qwen_prefill_seed_experts` / `--qwen-prefill-seed-experts` | 0 | 0..128 |
-| Overlap shared expert compute with reads | `qwen_shared_expert_overlap` / `--qwen-shared-expert-overlap` | false | boolean |
 
 Read merging and warm handoff require layer-major, whole-layer expert prefill
 with expert waves disabled. Inactive UI choices are preserved but exported as
@@ -96,7 +95,12 @@ up to about 3.735 GiB of resident payload inside the existing expert budget,
 coexisting with prefill layer buffers. Fixed total slot capacity does not mean
 unchanged prefill headroom. App estimates account for this coexistence.
 
-### Shared expert overlap
+### Shared expert overlap (removed)
+
+**Removed on 2026-10-08.** A small paired Swift comparison found total time
+9.1% / 2.3% longer at 4K / 16K, so `qwen_shared_expert_overlap` and its CLI switch
+were deleted. The shared expert itself is unchanged. The paragraph below records
+the former design.
 
 Single-token routing is first materialized on the CPU. Only then does
 `mx.async_eval(shared)` submit the independent, resident shared branch. The
@@ -164,13 +168,12 @@ novel corpora at 4K/512 and 32K/512, with multiple repetitions and a separate wa
 series. Compare completed output counts/hashes, TTFT, Decode rate, total time,
 expert waits and peak memory/swap. Do not raise every setting simultaneously.
 
-| Variant | Read experts | Seed experts/layer | Shared overlap |
-| --- | ---: | ---: | --- |
-| Baseline | 1 | 0 | off |
-| Read only | 4 | 0 | off |
-| Handoff only | 1 | 32 | off |
-| Shared only | 1 | 0 | on |
-| Combined, only after individual qualification | 4 | 32 | on |
+| Variant | Read experts | Seed experts/layer |
+| --- | ---: | ---: |
+| Baseline | 1 | 0 |
+| Read only | 4 | 0 |
+| Handoff only | 1 | 32 |
+| Combined, only after individual qualification | 4 | 32 |
 
 Read eight / seed sixty-four are later sweeps, not recommended maxima. Revert
 options that do not reduce total latency or that cause memory pressure. Stop on
