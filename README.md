@@ -12,96 +12,134 @@
   <a href="README-ko.md"><img src="https://img.shields.io/badge/한국어-클릭-yellow" alt="한국어"></a>
 </p>
 
-Whallm runs large language models on Apple Silicon Macs by reading the experts it needs from SSD. It supports DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen, and MiMo (preview), with built-in chat and an OpenAI-compatible API.
+Whallm runs large language models on your Apple Silicon Mac. It keeps the shared weights in memory and reads only the experts each token needs from your SSD, so it can run models much larger than your memory. It comes with a chat window and an OpenAI-compatible API.
 
-Version 1.1.10 adds a fifth model, `Swift1.5-Qwen3.8-Flash-Next`, downloaded from `Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4` at revision `257cb509d72ecc07519be35a8b7558fde3b31b21`. It reuses the Qwen FP8 model's inference engine, but has its own installation folder, saved settings, Alias and prompt caches. Its API model ID is `swift1.5-qwen3.8-flash-next-mxfp4`. The App's fixed download size is **127,714,522,478 bytes** (about **118.94 GiB**): the artifact's 59 text/MTP files plus **897,864,704 bytes** of image weights. Audit files are not downloaded. Both Qwen models show the same short Advanced Settings: Alias, generation, memory, worker, Prompt Cache, warmup and MTP controls. Every other runtime option uses fixed values, including MTP's strategy, sorted expert prefill and masked QSA prefill. MTP is on by default and its output can differ slightly from non-MTP output.
-
-Both Qwen models accept still PNG/JPEG/WebP images in App Chat, `/v1/chat/completions`, and `/v1/responses`. New installations include image weights; existing installations use **Model → Verify and Repair** to fetch only missing or damaged files, without redownloading intact text weights. The original Qwen installation totals **126,189,355,659 bytes** (about **117.52 GiB**). Images require MTP off and do not use prompt caching. Limits: 8 images, 8 MiB per file, 32 MiB per request, 1,048,576 pixels per decoded/resized image and 2,048 image tokens per request. Video, audio and document input are not enabled for Qwen. A full Swift-model check recognized red/blue images and preserved a short text result before/after image requests and cancellation. Full original-Qwen vision generation, broad image quality and vision performance remain unvalidated.
+Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo (preview).
 
 ## Benchmark summary
 
-| Model | Chipset | Prefill | Decode | Peak memory | Expert cache slots |
+| Model | Chip | Prefill | Decode | Peak memory | Expert cache slots |
 | --- | --- | ---: | ---: | ---: | ---: |
+| `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 500.5–606.4 tok/s | 13.1–15.8 tok/s | 19 GiB | 2089 |
 | `DeepSeek-V4-Flash-0731` | M5 Pro | 53.6–201.0 tok/s | 5.9–7.7 tok/s | 23 GiB | 1152 |
 | `Qwen3.8-Flash-Next-FP8` | M5 Pro | 99.1–153.7 tok/s | 8.5–10.6 tok/s | 18 GiB | 3072 |
 | `DeepSeek-V4.1-Flash` | M2 Max | 13.9–65.9 tok/s | 1.8–2.2 tok/s | 33 GiB | 1152 |
 
-> Tested in v1.1.7 using the built-in Throughput benchmark with 1,024 to 16,384 input tokens.
+> Measured with the built-in Throughput test. Swift1.5 ran on v1.1.10 with 4,096 to 16,384 input tokens. The other models ran on v1.1.7 with 1,024 to 16,384 input tokens. Because the versions differ, don't compare the rows directly.
 >
 > See the [full benchmark](#benchmarks) for details.
 
 ## Quick start
 
-1. Download `Whallm-macOS-arm64.zip` from [GitHub Releases](https://github.com/yanun0323/Whallm/releases), extract it, and open `Whallm.app`.
-2. Open **Model**, choose a model, and select **Download Model**. The app checks storage space; interrupted downloads can resume.
+1. Download `Whallm-macOS-arm64.zip` from [GitHub Releases](https://github.com/yanun0323/Whallm/releases), unzip it and open `Whallm.app`.
+2. Open **Model**, pick a model and select **Download Model**. The app checks free space first. If a download stops, you can resume it.
 3. Open **Server** and select **Start Server**.
-4. Open **Chat** and choose your model, or connect an API client using the example below.
+4. Open **Chat** and pick your model, or connect an API client as shown below.
 
-The default address is `http://127.0.0.1:11434`. Models load when first used. The server keeps one model loaded and handles one generation request at a time. Restart the server if a newly installed model is missing from the chat picker.
+The server listens on `http://127.0.0.1:11434`. A model loads the first time you use it. The server keeps one model loaded and runs one request at a time. If a model you just installed is missing from the Chat list, restart the server.
 
-See the [1.1.10 release notes](Packaging/ReleaseNotes/1.1.10.md) for changes, upgrade steps, and known limits.
+The [1.1.10 release notes](Packaging/ReleaseNotes/1.1.10.md) list the changes, upgrade steps and known limits.
 
 ## Requirements
 
 | Item | Requirement |
 | --- | --- |
 | Mac | Apple Silicon, macOS 15 or later |
-| Unified memory | 64 GiB recommended; usage depends on the model and settings |
-| Storage | A fast internal, Thunderbolt, or USB4 SSD |
-| Free space | The app calculates the requirement for each model, including partial downloads |
-| Network | Needed for model downloads and app updates |
+| Memory | 64 GiB recommended; actual use depends on the model and settings |
+| Storage | A fast internal, Thunderbolt or USB4 SSD |
+| Free space | The app shows how much each model needs, including partial downloads |
+| Network | Needed to download models and app updates |
 
-Model weights are not included with the app. DeepSeek V4.1's expert and Engram files alone need about **458 GiB**, plus common weights and metadata.
+Model weights are not included in the app. DeepSeek V4.1 alone needs about **458 GiB** for its expert and Engram files, plus its other weights.
+
+## Qwen models
+
+### Swift1.5-Qwen3.8-Flash-Next
+
+Added in 1.1.10.
+
+- API model ID: `swift1.5-qwen3.8-flash-next-mxfp4`
+- Source: `Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4`, revision `257cb509d72ecc07519be35a8b7558fde3b31b21`
+- Download size: **127,714,522,478 bytes** (about **118.94 GiB**). This covers 59 text and MTP files plus **897,864,704 bytes** of image weights. Audit files are not downloaded.
+- It uses the same engine as Qwen3.8 FP8 but keeps its own folder, settings, Alias and prompt cache.
+
+### Settings
+
+- Both Qwen models show the same short **Advanced Settings**: Alias, generation, memory, read workers, Prompt Cache, warmup and MTP. Everything else uses fixed values.
+- MTP is on by default. It usually speeds up output, but not for every prompt. Output can differ slightly from output with MTP off.
+
+### Images
+
+- Both Qwen models accept still PNG, JPEG and WebP images in Chat, `/v1/chat/completions` and `/v1/responses`.
+- **Images need MTP off.** Because MTP is on by default, turn off **Use MTP** in **Model → Advanced Settings** and reload the model before you send images. Image requests don't use the prompt cache.
+- Limits per request: 8 images, 8 MiB per file, 32 MiB in total, 1,048,576 pixels per image after resizing and 2,048 image tokens.
+- New installs include the image weights. On an older install, select **Model → Verify and Repair**; it downloads only missing or damaged files. A full Qwen3.8 FP8 install is **126,189,355,659 bytes** (about **117.52 GiB**).
+- Video, audio and document input are not available for Qwen.
+- What's tested: the full Swift1.5 model recognized red and blue images, and short text answers stayed the same before and after image requests and cancellation. Image generation on the full Qwen3.8 FP8 model, overall image quality and image speed are not tested yet.
 
 ## Features
 
-Whallm keeps common weights in memory and reads selected experts from SSD. DeepSeek V4.1 Engram rows and Qwen N-gram rows are also read as needed.
+Whallm keeps shared weights in memory and reads the chosen experts from SSD. It also reads DeepSeek V4.1 Engram rows and Qwen N-gram rows only when needed.
 
-| Model | Acceleration options |
+| Model | Speed-ups |
 | --- | --- |
-| DeepSeek V4 | Layer-by-layer input processing, batched expert calculations, FP8 KV cache, optional ANE projection and DSpark |
-| DeepSeek V4.1 | Layer-by-layer input processing, batched experts, packed KV/index caches, candidate-only index scoring, CED input processing, ANE projection and DSpark |
-| Qwen3.8 | Grouped experts during input processing, expert calculations as reads finish, QSA cache compression, next-layer prefetch, ANE projection and MTP |
+| DeepSeek V4 | Layer-by-layer input processing, batched expert math, FP8 KV cache, optional ANE projection and DSpark |
+| DeepSeek V4.1 | Layer-by-layer input processing, batched experts, packed KV and index caches, scoring only candidate indexes, CED input processing, ANE projection and DSpark |
+| Qwen3.8 | Grouped experts during input processing, expert math as soon as each read finishes, QSA cache compression, next-layer prefetch and MTP |
 
 ## Benchmarks
 
-These recorded v1.1.7 runs use **Code** context and an output limit of **128 tokens**. The build revisions and cache state were not recorded alongside these rows, so they are reference results, not a controlled comparison of the new acceleration options.
+All rows use **Code** input and a **128-token** output limit. The build revision and cache state were not recorded, so treat these numbers as a reference, not as a controlled comparison between versions or speed-ups.
 
-TTFT is the wait for the first token. Prefill measures input processing; Decode measures output generation, both in tokens per second. Peak MLX is MLX allocation in **GiB**, not total Mac memory. The app export labels this value GB but divides bytes by 1024³.
+- **TTFT**: time until the first token appears.
+- **Prefill**: input processing speed. **Decode**: output speed. Both are in tokens per second.
+- **Peak MLX**: the most memory MLX used, in **GiB**. It is not the Mac's total memory use. Older app exports label this value GB, but it is computed in GiB.
 
 ### M5 Pro
 
-| Model | Slots | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| DeepSeek V4 | 1152 | 1024 | 19112.3 | 53.6 | 7.7 | 22.77 |
-| DeepSeek V4 | 1152 | 4096 | 24498.6 | 167.2 | 5.9 | 22.80 |
-| DeepSeek V4 | 1152 | 8192 | 42137.5 | 194.4 | 6.8 | 22.83 |
-| DeepSeek V4 | 1152 | 16384 | 81517.9 | 201.0 | 6.3 | 22.90 |
-| Qwen3.8 | 3072 | 1024 | 10336.3 | 99.1 | 10.6 | 16.86 |
-| Qwen3.8 | 3072 | 4096 | 28831.0 | 142.1 | 9.2 | 16.92 |
-| Qwen3.8 | 3072 | 8192 | 53303.2 | 153.7 | 10.1 | 17.01 |
-| Qwen3.8 | 3072 | 16384 | 112353.1 | 145.8 | 8.5 | 17.18 |
+| Model | Version | Slots | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Swift1.5 Qwen3.8 | 1.1.10 | 2089 | 4096 | 7188.6 | 569.8 | 13.5 | 16.71 |
+| Swift1.5 Qwen3.8 | 1.1.10 | 2089 | 8192 | 13509.5 | 606.4 | 15.8 | 17.60 |
+| Swift1.5 Qwen3.8 | 1.1.10 | 2089 | 16384 | 32737.4 | 500.5 | 13.1 | 18.59 |
+| DeepSeek V4 | 1.1.7 | 1152 | 1024 | 19112.3 | 53.6 | 7.7 | 22.77 |
+| DeepSeek V4 | 1.1.7 | 1152 | 4096 | 24498.6 | 167.2 | 5.9 | 22.80 |
+| DeepSeek V4 | 1.1.7 | 1152 | 8192 | 42137.5 | 194.4 | 6.8 | 22.83 |
+| DeepSeek V4 | 1.1.7 | 1152 | 16384 | 81517.9 | 201.0 | 6.3 | 22.90 |
+| Qwen3.8 | 1.1.7 | 3072 | 1024 | 10336.3 | 99.1 | 10.6 | 16.86 |
+| Qwen3.8 | 1.1.7 | 3072 | 4096 | 28831.0 | 142.1 | 9.2 | 16.92 |
+| Qwen3.8 | 1.1.7 | 3072 | 8192 | 53303.2 | 153.7 | 10.1 | 17.01 |
+| Qwen3.8 | 1.1.7 | 3072 | 16384 | 112353.1 | 145.8 | 8.5 | 17.18 |
+
+The Swift1.5 rows used temperature 0.0 and seed 42.
 
 ### M2 Max
 
-| Model | Slots | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Qwen3.8 | 3072 | 1024 | 14016.3 | 73.1 | 9.0 | 16.86 |
-| Qwen3.8 | 3072 | 4096 | 40902.4 | 100.1 | 7.6 | 16.92 |
-| Qwen3.8 | 3072 | 8192 | 79125.0 | 103.5 | 8.3 | 17.01 |
-| Qwen3.8 | 3072 | 16384 | 158838.7 | 103.1 | 7.1 | 17.18 |
-| DeepSeek V4.1 | 1152 | 1024 | 73426.4 | 13.9 | 2.2 | 32.05 |
-| DeepSeek V4.1 | 1152 | 4096 | 106742.4 | 38.4 | 1.8 | 32.11 |
-| DeepSeek V4.1 | 1152 | 8192 | 144011.4 | 56.9 | 2.1 | 32.19 |
-| DeepSeek V4.1 | 1152 | 16384 | 248481.9 | 65.9 | 1.9 | 32.75 |
+| Model | Version | Slots | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen3.8 | 1.1.7 | 3072 | 1024 | 14016.3 | 73.1 | 9.0 | 16.86 |
+| Qwen3.8 | 1.1.7 | 3072 | 4096 | 40902.4 | 100.1 | 7.6 | 16.92 |
+| Qwen3.8 | 1.1.7 | 3072 | 8192 | 79125.0 | 103.5 | 8.3 | 17.01 |
+| Qwen3.8 | 1.1.7 | 3072 | 16384 | 158838.7 | 103.1 | 7.1 | 17.18 |
+| DeepSeek V4.1 | 1.1.7 | 1152 | 1024 | 73426.4 | 13.9 | 2.2 | 32.05 |
+| DeepSeek V4.1 | 1.1.7 | 1152 | 4096 | 106742.4 | 38.4 | 1.8 | 32.11 |
+| DeepSeek V4.1 | 1.1.7 | 1152 | 8192 | 144011.4 | 56.9 | 2.1 | 32.19 |
+| DeepSeek V4.1 | 1.1.7 | 1152 | 16384 | 248481.9 | 65.9 | 1.9 | 32.75 |
 
-To test your Mac, open **Throughput**, choose an installed model, select **Code** or **Novel**, input lengths from **1K to 200K**, and an output limit of **128, 512, 1024, or 4096**. Results can be copied as plain text, JSON, or Markdown. The app unloads the test model when the run finishes or is cancelled. Local builds also offer **Dry run**, which produces simulated results.
+To test your own Mac, open **Throughput**, then pick:
 
-SSD speed, prompt length, cache state, and settings affect results.
+- an installed model
+- **Code** or **Novel** input
+- input length from **1K to 200K**
+- output limit of **128, 512, 1024 or 4096**
+
+You can copy the results as plain text, JSON or Markdown. The app unloads the test model when the run finishes or is cancelled. Local builds also offer **Dry run**, which shows simulated results.
+
+Results depend on SSD speed, prompt length, cache state and settings.
 
 ## Connect Codex
 
-Start Whallm's server, then add this to your user-level `~/.codex/config.toml`:
+Start Whallm's server, then add this to `~/.codex/config.toml`:
 
 ```toml
 model = "deepseek-v4-flash-0731"
@@ -115,31 +153,47 @@ wire_api = "responses"
 requires_openai_auth = false
 ```
 
-Set `model` to an API model ID or an Alias configured in **Model → Advanced Settings**, then restart Codex. Chat, Status, Throughput and text/Markdown result tables use the same display names as the Model page; these labels are not API model IDs. Requests and benchmark JSON keep their original identifiers. This example assumes the default local address and no API key. If you configure a key in Whallm, configure the same key in your client. See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/).
+Set `model` to an API model ID, or to an Alias you set in **Model → Advanced Settings**. Then restart Codex.
+
+- The names shown in Chat, Status and Throughput are display names, not API model IDs. Requests and benchmark JSON still use the API model IDs.
+- This example uses the default address and no API key. If you set a key in Whallm, set the same key in your client.
+
+See the [Codex configuration reference](https://developers.openai.com/codex/config-reference/).
 
 ## API and privacy
 
-The API supports text streaming and tool calls through:
+The API streams text and supports tool calls through:
 
 - `GET /healthz` and `GET /v1/models`
 - `POST /v1/responses`
 - `POST /v1/chat/completions` and `POST /v1/completions`
 - `POST /api/models/load` and `POST /api/models/unload`
 
-All three generation endpoints support an optional `seed` integer from `0` to `4294967295`. Omit it or send `null` for a fresh random seed on every request. In Playground Chat, Seed applies only to the next message and clears after sending. A fixed seed helps reproduce a result with the same prompt, model, settings, and runtime; it does not guarantee identical text across versions, cache states, or acceleration settings. `temperature=0` remains greedy. Available in v1.1.8.
+**Seed** (since v1.1.8): all three generation endpoints accept an optional `seed` from `0` to `4294967295`. Leave it out or send `null` to get a new random seed each time. In Chat, Seed applies only to the next message. A fixed seed repeats a result only with the same prompt, model, settings and runtime; other versions, cache states or speed-up settings can still change the text. `temperature=0` always picks the most likely token.
 
-The client executes tools and sends their results back; inference APIs never run MCP tools automatically. MiMo (preview) supports still-image and bounded PCM WAV input through Chat/Responses and App attachments. JSON bodies remain limited to **1 MiB**; authenticated `/api/assets` uploads accept PNG/JPEG/WebP, PCM WAV and bounded PDF/DOCX/PPTX/XLSX documents up to **8 MiB** per file. Audio input is limited to 24 kHz, 16-bit PCM WAV, mono/stereo, 30 seconds per clip and two clips per request. Audio output, video, `logprobs`, `response_format`, and `stop` remain unsupported. See the [MiMo contract and limits](docs/mimo-development.md).
+**Tools**: your client runs the tools and sends the results back. Whallm never runs MCP tools by itself. Since v1.1.9, `/v1/responses` accepts `function_call_output.output` as a string or as a list of `input_text` parts for every model. Parts are joined in order with nothing added between them. Include the matching `function_call` with the same `call_id` in the request history.
 
-All models accept `function_call_output.output` as a string or an array of `input_text` parts for every model through `/v1/responses`. Text parts are joined in order without adding separators; existing whitespace is preserved. Include the matching `function_call` with the same `call_id` in the request history. Media support still depends on the model. Available since v1.1.9.
+**MiMo (preview)** accepts still images and short PCM WAV audio through Chat, Responses and app attachments.
 
-Inference runs on your Mac. Network access is used for downloads, updates, and API connections. Connected clients may send data elsewhere; **Debug** logs can contain complete prompts and tool results.
+- JSON request bodies: up to **1 MiB**.
+- `/api/assets` uploads (with sign-in): PNG, JPEG, WebP, PCM WAV and small PDF, DOCX, PPTX or XLSX files, up to **8 MiB** each.
+- Audio: 24 kHz, 16-bit PCM WAV, mono or stereo, up to 30 seconds per clip and two clips per request.
+- Not supported: audio output, video, `logprobs`, `response_format` and `stop`.
+
+See the [MiMo contract and limits](docs/mimo-development.md).
+
+**Privacy**: models run on your Mac. Whallm uses the network only for downloads, updates and API connections. Clients you connect may send data elsewhere. **Debug** logs can contain full prompts and tool results.
 
 ## Validation and limits
 
-Source validation: **674 Python tests passed**; **196 Swift tests ran, with 4 skipped and no failures**. Packaging checks cover signatures, bundled resources, and startup without access to the build directory in English, Simplified Chinese, and Traditional Chinese, for both the App and extracted ZIP. The release workflow repeats these checks on the signed, notarized package and the GitHub download. Tool-call regression tests use fixed model output; they are not a complete Pi or Codex client session.
-
-MiMo remains a preview with text/image, bounded WAV audio and limited document support, using a pinned prepared artifact; full acceptance remains incomplete. Chat attachments include categorized pickers, drag-and-drop, quota indicators and upload status. Video/AV synchronization and the MCP Agent interface remain unfinished; audio and document inputs have format and resource limits. See [development status](docs/mimo-development.md). Qwen image-validation limits are listed above. Historical MTP measurements are not measurements of the final corrected runtime, and MTP is not faster for every workload. Some acceleration paths have only small-model and component coverage. Very long prompts need more cache memory.
+- Tests: **694 Python tests passed**; **193 Swift tests ran, 4 skipped, none failed**.
+- Packaging checks cover signatures, bundled files and startup in English, Simplified Chinese and Traditional Chinese, without access to the build folder. They run on both the app and the unzipped ZIP. Releases repeat them on the signed, notarized download.
+- Tool-call tests use fixed model output. They are not a full Pi or Codex session.
+- MiMo is a preview. It supports text, images, short WAV audio and some documents from a fixed prepared artifact. Video, audio-video sync and the MCP Agent interface are not finished. See the [development status](docs/mimo-development.md).
+- Older MTP measurements predate the current runtime. MTP is not faster for every prompt.
+- Some speed-ups are tested only on small models or single parts.
+- Very long prompts need more cache memory.
 
 ## License
 
-Whallm is released under the [MIT License](LICENSE). Model weights have their own terms. Whallm is not affiliated with DeepSeek or Qwen.
+Whallm uses the [MIT License](LICENSE). Model weights have their own terms. Whallm is not affiliated with DeepSeek or Qwen.

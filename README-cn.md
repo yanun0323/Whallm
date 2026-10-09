@@ -12,96 +12,134 @@
   <a href="README-ko.md"><img src="https://img.shields.io/badge/한국어-클릭-yellow" alt="한국어"></a>
 </p>
 
-Whallm 让 Apple Silicon Mac 从 SSD 读取所需的专家权重，在本地运行大语言模型。支持 DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen 和 MiMo（预览版），提供内置聊天和 OpenAI 兼容 API。
+Whallm 让你在 Apple Silicon Mac 上运行大语言模型。共享权重放在内存里，每个 token 需要的专家才从 SSD 读取，所以能运行比内存大得多的模型。App 内置聊天窗口，也提供 OpenAI 兼容 API。
 
-1.1.10 版新增第五个模型 `Swift1.5-Qwen3.8-Flash-Next`，从 `Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4` 的固定版本 `257cb509d72ecc07519be35a8b7558fde3b31b21` 下载。它复用 Qwen FP8 模型的推理引擎，但安装目录、保存设置、Alias 与提示词缓存各自独立。API model ID 为 `swift1.5-qwen3.8-flash-next-mxfp4`。App 固定显示的下载大小为 **127,714,522,478 bytes**（约 **118.94 GiB**）：原有 59 个文本／MTP 文件，加上 **897,864,704 bytes** 的视觉权重；不下载审计文件。两款 Qwen 的进阶设置相同，只保留 Alias、生成、内存、读取工作数、提示词缓存、预热与 MTP；其他运行选项一律使用固定值，包括 MTP 策略、排序专家 Prefill 与遮罩 QSA Prefill。MTP 默认开启，输出可能与不使用 MTP 时略有不同。
-
-两款 Qwen 都可通过 App Chat、`/v1/chat/completions` 和 `/v1/responses` 输入静态 PNG／JPEG／WebP 图片。新安装包含视觉权重；已有安装请在 **Model → Verify and Repair** 补齐缺少或损坏的文件，不会重新下载完好的文本权重。原版 Qwen 的安装大小为 **126,189,355,659 bytes**（约 **117.52 GiB**）。图片请求须关闭 MTP，且不使用提示词缓存。限制：每次 8 张、每文件 8 MiB、每次合计 32 MiB、每张解码／缩放后最多 1,048,576 像素、每次最多 2,048 个图片 tokens。Qwen 不支持视频、音频或文档输入。Swift 完整模型已通过红／蓝图片识别，以及图片请求与中止前后的短文本结果一致性检查；原版 Qwen 的完整视觉生成、广泛图片质量与视觉性能尚未验证。
+支持的模型：DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen3.8，以及 MiMo（预览版）。
 
 ## 性能摘要
 
 | 模型 | 芯片 | Prefill | Decode | 峰值内存 | 专家缓存 Slots |
 | --- | --- | ---: | ---: | ---: | ---: |
+| `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 500.5–606.4 tok/s | 13.1–15.8 tok/s | 19 GiB | 2089 |
 | `DeepSeek-V4-Flash-0731` | M5 Pro | 53.6–201.0 tok/s | 5.9–7.7 tok/s | 23 GiB | 1152 |
 | `Qwen3.8-Flash-Next-FP8` | M5 Pro | 99.1–153.7 tok/s | 8.5–10.6 tok/s | 18 GiB | 3072 |
 | `DeepSeek-V4.1-Flash` | M2 Max | 13.9–65.9 tok/s | 1.8–2.2 tok/s | 33 GiB | 1152 |
 
-> 使用 v1.1.7 内置 Throughput 性能测试，输入长度为 1,024 至 16,384 tokens。
+> 使用内置 Throughput 测试测量。Swift1.5 使用 v1.1.10，输入 4,096 至 16,384 tokens；其他模型使用 v1.1.7，输入 1,024 至 16,384 tokens。版本不同，请勿直接比较各行。
 >
 > 详细数据见[完整性能测试](#性能测试)。
 
 ## 快速开始
 
 1. 从 [GitHub Releases](https://github.com/yanun0323/Whallm/releases) 下载 `Whallm-macOS-arm64.zip`，解压后打开 `Whallm.app`。
-2. 打开 **Model**，选择模型并点击 **Download Model**。App 会检查存储空间，中断的下载可以继续。
+2. 打开 **Model**，选择模型并点击 **Download Model**。App 会先检查剩余空间；下载中断后可以继续。
 3. 打开 **Server**，点击 **Start Server**。
-4. 到 **Chat** 选择模型开始对话，或按下方示例连接 API 客户端。
+4. 打开 **Chat** 选择模型，或按下方示例连接 API 客户端。
 
-默认地址为 `http://127.0.0.1:11434`。模型在首次使用时加载；服务器一次保留一个模型，依次处理生成请求。如果聊天列表中没有刚安装的模型，请重启服务器。
+服务器地址是 `http://127.0.0.1:11434`。模型在第一次使用时加载。服务器同一时间只加载一个模型、处理一个请求。如果刚安装的模型没有出现在 Chat 列表中，请重启服务器。
 
-变更、升级步骤和已知限制见 [1.1.10 英文发布说明](Packaging/ReleaseNotes/1.1.10.md)。
+[1.1.10 版本说明](Packaging/ReleaseNotes/1.1.10.md)列出了更改、升级步骤和已知限制。
 
 ## 使用要求
 
 | 项目 | 要求 |
 | --- | --- |
-| Mac | Apple Silicon，macOS 15 或更新版本 |
-| 统一内存 | 建议 64 GiB；实际用量取决于模型和设置 |
-| 存储设备 | 高速内置、Thunderbolt 或 USB4 SSD |
-| 可用空间 | App 会根据模型和现有的部分下载计算需求 |
+| Mac | Apple Silicon，macOS 15 或更高版本 |
+| 内存 | 建议 64 GiB；实际用量取决于模型和设置 |
+| 存储 | 高速内置、Thunderbolt 或 USB4 SSD |
+| 剩余空间 | App 会显示每个模型需要多少空间，包括下载到一半的文件 |
 | 网络 | 下载模型和 App 更新时需要 |
 
-App 不包含模型权重。DeepSeek V4.1 的专家和 Engram 文件就需要约 **458 GiB**，还需常驻权重和元数据的空间。
+App 不含模型权重。仅 DeepSeek V4.1 的专家和 Engram 文件就需要约 **458 GiB**，另外还有其他权重。
+
+## Qwen 模型
+
+### Swift1.5-Qwen3.8-Flash-Next
+
+1.1.10 版新增。
+
+- API model ID：`swift1.5-qwen3.8-flash-next-mxfp4`
+- 来源：`Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4`，版本 `257cb509d72ecc07519be35a8b7558fde3b31b21`
+- 下载大小：**127,714,522,478 bytes**（约 **118.94 GiB**），包含 59 个文本和 MTP 文件，以及 **897,864,704 bytes** 的图片权重。不下载审计文件。
+- 与 Qwen3.8 FP8 使用同一套推理引擎，但文件夹、设置、Alias 和提示词缓存各自独立。
+
+### 设置
+
+- 两款 Qwen 的 **Advanced Settings** 相同，只保留 Alias、生成、内存、读取线程数、Prompt Cache、预热和 MTP。其余选项都使用固定值。
+- MTP 默认开启。它通常能加快输出，但不是每个提示词都会变快。输出可能与关闭 MTP 时略有不同。
+
+### 图片
+
+- 两款 Qwen 都能在 Chat、`/v1/chat/completions` 和 `/v1/responses` 输入静态 PNG、JPEG、WebP 图片。
+- **发送图片前必须关闭 MTP。** 因为 MTP 默认开启，请先在 **Model → Advanced Settings** 关闭 **Use MTP**，并重新加载模型。图片请求不使用提示词缓存。
+- 每次请求的限制：8 张图片、每个文件 8 MiB、合计 32 MiB、缩放后每张最多 1,048,576 像素、最多 2,048 个图片 tokens。
+- 新安装已包含图片权重。旧的安装请点击 **Model → Verify and Repair**，只会下载缺失或损坏的文件。完整的 Qwen3.8 FP8 安装为 **126,189,355,659 bytes**（约 **117.52 GiB**）。
+- Qwen 不支持视频、音频和文档输入。
+- 已测试：完整的 Swift1.5 模型能识别红色和蓝色图片，图片请求和取消前后的短文本回答保持一致。完整 Qwen3.8 FP8 模型的图片生成、整体图片质量和图片速度尚未测试。
 
 ## 功能
 
-Whallm 将共用权重保留在内存，从 SSD 读取选中的专家。DeepSeek V4.1 的 Engram 和 Qwen 的 N-gram 数据也按需读取。
+Whallm 把共享权重放在内存，从 SSD 读取选中的专家。DeepSeek V4.1 的 Engram 数据行和 Qwen 的 N-gram 数据行也只在需要时读取。
 
-| 模型 | 加速选项 |
+| 模型 | 加速方式 |
 | --- | --- |
-| DeepSeek V4 | 按层处理输入、专家批量计算、FP8 KV 缓存、可选 ANE 投影运算和 DSpark |
-| DeepSeek V4.1 | 按层处理输入、专家批量计算、压缩 KV／索引缓存、只计算候选索引、CED 输入处理、ANE 投影运算和 DSpark |
-| Qwen3.8 | 输入阶段的专家分组、专家读取完成后立即计算、QSA 缓存压缩、下一层预读、ANE 投影运算和 MTP |
+| DeepSeek V4 | 逐层处理输入、批量计算专家、FP8 KV 缓存、可选的 ANE 投影和 DSpark |
+| DeepSeek V4.1 | 逐层处理输入、批量计算专家、压缩的 KV 和索引缓存、只为候选索引评分、CED 输入处理、ANE 投影和 DSpark |
+| Qwen3.8 | 处理输入时分组计算专家、每次读取完成就立即计算专家、QSA 缓存压缩、预读下一层和 MTP |
 
 ## 性能测试
 
-以下 v1.1.7 记录使用 **Code** 素材，输出上限为 **128 tokens**。表格未附各次程序版本和缓存状态，因此仅供参考，不能作为新增加速选项的控制变量比较。
+所有数据行都使用 **Code** 输入和 **128 tokens** 输出上限。测试时没有记录 build 版本和缓存状态，请把这些数字当作参考，而不是版本之间或加速方式之间的对照比较。
 
-TTFT 是等待首个 token 的时间。Prefill 为输入处理速度，Decode 为输出生成速度，单位均为 tokens／秒。Peak MLX 是以 **GiB** 表示的 MLX 分配量，不是整台 Mac 的内存用量。App 导出虽标为 GB，实际以 bytes 除以 1024³ 计算。
+- **TTFT**：等到第一个 token 出现的时间。
+- **Prefill**：处理输入的速度。**Decode**：生成输出的速度。两者单位都是每秒 tokens。
+- **Peak MLX**：MLX 使用内存的最高值，单位 **GiB**，不是整台 Mac 的内存用量。较旧的 App 导出把这个值标为 GB，但实际按 GiB 计算。
 
 ### M5 Pro
 
-| 模型 | Slots | 输入 tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| DeepSeek V4 | 1152 | 1024 | 19112.3 | 53.6 | 7.7 | 22.77 |
-| DeepSeek V4 | 1152 | 4096 | 24498.6 | 167.2 | 5.9 | 22.80 |
-| DeepSeek V4 | 1152 | 8192 | 42137.5 | 194.4 | 6.8 | 22.83 |
-| DeepSeek V4 | 1152 | 16384 | 81517.9 | 201.0 | 6.3 | 22.90 |
-| Qwen3.8 | 3072 | 1024 | 10336.3 | 99.1 | 10.6 | 16.86 |
-| Qwen3.8 | 3072 | 4096 | 28831.0 | 142.1 | 9.2 | 16.92 |
-| Qwen3.8 | 3072 | 8192 | 53303.2 | 153.7 | 10.1 | 17.01 |
-| Qwen3.8 | 3072 | 16384 | 112353.1 | 145.8 | 8.5 | 17.18 |
+| 模型 | 版本 | Slots | 输入 tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Swift1.5 Qwen3.8 | 1.1.10 | 2089 | 4096 | 7188.6 | 569.8 | 13.5 | 16.71 |
+| Swift1.5 Qwen3.8 | 1.1.10 | 2089 | 8192 | 13509.5 | 606.4 | 15.8 | 17.60 |
+| Swift1.5 Qwen3.8 | 1.1.10 | 2089 | 16384 | 32737.4 | 500.5 | 13.1 | 18.59 |
+| DeepSeek V4 | 1.1.7 | 1152 | 1024 | 19112.3 | 53.6 | 7.7 | 22.77 |
+| DeepSeek V4 | 1.1.7 | 1152 | 4096 | 24498.6 | 167.2 | 5.9 | 22.80 |
+| DeepSeek V4 | 1.1.7 | 1152 | 8192 | 42137.5 | 194.4 | 6.8 | 22.83 |
+| DeepSeek V4 | 1.1.7 | 1152 | 16384 | 81517.9 | 201.0 | 6.3 | 22.90 |
+| Qwen3.8 | 1.1.7 | 3072 | 1024 | 10336.3 | 99.1 | 10.6 | 16.86 |
+| Qwen3.8 | 1.1.7 | 3072 | 4096 | 28831.0 | 142.1 | 9.2 | 16.92 |
+| Qwen3.8 | 1.1.7 | 3072 | 8192 | 53303.2 | 153.7 | 10.1 | 17.01 |
+| Qwen3.8 | 1.1.7 | 3072 | 16384 | 112353.1 | 145.8 | 8.5 | 17.18 |
+
+Swift1.5 的数据行使用 temperature 0.0 和 seed 42。
 
 ### M2 Max
 
-| 模型 | Slots | 输入 tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Qwen3.8 | 3072 | 1024 | 14016.3 | 73.1 | 9.0 | 16.86 |
-| Qwen3.8 | 3072 | 4096 | 40902.4 | 100.1 | 7.6 | 16.92 |
-| Qwen3.8 | 3072 | 8192 | 79125.0 | 103.5 | 8.3 | 17.01 |
-| Qwen3.8 | 3072 | 16384 | 158838.7 | 103.1 | 7.1 | 17.18 |
-| DeepSeek V4.1 | 1152 | 1024 | 73426.4 | 13.9 | 2.2 | 32.05 |
-| DeepSeek V4.1 | 1152 | 4096 | 106742.4 | 38.4 | 1.8 | 32.11 |
-| DeepSeek V4.1 | 1152 | 8192 | 144011.4 | 56.9 | 2.1 | 32.19 |
-| DeepSeek V4.1 | 1152 | 16384 | 248481.9 | 65.9 | 1.9 | 32.75 |
+| 模型 | 版本 | Slots | 输入 tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen3.8 | 1.1.7 | 3072 | 1024 | 14016.3 | 73.1 | 9.0 | 16.86 |
+| Qwen3.8 | 1.1.7 | 3072 | 4096 | 40902.4 | 100.1 | 7.6 | 16.92 |
+| Qwen3.8 | 1.1.7 | 3072 | 8192 | 79125.0 | 103.5 | 8.3 | 17.01 |
+| Qwen3.8 | 1.1.7 | 3072 | 16384 | 158838.7 | 103.1 | 7.1 | 17.18 |
+| DeepSeek V4.1 | 1.1.7 | 1152 | 1024 | 73426.4 | 13.9 | 2.2 | 32.05 |
+| DeepSeek V4.1 | 1.1.7 | 1152 | 4096 | 106742.4 | 38.4 | 1.8 | 32.11 |
+| DeepSeek V4.1 | 1.1.7 | 1152 | 8192 | 144011.4 | 56.9 | 2.1 | 32.19 |
+| DeepSeek V4.1 | 1.1.7 | 1152 | 16384 | 248481.9 | 65.9 | 1.9 | 32.75 |
 
-要测试自己的 Mac，打开 **Throughput**，选择已安装模型、**Code** 或 **Novel** 素材、**1K–200K** 输入长度，以及 **128、512、1024 或 4096** 的输出上限。结果可以复制为纯文本、JSON 或 Markdown。整轮完成或取消后，App 会卸载测试模型。本地打包版另有 **Dry run**，只生成模拟结果。
+要测试自己的 Mac，请打开 **Throughput**，然后选择：
 
-SSD 速度、输入长度、缓存状态和设置都会影响结果。
+- 已安装的模型
+- **Code** 或 **Novel** 输入
+- **1K 至 200K** 的输入长度
+- **128、512、1024 或 4096** 的输出上限
+
+结果可以复制为纯文本、JSON 或 Markdown。测试完成或取消后，App 会卸载测试用的模型。本地 build 另有 **Dry run**，显示模拟结果。
+
+结果会受 SSD 速度、提示词长度、缓存状态和设置影响。
 
 ## 连接 Codex
 
-先启动 Whallm 服务器，再将以下内容加入用户级 `~/.codex/config.toml`：
+先启动 Whallm 的服务器，再把以下内容加到 `~/.codex/config.toml`：
 
 ```toml
 model = "deepseek-v4-flash-0731"
@@ -115,31 +153,47 @@ wire_api = "responses"
 requires_openai_auth = false
 ```
 
-将 `model` 设为 API model ID，或在 **Model → Advanced Settings** 设置的 Alias，保存后重启 Codex。Chat、Status、Throughput 与文本／Markdown 结果表格统一使用 Model 页面的显示名称；显示名称不是 API model ID。API 请求与测试结果的 JSON 保留原来的标识符。此示例使用默认本地地址，且未设置 API key。如果在 Whallm 设置了密钥，客户端也要设置相同密钥。详见 [Codex 配置参考](https://developers.openai.com/codex/config-reference/)。
+把 `model` 改成 API model ID，或你在 **Model → Advanced Settings** 设置的 Alias，然后重启 Codex。
+
+- Chat、Status 和 Throughput 显示的是显示名称，不是 API model ID。请求和性能测试 JSON 仍使用 API model ID。
+- 这个示例使用默认地址，没有 API key。如果你在 Whallm 设置了 key，客户端也要设置同一个 key。
+
+详见 [Codex 配置参考](https://developers.openai.com/codex/config-reference/)。
 
 ## API 与隐私
 
-API 支持文本流式输出和工具调用，提供以下端点：
+API 支持流式文本和工具调用，端点如下：
 
 - `GET /healthz` 和 `GET /v1/models`
 - `POST /v1/responses`
 - `POST /v1/chat/completions` 和 `POST /v1/completions`
 - `POST /api/models/load` 和 `POST /api/models/unload`
 
-三个生成端点支持可选 `seed`，接受 `0` 到 `4294967295` 的整数；省略或传入 `null` 时，每次请求使用新的随机值。Playground Chat 的 Seed 仅应用于下一条消息，发送后清空。固定 seed 有助于在相同输入、模型、设置与运行环境下复现结果，但不保证跨版本、缓存状态或加速设置仍逐字一致。`temperature=0` 仍选择概率最高的结果。自 v1.1.8 起提供。
+**Seed**（v1.1.8 起）：三个生成端点都接受可选的 `seed`，范围 `0` 至 `4294967295`。省略或传 `null` 时，每次都使用新的随机 seed。在 Chat 中，Seed 只作用于下一条消息。固定 seed 只有在提示词、模型、设置和运行环境都相同时才能重现结果；版本、缓存状态或加速设置不同时，文本仍可能改变。`temperature=0` 总是选择概率最高的 token。
 
-工具由客户端执行，再返回结果；推理 API 不会自动执行 MCP 工具。MiMo（预览版）支持静态图片及有界 PCM WAV 音频输入，可通过 Chat／Responses 和 App 附件使用。JSON 请求体仍限 **1 MiB**；经过身份验证的 `/api/assets` 上传接受每个文件最多 **8 MiB** 的 PNG／JPEG／WebP、PCM WAV，以及有限支持的 PDF／DOCX／PPTX／XLSX 文档。音频输入仅接受 24 kHz、16 位 PCM WAV、单声道或立体声，每段最长 30 秒、每次最多两段。音频输出、视频、`logprobs`、`response_format` 和 `stop` 仍不支持。详见 [MiMo 合约与限制](docs/mimo-development.md)。
+**工具**：由你的客户端执行工具并返回结果，Whallm 不会自行执行 MCP 工具。v1.1.9 起，所有模型的 `/v1/responses` 都接受字符串，或由 `input_text` 组成的列表作为 `function_call_output.output`。各段按顺序直接拼接，中间不加任何字符。请在请求历史中附上 `call_id` 相同的 `function_call`。
 
-所有模型都能通过 `/v1/responses` 接收字符串或由 `input_text` 片段组成的 `function_call_output.output` 数组。文本会按顺序合并，保留原有空白和换行，不额外添加分隔符。请在请求历史中附上具有相同 `call_id` 的 `function_call`。多媒体支持仍取决于模型。自 v1.1.9 起提供。
+**MiMo（预览版）** 可通过 Chat、Responses 和 App 附件输入静态图片和短的 PCM WAV 音频。
 
-推理在你的 Mac 上运行。下载、更新和 API 连接会使用网络。连接的客户端可能将数据发送到其他服务；**Debug** 日志可能包含完整输入和工具结果。
+- JSON 请求体：最多 **1 MiB**。
+- `/api/assets` 上传（需认证）：PNG、JPEG、WebP、PCM WAV，以及小型 PDF、DOCX、PPTX、XLSX 文件，每个最多 **8 MiB**。
+- 音频：24 kHz、16-bit PCM WAV、单声道或立体声，每段最多 30 秒，每次请求最多两段。
+- 不支持：音频输出、视频、`logprobs`、`response_format` 和 `stop`。
+
+详见 [MiMo 规格与限制](docs/mimo-development.md)。
+
+**隐私**：模型在你的 Mac 上运行。Whallm 只在下载、更新和 API 连接时使用网络。你连接的客户端可能把数据发送到其他地方。**Debug** 日志可能包含完整的提示词和工具结果。
 
 ## 验证与限制
 
-源码验证：**674 项 Python 测试通过**；**196 项 Swift 测试执行，4 项跳过、零失败**。打包检查涵盖 App 和 ZIP 解压副本的签名、包内资源，以及无法访问构建目录时的英文、简体中文、繁体中文启动。发布流程会对正式签名、公证的成品和 GitHub 下载文件再次检查。工具调用回归测试使用固定模型输出，不等于完整 Pi 或 Codex 客户端对话验证。
-
-MiMo 仍为预览版，通过固定版本的预制 artifact 提供文本／图片、有界 WAV 音频及有限文档支持；整体验收尚未完成。聊天附件包含分类选取文件、拖放、额度提示及上传状态。视频／音视频同步和 MCP Agent 界面仍未完成；音频及文档输入有格式和资源限制。详见[开发状态](docs/mimo-development.md)。Qwen 图片验证范围见上方说明。历史 MTP 测量不是最终修正版本的测量，MTP 也不保证对所有任务都更快。部分加速路径仅有小模型和组件测试；很长的输入需要更多缓存内存。
+- 测试：**694 项 Python 测试通过**；**193 项 Swift 测试运行，4 项跳过，没有失败**。
+- 打包检查涵盖签名、内含文件，以及在无法访问 build 文件夹时以英文、简体中文、繁体中文启动。App 和解压后的 ZIP 都会检查。正式发布时会在签名、公证后的下载文件上再检查一次。
+- 工具调用测试使用固定的模型输出，不是完整的 Pi 或 Codex 会话。
+- MiMo 仍是预览版，使用固定的预处理文件，支持文本、图片、短 WAV 音频和部分文档。视频、音视频同步和 MCP Agent 界面尚未完成。详见[开发状态](docs/mimo-development.md)。
+- 较早的 MTP 测量早于当前的运行环境。MTP 不是对每个提示词都更快。
+- 部分加速方式只在小模型或单个组件上测试过。
+- 很长的提示词需要更多缓存内存。
 
 ## 许可证
 
-Whallm 采用 [MIT License](LICENSE)。模型权重另有使用条款。Whallm 与 DeepSeek、Qwen 无隶属关系。
+Whallm 采用 [MIT 许可证](LICENSE)。模型权重有各自的条款。Whallm 与 DeepSeek、Qwen 无关。
