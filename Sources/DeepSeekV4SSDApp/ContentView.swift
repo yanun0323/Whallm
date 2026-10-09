@@ -3256,22 +3256,16 @@ struct ChatView: View {
 
   private var chatContent: some View {
     VStack(alignment: .leading, spacing: 16) {
+      // Controls lead; the live rate is secondary status and never wraps.
       HStack(spacing: 12) {
-        HStack(spacing: 8) {
-          Text(localized("Decode Tok/s"))
-            .foregroundStyle(.secondary)
-          Text(liveDecodeRate)
-            .font(.headline.monospacedDigit())
-        }
-        .accessibilityElement(children: .combine)
-        Spacer()
         Picker(localized("Model"), selection: $selectedModelName) {
           ForEach(server.catalogModels) { model in
             Text(model.displayName).tag(model.requestName)
           }
         }
         .pickerStyle(.menu)
-        .frame(width: 300)
+        .labelsHidden()
+        .frame(minWidth: 180, maxWidth: 300, alignment: .leading)
         .disabled(server.catalogModels.isEmpty || isSending || choosingFiles)
         .accessibilityLabel(localized("Model"))
         Picker(localized("Mode"), selection: $thinkingMode) {
@@ -3279,15 +3273,28 @@ struct ChatView: View {
           Text(localized("Thinking")).tag("thinking")
         }
         .pickerStyle(.segmented)
+        .labelsHidden()
         .tint(.blue)
-        .frame(width: 220)
+        .fixedSize()
+        .accessibilityLabel(localized("Mode"))
+        Spacer(minLength: 12)
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+          Text(localized("Decode Tok/s"))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Text(liveDecodeRate)
+            .font(.callout.weight(.semibold).monospacedDigit())
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .accessibilityElement(children: .combine)
       }
-      .appCard(padding: 16)
+      .appCard(padding: 12)
 
       VStack(spacing: 0) {
         ScrollViewReader { scroll in
           ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: 20) {
               if messages.isEmpty {
                 ContentUnavailableView(
                   localized("No Test Messages"),
@@ -3303,69 +3310,17 @@ struct ChatView: View {
                 .frame(maxWidth: .infinity, minHeight: 280)
               } else {
                 ForEach(messages) { message in
-                  VStack(alignment: .leading, spacing: 6) {
-                    Text(
-                      message.role == "user"
-                        ? localized("You") : message.modelDisplayName(models: server.catalogModels) ?? localized("Assistant")
-                    )
-                      .font(.callout.bold())
-                      .foregroundStyle(.secondary)
-                    if !message.reasoningContent.isEmpty {
-                      VStack(alignment: .leading, spacing: 4) {
-                        Text(localized("Reasoning"))
-                          .font(.callout.bold())
-                          .foregroundStyle(.secondary)
-                        Text(message.reasoningContent)
-                          .foregroundStyle(.secondary)
-                          .textSelection(.enabled)
-                      }
-                    }
-                    if !message.content.isEmpty {
-                      Text(message.content)
-                        .textSelection(.enabled)
-                    }
-                    ForEach(message.attachments) { attachment in
-                      ChatAttachmentPreview(attachment: attachment, language: language)
-                    }
-                    ForEach(message.toolCalls) { toolCall in
-                      GroupBox(localized("Tool call")) {
-                        VStack(alignment: .leading, spacing: 8) {
-                          LabeledContent(
-                            localized("Function"), value: toolCall.function.name)
-                          VStack(alignment: .leading, spacing: 3) {
-                            Text(localized("Arguments"))
-                              .foregroundStyle(.secondary)
-                            Text(toolCall.function.arguments)
-                              .font(.system(.body, design: .monospaced))
-                              .textSelection(.enabled)
-                          }
-                          Text(localized("The app does not run this tool."))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                      }
-                    }
-                    if message.role == "assistant" && message.content.isEmpty
-                      && message.reasoningContent.isEmpty && message.toolCalls.isEmpty
-                    {
-                      ProgressView(session.requestStage?.label(language: language) ?? localized("Generating"))
-                        .controlSize(.small)
-                    }
+                  if message.role == "user" {
+                    userMessage(message)
+                  } else {
+                    assistantMessage(message)
                   }
-                  .padding(14)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .background(
-                    message.role == "user"
-                      ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: 10)
-                  )
-                  .accessibilityElement(children: .combine)
                 }
               }
               Color.clear.frame(height: 1).id("chat-bottom")
             }
-            .padding(8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 14)
           }
           .onChange(of: streamedCharacterCount) {
             scroll.scrollTo("chat-bottom", anchor: .bottom)
@@ -3382,27 +3337,8 @@ struct ChatView: View {
           .accessibilityLabel(L10n.string("Error: %@", language: language, errorMessage))
       }
 
+      // Composer: the message field leads; seed and status share one compact footer.
       VStack(alignment: .leading, spacing: 10) {
-        HStack(spacing: 10) {
-          Text(localized("Seed"))
-          TextField(localized("Automatic"), text: $seedText)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 150)
-            .accessibilityLabel(localized("Seed"))
-            .accessibilityHint(seedError ?? localized("Applies to the next message only. Blank uses a random seed."))
-            .focused($seedFocused)
-            .disabled(isSending)
-            .onChange(of: seedText) { seedError = nil }
-          Text(localized("Applies to the next message only. Blank uses a random seed."))
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        if let seedError {
-          Label(seedError, systemImage: "exclamationmark.triangle.fill")
-            .foregroundStyle(.red)
-            .accessibilityLabel(L10n.string("Error: %@", language: language, seedError))
-        }
         ChatAttachmentsView(attachments: attachments, history: messages.flatMap(\.attachments),
           allowedKinds: attachmentKinds, hasSelectedModel: selectedCatalogModel != nil,
           language: language, disabled: isSending || choosingFiles,
@@ -3421,19 +3357,13 @@ struct ChatView: View {
             .accessibilityLabel(L10n.string("Error: %@", language: language, attachmentError))
             .accessibilityFocused($attachmentErrorFocused)
         }
+        // The placeholder sits above the editor; the editor's own background would hide it.
         ZStack(alignment: .topLeading) {
-          if input.isEmpty {
-            Text(localized("Enter a message…"))
-              .foregroundStyle(.tertiary)
-              .padding(.horizontal, 5)
-              .padding(.vertical, 8)
-              .allowsHitTesting(false)
-          }
           TextEditor(text: $input)
             .font(.body)
             .scrollContentBackground(.hidden)
             .padding(8)
-            .frame(minHeight: 90, maxHeight: 180)
+            .frame(height: 84)
             .background(
               AppTheme.fieldBackground,
               in: RoundedRectangle(cornerRadius: AppTheme.fieldRadius)
@@ -3443,20 +3373,50 @@ struct ChatView: View {
                 .stroke(Color.primary.opacity(0.12))
             )
             .accessibilityLabel(localized("Test message"))
+          if input.isEmpty {
+            Text(localized("Enter a message…"))
+              .foregroundStyle(.tertiary)
+              .padding(.horizontal, 13)
+              .padding(.vertical, 8)
+              .allowsHitTesting(false)
+              .accessibilityHidden(true)
+          }
+        }
+        if let seedError {
+          Label(seedError, systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(.red)
+            .accessibilityLabel(L10n.string("Error: %@", language: language, seedError))
         }
 
         HStack(spacing: 10) {
+          HStack(spacing: 6) {
+            Text(localized("Seed"))
+              .font(.callout)
+              .foregroundStyle(.secondary)
+            TextField(localized("Automatic"), text: $seedText)
+              .textFieldStyle(.roundedBorder)
+              .frame(width: 110)
+              .accessibilityLabel(localized("Seed"))
+              .accessibilityHint(seedError ?? localized("Applies to the next message only. Blank uses a random seed."))
+              .focused($seedFocused)
+              .disabled(isSending)
+              .onChange(of: seedText) { seedError = nil }
+          }
+          .help(localized("Applies to the next message only. Blank uses a random seed."))
           if server.state != .running {
             Label(localized("Start the server first"), systemImage: "server.rack")
               .font(.callout)
               .foregroundStyle(.secondary)
+              .lineLimit(1)
           }
-          Spacer()
+          Spacer(minLength: 8)
           Button {
             showingClearConfirmation = true
           } label: {
             Label(localized("Clear Chat"), systemImage: "trash")
           }
+          .buttonStyle(.borderless)
+          .foregroundStyle(.secondary)
           .disabled((messages.isEmpty && attachments.isEmpty) || isSending || choosingFiles)
           if isSending {
             Button(action: stopGenerating) {
@@ -3515,6 +3475,86 @@ struct ChatView: View {
           "The app will clear only the local test chat. The server and other API clients are not affected."
         ))
     }
+  }
+
+  /// Your messages sit on the trailing side in a bubble no wider than a reading line.
+  private func userMessage(_ message: ChatMessage) -> some View {
+    HStack {
+      Spacer(minLength: 80)
+      VStack(alignment: .trailing, spacing: 8) {
+        if !message.content.isEmpty {
+          Text(message.content)
+            .lineSpacing(3)
+            .textSelection(.enabled)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
+        }
+        ForEach(message.attachments) { attachment in
+          ChatAttachmentPreview(attachment: attachment, language: language)
+            .frame(maxWidth: 320)
+        }
+      }
+      .frame(maxWidth: 600, alignment: .trailing)
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(localized("You") + ": " + message.content)
+  }
+
+  /// Replies use the full width without a box: name, optional reasoning, then the answer.
+  private func assistantMessage(_ message: ChatMessage) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(message.modelDisplayName(models: server.catalogModels) ?? localized("Assistant"))
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+      if !message.reasoningContent.isEmpty {
+        ChatReasoningView(text: message.reasoningContent, answerStarted: !message.content.isEmpty,
+          title: localized("Reasoning"))
+      }
+      if !message.content.isEmpty {
+        Text(chatMarkdown(message.content))
+          .lineSpacing(4)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      ForEach(message.attachments) { attachment in
+        ChatAttachmentPreview(attachment: attachment, language: language)
+          .frame(maxWidth: 320)
+      }
+      ForEach(message.toolCalls) { toolCall in
+        GroupBox(localized("Tool call")) {
+          VStack(alignment: .leading, spacing: 8) {
+            LabeledContent(
+              localized("Function"), value: toolCall.function.name)
+            VStack(alignment: .leading, spacing: 3) {
+              Text(localized("Arguments"))
+                .foregroundStyle(.secondary)
+              Text(toolCall.function.arguments)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+            }
+            Text(localized("The app does not run this tool."))
+              .font(.callout)
+              .foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      if message.content.isEmpty && message.reasoningContent.isEmpty && message.toolCalls.isEmpty {
+        ProgressView(session.requestStage?.label(language: language) ?? localized("Generating"))
+          .controlSize(.small)
+      }
+    }
+    .padding(.horizontal, 4)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .contain)
+  }
+
+  /// Inline Markdown (bold, italic, code, links) with the model's own line breaks.
+  /// Unfinished syntax while streaming stays as plain text.
+  private func chatMarkdown(_ text: String) -> AttributedString {
+    (try? AttributedString(markdown: text,
+      options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
   }
 
   private var streamedCharacterCount: Int {
@@ -3640,5 +3680,37 @@ struct ChatView: View {
 
   private func stopGenerating() {
     session.stopGenerating()
+  }
+}
+
+/// Reasoning stays open while it is the only output and folds once the answer starts.
+/// A choice the user makes afterwards is kept for this message.
+private struct ChatReasoningView: View {
+  let text: String
+  let answerStarted: Bool
+  let title: String
+  @State private var expanded: Bool?
+
+  var body: some View {
+    DisclosureGroup(isExpanded: Binding(
+      get: { expanded ?? !answerStarted },
+      set: { expanded = $0 }
+    )) {
+      Text(text)
+        .font(.callout)
+        .lineSpacing(3)
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 10)
+        .overlay(alignment: .leading) {
+          Rectangle().fill(Color.secondary.opacity(0.3)).frame(width: 2)
+        }
+        .padding(.top, 4)
+    } label: {
+      Label(title, systemImage: "brain")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+    }
   }
 }
