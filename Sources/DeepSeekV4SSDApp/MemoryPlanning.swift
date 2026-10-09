@@ -151,10 +151,10 @@ struct MemoryPlanningProfile {
   /// Capacity planning with retained prompt caches, not a prediction of cache occupancy.
   /// Fixed context lengths assume input-heavy requests. This is not a measured peak or hard limit.
   func estimate(_ s: ModelAdvancedSettings, mtpAvailable: Bool, dsparkAvailable: Bool,
-    contextTokens: Int? = nil
+    contextTokens: Int? = nil, outputTokens: Int = 0
   ) -> MemoryEstimate? {
     let input = contextTokens ?? s.estimateInputTokens ?? 4_096
-    let output = contextTokens == nil ? s.defaultMaxTokens : 0
+    let output = contextTokens == nil ? s.defaultMaxTokens : outputTokens
     let maximum = manifest.maximumContext ?? Int(number("max_position_embeddings", 1_048_576))
     let ratio = s.anePrefillRatio ?? 0
     guard (kind.usesQwenEngine || [.deepSeekV4, .deepSeekV41].contains(kind)),
@@ -280,11 +280,6 @@ struct MemoryPlanningProfile {
       if qwen {
         // Structural upper estimate; runtime may reduce chunks for workspace.
         let micro = min(queries, Double(s.qwenQSAQueryChunk ?? 16))
-        if s.qwenSparseSDPA == true && s.qwenQSAIndexed == true && queries <= 8 && tokens > topk {
-          let partials = micro * heads * 32 * (dim + 2) * 4
-          let indexScores = micro * ceil(tokens / number("indexer_compress_ratio", 4)) * indexHeads * 8
-          return partials + indexScores + queries * heads * dim * activationBytes * 3
-        }
         let gathered = micro * min(tokens, topk + number("indexer_compress_ratio", 4))
           * (2 * number("num_key_value_heads", 2) * dim * activationBytes + heads * 8)
         let scores = micro * ceil(tokens / number("indexer_compress_ratio", 4)) * indexHeads * 8
@@ -360,6 +355,18 @@ struct MemoryPlanningProfile {
     let result = MemoryEstimate(loading: loading, prefill: prefill, decoding: decoding,
       inputTokens: input, outputTokens: output)
     return result.total.isFinite ? result : nil
+  }
+
+  /// One request with nothing retained from earlier requests: Prompt Cache off,
+  /// as Throughput runs it. `estimate` with the saved settings is the long-run
+  /// ceiling once the Prompt Cache budget is full.
+  func requestEstimate(_ s: ModelAdvancedSettings, mtpAvailable: Bool, dsparkAvailable: Bool,
+    contextTokens: Int, outputTokens: Int = 0
+  ) -> MemoryEstimate? {
+    var request = s
+    request.promptCacheMode = .off
+    return estimate(request, mtpAvailable: mtpAvailable, dsparkAvailable: dsparkAvailable,
+      contextTokens: contextTokens, outputTokens: outputTokens)
   }
 
   /// Retained arrays plus a single active layer's growth/unpacking temporary.

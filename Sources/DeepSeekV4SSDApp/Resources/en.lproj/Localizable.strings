@@ -303,7 +303,6 @@
 "Page" = "Page";
 "Serving Stats" = "Serving Stats";
 "System" = "System";
-"Advance" = "Advance";
 "Logs" = "Logs";
 "General" = "General";
 "Listen Address" = "Listen Address";
@@ -582,7 +581,6 @@
 /* Fixed 64K / 128K memory planning header */
 "Estimated peak memory" = "Estimated peak memory";
 "Estimated peak memory for %lld tokens: %@" = "Estimated peak memory for %lld tokens: %@";
-"Capacity estimate for an input-heavy context, including retained caches. 128K is extrapolated; actual usage may vary." = "Capacity estimate for an input-heavy context, including retained caches. 128K is extrapolated; actual usage may vary.";
 
 "Retain more experts to reduce SSD reads, at the cost of memory. Recommended: about %@ GiB. Applies on next load." = "Retain more experts to reduce SSD reads, at the cost of memory. Recommended: about %@ GiB. Applies on next load.";
 "Retain more experts to reduce SSD reads, at the cost of memory. Default: about %@ GiB. Applies on next load." = "Retain more experts to reduce SSD reads, at the cost of memory. Default: about %@ GiB. Applies on next load.";
@@ -610,28 +608,7 @@
 "Enter a whole number from 0 to 4294967295, or leave blank for automatic." = "Enter a whole number from 0 to 4294967295, or leave blank for automatic.";
 
 /* Qwen Flash opt-in experiments */
-"Use packed GDN prefill" = "Use packed GDN prefill";
-"Off by default. M5 text prefill only, 2–1024 tokens per call. Tested outputs matched, but whole-model gains were below 5%. Requires MTP off; other calls use the original kernel." = "Off by default. M5 text prefill only, 2–1024 tokens per call. Tested outputs matched, but whole-model gains were below 5%. Requires MTP off; other calls use the original kernel.";
-"Packed GDN prefill is inactive while MTP is enabled. Its saved choice is retained." = "Packed GDN prefill is inactive while MTP is enabled. Its saved choice is retained.";
-"Use sorted expert prefill" = "Use sorted expert prefill";
-"Off by default. Groups prompt rows by expert so prefill uses a faster kernel. In tests, 4K and 16K prompts reached the first token about 2× sooner. Output can differ slightly from the default. Requires Prefill acceleration." = "Off by default. Groups prompt rows by expert so prefill uses a faster kernel. In tests, 4K and 16K prompts reached the first token about 2× sooner. Output can differ slightly from the default. Requires Prefill acceleration.";
-"Sorted expert prefill is inactive while Prefill acceleration is off or experts per wave is above 0. Its saved choice is retained." = "Sorted expert prefill is inactive while Prefill acceleration is off or experts per wave is above 0. Its saved choice is retained.";
-"Use masked QSA prefill" = "Use masked QSA prefill";
-"Off by default. Prompt chunks of 16 or more tokens use the same selected keys through one fused attention call instead of a copy per token. In tests, 4K and 16K prompts reached the first token about 1.7× sooner with sorted expert prefill on. Output can differ slightly from the default." = "Off by default. Prompt chunks of 16 or more tokens use the same selected keys through one fused attention call instead of a copy per token. In tests, 4K and 16K prompts reached the first token about 1.7× sooner with sorted expert prefill on. Output can differ slightly from the default.";
-"Qwen Flash experiments" = "Qwen Flash experiments";
-"Saved automatically for this model. Changes apply on the next model load. Unload the model before editing." = "Saved automatically for this model. Changes apply on the next model load. Unload the model before editing.";
-"Unload this model to edit these settings. Loading and unloading also lock the controls." = "Unload this model to edit these settings. Loading and unloading also lock the controls.";
-"Experts per wave" = "Experts per wave";
-"0 disables waves; 1–512 limits the experts acquired per wave, capped by the expert cache. This is not a total memory limit. Small waves may be slower." = "0 disables waves; 1–512 limits the experts acquired per wave, capped by the expert cache. This is not a total memory limit. Small waves may be slower.";
 "Expert waves temporarily disable whole-layer batching, next-layer prefetch, and grouped prefill. Their saved choices are restored when waves are disabled." = "Expert waves temporarily disable whole-layer batching, next-layer prefetch, and grouped prefill. Their saved choices are restored when waves are disabled.";
-"N-gram read backend" = "N-gram read backend";
-"mmap is the default. Buffered pread reads selected rows explicitly; it is not direct SSD-to-GPU I/O and may be slower." = "mmap is the default. Buffered pread reads selected rows explicitly; it is not direct SSD-to-GPU I/O and may be slower.";
-"mmap (default)" = "mmap (default)";
-"pread (experimental)" = "pread (experimental)";
-"N-gram row cache MiB" = "N-gram row cache MiB";
-"0 disables retention; 1–512 MiB retains packed FP8 rows with pread. Metadata, temporary buffers and the OS page cache are extra. The saved size is inactive with mmap." = "0 disables retention; 1–512 MiB retains packed FP8 rows with pread. Metadata, temporary buffers and the OS page cache are extra. The saved size is inactive with mmap.";
-"Use fused QSA SDPA" = "Use fused QSA SDPA";
-"Uses the same selected attention cells with a fused kernel. Floating-point rounding and generated text may differ; a speed improvement is not guaranteed." = "Uses the same selected attention cells with a fused kernel. Floating-point rounding and generated text may differ; a speed improvement is not guaranteed.";
 "Experts per wave must be an integer from 0 to 512." = "Experts per wave must be an integer from 0 to 512.";
 "Choose mmap or pread for the N-gram read backend." = "Choose mmap or pread for the N-gram read backend.";
 "N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram row cache must be an integer from 0 to 512 MiB.";
@@ -640,23 +617,9 @@
 "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change.";
 
 // QSA throughput experiments.
-"QSA queries per chunk" = "QSA queries per chunk";
-"1–128 queries per attention chunk; default 16. Larger batches cut per-chunk overhead; 24 and above measured slower. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit." = "1–128 queries per attention chunk; default 16. Larger batches cut per-chunk overhead; 24 and above measured slower. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit.";
-"Experimental; full-model speed and quality are not yet verified. QSA queries per chunk defaults to 16 and indexed attention stays off." = "Experimental; full-model speed and quality are not yet verified. QSA queries per chunk defaults to 16 and indexed attention stays off.";
-"Skip the identity QSA key copy" = "Skip the identity QSA key copy";
-"When the indexer selects every visible key, use the prefix directly instead of one gathered copy per query. Measured output is byte-identical; contexts above the sparse threshold are unchanged." = "When the indexer selects every visible key, use the prefix directly instead of one gathered copy per query. Measured output is byte-identical; contexts above the sparse threshold are unchanged.";
-"Use indexed QSA decode" = "Use indexed QSA decode";
-"Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text." = "Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text.";
 "QSA queries per chunk must be an integer from 1 to 128." = "QSA queries per chunk must be an integer from 1 to 128.";
 
 // Streaming review experiments and benchmark diagnostics.
-"Experts per prefill read" = "Experts per prefill read";
-"1 keeps existing reads; 2–32 merges adjacent expert payloads without reading unselected gaps. Requires layer-major whole-layer prefill with waves off. Larger batches retain more per-worker staging memory." = "1 keeps existing reads; 2–32 merges adjacent expert payloads without reading unselected gaps. Requires layer-major whole-layer prefill with waves off. Larger batches retain more per-worker staging memory.";
-"Warm decode experts per layer" = "Warm decode experts per layer";
-"0 keeps the cold handoff; 1–128 copies hot experts from the last 128 prompt tokens into free cache slots. Requires whole-layer prefill. Adds prefill time and memory, but may reduce early decode reads. Actual retention is capped by cache capacity." = "0 keeps the cold handoff; 1–128 copies hot experts from the last 128 prompt tokens into free cache slots. Requires whole-layer prefill. Adds prefill time and memory, but may reduce early decode reads. Actual retention is capped by cache capacity.";
-"Overlap shared expert compute with reads" = "Overlap shared expert compute with reads";
-"Submit the resident shared expert and router before waiting for routed experts on single-token calls. No experts are skipped. Submission overhead may outweigh the overlap; compare the same throughput workload." = "Submit the resident shared expert and router before waiting for routed experts on single-token calls. No experts are skipped. Submission overhead may outweigh the overlap; compare the same throughput workload.";
-"Read batching and warm handoff are inactive without layer-major whole-layer prefill, or while expert waves are enabled. Saved choices are retained." = "Read batching and warm handoff are inactive without layer-major whole-layer prefill, or while expert waves are enabled. Saved choices are retained.";
 "Experts per prefill read must be an integer from 1 to 32." = "Experts per prefill read must be an integer from 1 to 32.";
 "Warm decode experts per layer must be an integer from 0 to 128." = "Warm decode experts per layer must be an integer from 0 to 128.";
 "Runtime configuration and expert I/O" = "Runtime configuration and expert I/O";
@@ -676,7 +639,11 @@
 "Experts in memory" = "Experts in memory";
 "MTP experts in memory" = "MTP experts in memory";
 "DSpark experts in memory" = "DSpark experts in memory";
-"≈ %@ GiB · %@ slots · Estimated total (64K) %@ GiB / This Mac %@ GiB" = "≈ %@ GiB · %@ slots · Estimated total (64K) %@ GiB / This Mac %@ GiB";
 "The estimated total exceeds this Mac's memory. macOS may swap and slow down; lower the percentage." = "The estimated total exceeds this Mac's memory. macOS may swap and slow down; lower the percentage.";
 "100% keeps every routed expert of this model in memory. The slider stops at this Mac's physical memory, which is not a safe allocation limit." = "100% keeps every routed expert of this model in memory. The slider stops at this Mac's physical memory, which is not a safe allocation limit.";
 "Share of this model's routed experts kept in memory; the rest stream from the SSD. Excludes common weights and temporary buffers. Default: about %@. More memory means fewer SSD reads, but the speed gain shrinks. Applies on next load." = "Share of this model's routed experts kept in memory; the rest stream from the SSD. Excludes common weights and temporary buffers. Default: about %@. More memory means fewer SSD reads, but the speed gain shrinks. Applies on next load.";
+"≈ %@ GiB · %@ slots · One 64K request %@ GiB / This Mac %@ GiB" = "≈ %@ GiB · %@ slots · One 64K request %@ GiB / This Mac %@ GiB";
+"Full Prompt Cache: %@ GiB" = "Full Prompt Cache: %@ GiB";
+"One input-heavy request, measured the way Throughput measures it. The small figure is the ceiling once the Prompt Cache budget is full. 128K is extrapolated; actual usage may vary." = "One input-heavy request, measured the way Throughput measures it. The small figure is the ceiling once the Prompt Cache budget is full. 128K is extrapolated; actual usage may vary.";
+"est. %@" = "est. %@";
+"Whallm's estimate for this same request with Prompt Cache off." = "Whallm's estimate for this same request with Prompt Cache off.";

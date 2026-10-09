@@ -402,16 +402,13 @@ final class ModelLibrary: ObservableObject {
           qwenExpertWaveSlots: settings.qwenExpertWaveSlots ?? 0,
           qwenNgramIO: settings.qwenNgramIO ?? "mmap",
           qwenNgramCacheBytes: settings.effectiveQwenNgramCacheBytes,
-          qwenSparseSDPA: settings.qwenSparseSDPA ?? false,
           qwenQSAQueryChunk: settings.qwenQSAQueryChunk ?? 16,
           qwenQSASkipCompleteGather: settings.qwenQSASkipCompleteGather ?? true,
           qwenPackedGDNPrefill: modelKind == .swift1_5Qwen3_8FlashNext && settings.effectiveQwenPackedGDNPrefill,
           qwenSortedExpertPrefill: modelKind.usesQwenEngine && settings.effectiveQwenSortedExpertPrefill,
           qwenQSAMaskedPrefill: modelKind.usesQwenEngine && settings.qwenQSAMaskedPrefill == true,
-          qwenQSAIndexed: settings.qwenSparseSDPA == true && settings.qwenQSAIndexed == true,
             qwenPrefillReadExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillReadExperts ?? 1 : 1,
             qwenPrefillSeedExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillSeedExperts ?? 0 : 0,
-            qwenSharedExpertOverlap: settings.qwenSharedExpertOverlap ?? false,
           qwenMTPDraftTokens: modelKind.usesQwenEngine ? settings.effectiveQwenMTPDraftTokens : 2,
           qwenMTPZeroAcceptanceLimit: modelKind.usesQwenEngine ? settings.effectiveQwenMTPZeroAcceptanceLimit : 32,
           v41PackedKV: modelKind == .deepSeekV41 && settings.packedKVCache == true,
@@ -544,6 +541,18 @@ final class ModelLibrary: ObservableObject {
 
   func usableModel(for kind: ModelKind) -> InstalledModelInfo? {
     usableModels.first { $0.modelKind == kind }
+  }
+
+  /// Saved settings at call time; returns bytes for (input, output) under Throughput's
+  /// own condition: one request with Prompt Cache off. Nil without a usable model.
+  func requestMemoryEstimator(apiModelID: String) -> ((Int, Int) -> Double?)? {
+    guard let kind = modelKind(withAPIModelID: apiModelID), let model = usableModel(for: kind),
+      let profile = MemoryPlanningProfile.load(at: model.url, kind: kind) else { return nil }
+    let settings = ModelAdvancedSettings.loadOrDefault(for: kind, defaults: defaults)
+    return { input, output in
+      profile.requestEstimate(settings, mtpAvailable: model.hasMTP, dsparkAvailable: model.hasDSpark,
+        contextTokens: input, outputTokens: output)?.total
+    }
   }
 
   func canUseModel(at path: String) -> Bool {

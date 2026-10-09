@@ -42,6 +42,8 @@ struct ThroughputResult: Codable, Identifiable, Sendable {
   var presencePenalty: Double? = nil
   var repetitionPenalty: Double? = nil
   var diagnostics: ThroughputDiagnostics? = nil
+  // Added by the App: the request estimate under the same condition, for comparison.
+  var estimatedRequestMemoryBytes: Double? = nil
 
   static let columns = ["Input / Output", "TTFT (ms)", "TPOT (ms)", "PP tok/s", "TG tok/s", "Total (s)", "Throughput", "Peak Memory"]
 
@@ -263,7 +265,8 @@ final class ThroughputSession: ObservableObject {
     #endif
   }
 
-  func start(configuration: ServerConfiguration, server: ServerController, catalog: ModelCatalog) {
+  func start(configuration: ServerConfiguration, server: ServerController, catalog: ModelCatalog,
+    estimate: ((Int, Int) -> Double?)? = nil) {
     guard !isRunning, !model.isEmpty, !contextLengths.isEmpty else { return }
     if model == Self.dryRunModel { runDryRun(); return }
     let model = model
@@ -283,9 +286,11 @@ final class ThroughputSession: ObservableObject {
       }
       try await server.waitForModelConfigurationUpdates(modelID)
     }, run: { length, receive in
-      try await ThroughputClient.run(
+      var result = try await ThroughputClient.run(
         configuration: configuration, model: model, context: length, generation: generation,
         benchmarkContext: context, receive: receive)
+      result.estimatedRequestMemoryBytes = estimate?(length, generation)
+      return result
     }, unload: {
       try await server.unloadModelAfterBenchmark(modelID)
     })
@@ -559,18 +564,25 @@ struct ThroughputView: View {
             Divider().gridCellUnsizedAxes(.horizontal)
             ForEach(session.results) { result in
               GridRow {
-                ForEach(Array(result.cells.enumerated()), id: \.offset) { _, value in
-                  Text(value).fixedSize()
-                    .frame(maxWidth: .infinity, alignment: .leading).frame(height: 24)
+                ForEach(Array(result.cells.enumerated()), id: \.offset) { column, value in
+                  let estimate = column == ThroughputResult.columns.count - 1
+                    ? result.estimatedRequestMemoryBytes : nil
+                  memoryCell(value, estimate: estimate)
+                    .fixedSize()
+                    .help(estimate == nil ? "" : label("Whallm's estimate for this same request with Prompt Cache off."))
+                    // Top-aligned so every value shares the first line's baseline.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: resultRowHeight, alignment: .top)
                 }
               }
             }
           }
-          .frame(width: max(700, geometry.size.width - 32))
+          // A minimum, not a fixed width: wider content scrolls instead of overlapping.
+          .frame(minWidth: max(700, geometry.size.width - 32), alignment: .leading)
           .monospacedDigit().textSelection(.enabled).padding(16)
         }
       }
-      .frame(height: 61 + CGFloat(session.results.count) * 34 + 12)
+      .frame(height: 61 + CGFloat(session.results.count) * (resultRowHeight + 10) + 12)
       .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardRadius))
       ForEach(session.results) { result in
         if let diagnostics = result.diagnostics {
@@ -623,6 +635,27 @@ struct ThroughputView: View {
     session.model = models.first?.id ?? ""
   }
 
+  /// Rows grow only when a result carries an estimate line under its measured memory.
+  private var resultRowHeight: CGFloat {
+    session.results.contains { $0.estimatedRequestMemoryBytes != nil } ? 38 : 24
+  }
+
+  /// The measured value leads; the same-condition estimate sits below it, quieter,
+  /// so it does not widen the column.
+  @ViewBuilder
+  private func memoryCell(_ value: String, estimate: Double?) -> some View {
+    if let estimate {
+      VStack(alignment: .leading, spacing: 1) {
+        Text(value)
+        Text(L10n.string("est. %@", language: language,
+          String(format: "%.1f GiB", locale: language.locale, estimate / ExpertMemory.gib)))
+          .font(.caption).foregroundStyle(.secondary)
+      }
+    } else {
+      Text(value)
+    }
+  }
+
   private func run() {
     if session.model == ThroughputSession.dryRunModel {
       session.runDryRun()
@@ -630,7 +663,9 @@ struct ThroughputView: View {
     }
     do {
       let catalog = try modelLibrary.makeServerCatalog(powerSavingLimitGBps: configuration.powerSavingLimitGBps)
-      session.start(configuration: configuration, server: server, catalog: catalog)
+      let modelID = catalog.models.first { $0.id == session.model || $0.alias == session.model }?.id
+      session.start(configuration: configuration, server: server, catalog: catalog,
+        estimate: modelID.flatMap { modelLibrary.requestMemoryEstimator(apiModelID: $0) })
     } catch {
       session.reportFailure(error)
     }

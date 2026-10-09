@@ -303,7 +303,6 @@
 "Page" = "页面";
 "Serving Stats" = "服务统计";
 "System" = "系统";
-"Advance" = "进阶";
 "Logs" = "日志";
 "General" = "一般";
 "Listen Address" = "监听地址";
@@ -582,7 +581,6 @@
 /* Fixed 64K / 128K memory planning header */
 "Estimated peak memory" = "预估峰值内存";
 "Estimated peak memory for %lld tokens: %@" = "%lld tokens 的预估峰值内存：%@";
-"Capacity estimate for an input-heavy context, including retained caches. 128K is extrapolated; actual usage may vary." = "按以输入为主的长度与对话缓存预留估算。128K 为外推值，实际用量可能不同。";
 
 "Retain more experts to reduce SSD reads, at the cost of memory. Recommended: about %@ GiB. Applies on next load." = "保留更多专家以减少 SSD 读取，但会增加内存用量。建议约 %@ GiB，下次加载生效。";
 "Retain more experts to reduce SSD reads, at the cost of memory. Default: about %@ GiB. Applies on next load." = "保留更多专家以减少 SSD 读取，但会增加内存用量。默认约 %@ GiB，下次加载生效。";
@@ -610,28 +608,7 @@
 "Enter a whole number from 0 to 4294967295, or leave blank for automatic." = "请输入 0 到 4294967295 的整数，或留空使用自动值。";
 
 /* Qwen Flash opt-in experiments */
-"Use packed GDN prefill" = "使用 Packed GDN Prefill";
-"Off by default. M5 text prefill only, 2–1024 tokens per call. Tested outputs matched, but whole-model gains were below 5%. Requires MTP off; other calls use the original kernel." = "默认关闭。仅用于 M5 的文本 Prefill，每次调用处理 2–1024 个 token。已测案例的输出一致，但完整模型加速未达 5%。须关闭 MTP；其他调用沿用原运算。";
-"Packed GDN prefill is inactive while MTP is enabled. Its saved choice is retained." = "启用 MTP 时，Packed GDN Prefill 暂不生效，已保存的选择会保留。";
-"Use sorted expert prefill" = "使用排序专家 Prefill";
-"Off by default. Groups prompt rows by expert so prefill uses a faster kernel. In tests, 4K and 16K prompts reached the first token about 2× sooner. Output can differ slightly from the default. Requires Prefill acceleration." = "默认关闭。Prefill 时按专家分组排序，改用较快的运算。实测 4K 与 16K 提示词的首 token 约快 2 倍。输出可能与默认略有不同。需开启 Prefill 加速。";
-"Sorted expert prefill is inactive while Prefill acceleration is off or experts per wave is above 0. Its saved choice is retained." = "Prefill 加速关闭，或每波专家数大于 0 时，排序专家 Prefill 暂不生效，已保存的选择会保留。";
-"Use masked QSA prefill" = "使用遮罩 QSA Prefill";
-"Off by default. Prompt chunks of 16 or more tokens use the same selected keys through one fused attention call instead of a copy per token. In tests, 4K and 16K prompts reached the first token about 1.7× sooner with sorted expert prefill on. Output can differ slightly from the default." = "默认关闭。一次 16 个以上 token 的 Prefill 改用一次融合注意力运算，看同样被选中的 key，不再为每个 token 复制一份。实测在开启排序专家 Prefill 时，4K 与 16K 提示词的首 token 约快 1.7 倍。输出可能与默认略有不同。";
-"Qwen Flash experiments" = "Qwen Flash 实验功能";
-"Saved automatically for this model. Changes apply on the next model load. Unload the model before editing." = "设置会按模型自动保存，并于下次加载模型时生效。修改前请先卸载模型。";
-"Unload this model to edit these settings. Loading and unloading also lock the controls." = "请先卸载此模型再修改设置。加载与卸载过程中也无法修改。";
-"Experts per wave" = "每波专家数";
-"0 disables waves; 1–512 limits the experts acquired per wave, capped by the expert cache. This is not a total memory limit. Small waves may be slower." = "0 关闭分波；1–512 限制每波获取的专家数，且不超过专家缓存容量。这不是总内存上限；较小的波次可能更慢。";
 "Expert waves temporarily disable whole-layer batching, next-layer prefetch, and grouped prefill. Their saved choices are restored when waves are disabled." = "专家分波会暂时禁用整层批次计算、下一层预读与分组 prefill。关闭分波后会恢复这些选项原先保存的设置。";
-"N-gram read backend" = "N-gram 读取方式";
-"mmap is the default. Buffered pread reads selected rows explicitly; it is not direct SSD-to-GPU I/O and may be slower." = "默认为 mmap。使用缓冲的 pread 会明确读取所选数据行；这不是 SSD 直接传送至 GPU，也可能更慢。";
-"mmap (default)" = "mmap（默认）";
-"pread (experimental)" = "pread（实验性）";
-"N-gram row cache MiB" = "N-gram 数据行缓存 MiB";
-"0 disables retention; 1–512 MiB retains packed FP8 rows with pread. Metadata, temporary buffers and the OS page cache are extra. The saved size is inactive with mmap." = "0 不保留缓存；1–512 MiB 在 pread 模式保留 packed FP8 数据行。不含元数据、临时缓冲区与系统页面缓存。切回 mmap 时保留设置值，但不使用这份缓存。";
-"Use fused QSA SDPA" = "使用融合 QSA SDPA";
-"Uses the same selected attention cells with a fused kernel. Floating-point rounding and generated text may differ; a speed improvement is not guaranteed." = "以融合内核处理相同的注意力选取位置。浮点舍入与生成文字可能不同，且不保证加速。";
 "Experts per wave must be an integer from 0 to 512." = "每波专家数必须为 0 至 512 的整数。";
 "Choose mmap or pread for the N-gram read backend." = "N-gram 读取方式请选择 mmap 或 pread。";
 "N-gram row cache must be an integer from 0 to 512 MiB." = "N-gram 数据行缓存必须为 0 至 512 MiB 的整数。";
@@ -640,23 +617,9 @@
 "Compiles grouped normalization and single-token hyper-connection operations. Multi-token batches keep the original mixing path. Rounding and generated text may change." = "编译分组归一化与单 token 的超连接运算。多 token 批次保留原本的混合路径。浮点舍入与生成文本可能改变。";
 
 // QSA throughput experiments.
-"QSA queries per chunk" = "每批 QSA 查询数";
-"1–128 queries per attention chunk; default 16. Larger batches cut per-chunk overhead; 24 and above measured slower. Estimated per-chunk workspace is capped at 256 MiB; this is not a process memory limit." = "每批注意力处理 1–128 个查询，默认 16。批次越大，每批开销越低；实测 24 以上反而变慢。每批工作区估算上限为 256 MiB，不是进程内存上限。";
-"Experimental; full-model speed and quality are not yet verified. QSA queries per chunk defaults to 16 and indexed attention stays off." = "实验性功能；完整模型的速度与质量尚未验证。QSA 每批查询数默认为 16，索引式注意力保持关闭。";
-"Skip the identity QSA key copy" = "跳过 QSA 重复的键复制";
-"When the indexer selects every visible key, use the prefix directly instead of one gathered copy per query. Measured output is byte-identical; contexts above the sparse threshold are unchanged." = "当索引器选取全部可见键时，直接使用前缀，不再为每个查询各复制一份。实测输出逐位元相同；超过稀疏阈值的较长上下文不受影响。";
-"Use indexed QSA decode" = "使用索引式 QSA 解码";
-"Requires fused QSA SDPA. Reads selected KV rows directly for up to 8 queries above the sparse threshold. Prefill and unsupported layouts keep the gathered path. FP32 reduction can change generated text." = "需启用融合 QSA SDPA。超过稀疏阈值且不超过 8 个查询时，直接读取选中的 KV 行。Prefill 与不支持的格式保持 gather 路径。FP32 归约可能改变生成文本。";
 "QSA queries per chunk must be an integer from 1 to 128." = "每批 QSA 查询数必须为 1 到 128 的整数。";
 
 // Streaming review experiments and benchmark diagnostics.
-"Experts per prefill read" = "每次 Prefill 读取的专家数";
-"1 keeps existing reads; 2–32 merges adjacent expert payloads without reading unselected gaps. Requires layer-major whole-layer prefill with waves off. Larger batches retain more per-worker staging memory." = "1 保持原本读取；2–32 合并相邻专家数据，不读取未选中的间隙。需要逐层完整批次 Prefill，并关闭专家分波。较大批次会保留更多工作线程暂存内存。";
-"Warm decode experts per layer" = "每层热启动的 Decode 专家数";
-"0 keeps the cold handoff; 1–128 copies hot experts from the last 128 prompt tokens into free cache slots. Requires whole-layer prefill. Adds prefill time and memory, but may reduce early decode reads. Actual retention is capped by cache capacity." = "0 保持冷启动交接；1–128 将提示最后 128 个 token 的热门专家复制到空闲缓存槽。需要整层 Prefill。会增加 Prefill 时间与内存，但可能减少早期 Decode 读取。实际保留量受缓存容量限制。";
-"Overlap shared expert compute with reads" = "让共享专家计算与读取重叠";
-"Submit the resident shared expert and router before waiting for routed experts on single-token calls. No experts are skipped. Submission overhead may outweigh the overlap; compare the same throughput workload." = "单 token 调用中，先提交常驻的共享专家与路由计算，再等待路由专家。不会跳过专家。提交成本可能抵消重叠收益，请以相同 Throughput 工作负载比较。";
-"Read batching and warm handoff are inactive without layer-major whole-layer prefill, or while expert waves are enabled. Saved choices are retained." = "未启用逐层整层 Prefill，或专家分波启用时，读取批次与热启动交接不生效。原本的选择会保留。";
 "Experts per prefill read must be an integer from 1 to 32." = "每次 Prefill 读取的专家数必须为 1–32 的整数。";
 "Warm decode experts per layer must be an integer from 0 to 128." = "每层热启动的 Decode 专家数必须为 0–128 的整数。";
 "Runtime configuration and expert I/O" = "实际运行设置与专家 I/O";
@@ -676,7 +639,11 @@
 "Experts in memory" = "常驻内存的专家";
 "MTP experts in memory" = "常驻内存的 MTP 专家";
 "DSpark experts in memory" = "常驻内存的 DSpark 专家";
-"≈ %@ GiB · %@ slots · Estimated total (64K) %@ GiB / This Mac %@ GiB" = "≈ %@ GiB · %@ slots · 预估总内存（64K）%@ GiB / 本机 %@ GiB";
 "The estimated total exceeds this Mac's memory. macOS may swap and slow down; lower the percentage." = "预估总内存超过这台 Mac 的内存，macOS 可能改用 swap 而变慢，请调低百分比。";
 "100% keeps every routed expert of this model in memory. The slider stops at this Mac's physical memory, which is not a safe allocation limit." = "100% 代表把这个模型的所有专家都放进内存。滑块上限是这台 Mac 的物理内存，不代表可以安全全部使用。";
 "Share of this model's routed experts kept in memory; the rest stream from the SSD. Excludes common weights and temporary buffers. Default: about %@. More memory means fewer SSD reads, but the speed gain shrinks. Applies on next load." = "这个模型的专家有多少比例放在内存，其余从 SSD 流式读取。不含常驻权重与暂存。默认约 %@。放得越多，读 SSD 越少，但加速效果会越来越小。下次加载模型时生效。";
+"≈ %@ GiB · %@ slots · One 64K request %@ GiB / This Mac %@ GiB" = "≈ %@ GiB · %@ slots · 单次 64K 请求 %@ GiB / 本机 %@ GiB";
+"Full Prompt Cache: %@ GiB" = "Prompt Cache 存满：%@ GiB";
+"One input-heavy request, measured the way Throughput measures it. The small figure is the ceiling once the Prompt Cache budget is full. 128K is extrapolated; actual usage may vary." = "以输入为主的单次请求，量法与 Throughput 相同。小字是 Prompt Cache 存满上限后的用量。128K 为推算值，实际用量可能不同。";
+"est. %@" = "估 %@";
+"Whallm's estimate for this same request with Prompt Cache off." = "Whallm 对同一请求（Prompt Cache 关闭）的估算。";

@@ -5,7 +5,7 @@ project_root=${0:A:h:h}
 output=${1:-$project_root/.build/native/libWhallmANE.dylib}
 mkdir -p "${output:h}"
 
-xcrun clang \
+xcrun --sdk macosx clang \
   -O3 \
   -fobjc-arc \
   -fblocks \

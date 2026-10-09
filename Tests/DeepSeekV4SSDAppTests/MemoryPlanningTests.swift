@@ -59,6 +59,7 @@ final class MemoryPlanningTests: XCTestCase {
   func testEstimateRespondsToMTPContextCompressionAndCacheBudget() throws {
     let p = try profile()
     var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    s.mtpEnabled = false // the formula, not the shipped default, is under test
     func estimate(_ settings: ModelAdvancedSettings, available: Bool = true) throws -> MemoryEstimate {
       try XCTUnwrap(p.estimate(settings, mtpAvailable: available, dsparkAvailable: false))
     }
@@ -142,7 +143,10 @@ final class MemoryPlanningTests: XCTestCase {
       }
       for key in ["Playground", "Status", "About", "Estimated peak memory",
                   "Estimated peak memory for %lld tokens: %@",
-                  "Capacity estimate for an input-heavy context, including retained caches. 128K is extrapolated; actual usage may vary."] {
+                  "One input-heavy request, measured the way Throughput measures it. The small figure is the ceiling once the Prompt Cache budget is full. 128K is extrapolated; actual usage may vary.",
+                  "≈ %@ GiB · %@ slots · One 64K request %@ GiB / This Mac %@ GiB",
+                  "Full Prompt Cache: %@ GiB", "est. %@",
+                  "Whallm's estimate for this same request with Prompt Cache off."] {
         XCTAssertNotEqual(L10n.string(key, language: language), key)
       }
     }
@@ -170,9 +174,40 @@ final class MemoryPlanningTests: XCTestCase {
     }
   }
 
+  func testRequestEstimateMatchesThroughputConditionAndCeilingAddsOnlyPromptCache() throws {
+    let p = try profile()
+    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    s.mtpEnabled = true
+    s.promptCacheMode = .memory
+    s.promptCacheEntries = 2
+    s.promptCacheMemoryGiB = 8
+    let request = try XCTUnwrap(p.requestEstimate(s, mtpAvailable: true, dsparkAvailable: false,
+      contextTokens: 65_536))
+    var off = s
+    off.promptCacheMode = .off
+    let throughput = try XCTUnwrap(p.estimate(off, mtpAvailable: true, dsparkAvailable: false,
+      contextTokens: 65_536))
+    // Throughput forces Prompt Cache off; the request figure is exactly that condition.
+    XCTAssertEqual(request.total, throughput.total)
+    XCTAssertEqual(s.promptCacheMode, .memory, "the saved settings are not modified")
+    let ceiling = try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false,
+      contextTokens: 65_536))
+    // The ceiling differs only by retained states and in-flight snapshots.
+    XCTAssertGreaterThan(ceiling.total, request.total)
+    XCTAssertEqual(ceiling.decoding.model, request.decoding.model)
+    XCTAssertEqual(ceiling.decoding.auxiliary, request.decoding.auxiliary)
+    XCTAssertGreaterThan(ceiling.decoding.conversation, request.decoding.conversation)
+    // Generated tokens extend the request's context.
+    let longer = try XCTUnwrap(p.requestEstimate(s, mtpAvailable: true, dsparkAvailable: false,
+      contextTokens: 65_536, outputTokens: 4_096))
+    XCTAssertEqual(longer.outputTokens, 4_096)
+    XCTAssertGreaterThan(longer.total, request.total)
+  }
+
   func testPromptCacheCountsGroupedSnapshotsAndMTPDraftState() throws {
     let p = try profile()
     var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    s.mtpEnabled = false // the formula, not the shipped default, is under test
     s.promptCacheMode = .off
     let off = try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 1_024))
     s.promptCacheMode = .memory

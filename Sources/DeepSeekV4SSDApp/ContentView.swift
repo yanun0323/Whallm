@@ -259,7 +259,8 @@ enum AppPage: String, CaseIterable, Identifiable {
     switch self {
     case .server: L10n.string("Server", language: language)
     case .model: L10n.string("Model", language: language)
-    case .advanced: L10n.string("Advance", language: language)
+    // The saved page identifier stays `advanced`.
+    case .advanced: L10n.string("Performance", language: language)
     case .chat: L10n.string("Chat", language: language)
     case .metric: L10n.string("Status", language: language)
     case .throughput: L10n.string("Throughput", language: language)
@@ -1832,112 +1833,113 @@ struct ModelAdvancedView: View {
             hint: "0 selects the automatic guideline. This does not reserve memory.",
             value: $settings.memoryLimitGiB
           )
-          Divider()
-          integerField(
-            "Prefill step size",
-            hint: "0 selects 128, 256, or 1024 based on the prompt length.",
-            value: $settings.prefillStepSize
-          )
-          Divider()
-          integerField(
-            "MoE prefill step size",
-            hint: "Number of input tokens processed together by MoE. 0 selects automatically.",
-            value: moePrefillStepSize
-          )
-          if modelKind.descriptor.supports("anePrefill") || modelKind.descriptor.supports("deepseekANEPrefill") {
-            Divider()
-            doubleField(
-              "ANE Prefill share",
-              hint:
-                "Share of query projection output channels assigned to ANE. Use 0 for GPU only and 1 for ANE only. The default and recommended value is 0.",
-              value: anePrefillRatio
-            )
-          }
-          if modelKind.descriptor.supports("layerMajorPrefill") {
-            Divider()
-            toggleField(
-              "Use layer-major prefill",
-              hint: "Loads routed experts by layer during prefill.",
-              value: $settings.layerMajorPrefill
-            )
-          }
-          if modelKind.descriptor.supports("readyExpertDecode") {
-            Divider()
-            toggleField("Compute experts as they load",
-              hint: "Starts available expert calculations while other experts are still loading.",
-              value: optionalToggle(\.readyExpertDecode, defaultValue: true))
-
-          }
-          if modelKind.descriptor.supports("batchedExpertPrefill") {
-            Divider()
-            toggleField("Batch expert calculations",
-              hint: "Processes the experts for an input batch together.",
-              value: optionalToggle(\.batchedExpertPrefill, defaultValue: true,
-                suppressed: qwenFlashWavesActive))
-            .disabled(!settings.layerMajorPrefill || qwenFlashWavesActive)
-          }
-          if modelKind.descriptor.supports("nextLayerPrefetch") {
-            Divider()
-            toggleField("Read the next expert layer ahead",
-              hint: "Reads the next layer while the current layer runs. Uses extra memory.",
-              value: optionalToggle(\.nextLayerPrefetch, defaultValue: true,
-                suppressed: qwenFlashWavesActive))
-            .disabled(!settings.layerMajorPrefill || settings.batchedExpertPrefill == false || qwenFlashWavesActive)
-          }
-          if modelKind.descriptor.supports("packedKVCache") {
-            Divider()
-            toggleField("Compress attention cache",
-              hint: "Reduces attention cache memory. Qwen uses 8-bit storage and may produce different output.",
-              value: optionalToggle(\.packedKVCache, defaultValue: false))
-
-          }
-          if modelKind.descriptor.supports("packedIndexCache") {
-            Divider()
-            toggleField("Compress attention index",
-              hint: "Uses 4-bit index storage. Qwen may select different attention positions.",
-              value: optionalToggle(\.packedIndexCache, defaultValue: false))
-
-          }
-          if modelKind.descriptor.supports("candidateIndex") {
-            Divider()
-            toggleField("Search candidate positions only",
-              hint: "Limits later attention searches to the candidates selected by the first indexer.",
-              value: optionalToggle(\.candidateIndex, defaultValue: false))
-
-          }
-          if modelKind.descriptor.supports("cedPrefill") {
-            Divider()
-            toggleField("Reduce decoder prefill work",
-              hint: "Processes the decoder tail needed to rebuild its attention windows.",
-              value: optionalToggle(\.cedPrefill, defaultValue: false))
-            .disabled(!settings.layerMajorPrefill || settings.dsparkEnabled)
-          }
-          if modelKind.descriptor.supports("deepseekANEPrefill") {
-            Divider()
-            toggleField("Use ANE for prefill",
-              hint: "Shares query projection work with ANE. Falls back to GPU when unavailable. May change rounding.",
-              value: optionalToggle(\.deepSeekANEPrefill, defaultValue: false))
-
-          }
-          if modelKind.descriptor.supports("groupedExperts") {
-            Divider()
-            toggleField(
-              "Prefill acceleration",
-              hint:
-                "Speeds up prompt processing. Requires layer-major prefill. Changes apply on next load.",
-              value: qwenGroupedExperts
-            )
-            .disabled(!settings.layerMajorPrefill || qwenFlashWavesActive)
-          }
-          if modelKind.descriptor.editableSettings.contains("prefillThreshold") {
+          // Hidden for Qwen; see ModelAdvancedSettings.applyQwenFixedTuning.
+          if showsTuningControls {
             Divider()
             integerField(
-              "Layer-major prefill threshold",
-              hint:
-                "Minimum uncached prompt tokens required for layer-major prefill. The default is 1024.",
-              value: layerMajorPrefillThreshold
+              "Prefill step size",
+              hint: "0 selects 128, 256, or 1024 based on the prompt length.",
+              value: $settings.prefillStepSize
             )
-            .disabled(!settings.layerMajorPrefill)
+            Divider()
+            integerField(
+              "MoE prefill step size",
+              hint: "Number of input tokens processed together by MoE. 0 selects automatically.",
+              value: moePrefillStepSize
+            )
+            if modelKind.descriptor.supports("anePrefill") || modelKind.descriptor.supports("deepseekANEPrefill") {
+              Divider()
+              doubleField(
+                "ANE Prefill share",
+                hint:
+                  "Share of query projection output channels assigned to ANE. Use 0 for GPU only and 1 for ANE only. The default and recommended value is 0.",
+                value: anePrefillRatio
+              )
+            }
+            if modelKind.descriptor.supports("layerMajorPrefill") {
+              Divider()
+              toggleField(
+                "Use layer-major prefill",
+                hint: "Loads routed experts by layer during prefill.",
+                value: $settings.layerMajorPrefill
+              )
+            }
+            if modelKind.descriptor.supports("readyExpertDecode") {
+              Divider()
+              toggleField("Compute experts as they load",
+                hint: "Starts available expert calculations while other experts are still loading.",
+                value: optionalToggle(\.readyExpertDecode, defaultValue: true))
+
+            }
+            if modelKind.descriptor.supports("batchedExpertPrefill") {
+              Divider()
+              toggleField("Batch expert calculations",
+                hint: "Processes the experts for an input batch together.",
+                value: optionalToggle(\.batchedExpertPrefill, defaultValue: true,
+                  suppressed: qwenFlashWavesActive))
+              .disabled(!settings.layerMajorPrefill || qwenFlashWavesActive)
+            }
+            if modelKind.descriptor.supports("nextLayerPrefetch") {
+              Divider()
+              toggleField("Read the next expert layer ahead",
+                hint: "Reads the next layer while the current layer runs. Uses extra memory.",
+                value: optionalToggle(\.nextLayerPrefetch, defaultValue: true,
+                  suppressed: qwenFlashWavesActive))
+              .disabled(!settings.layerMajorPrefill || settings.batchedExpertPrefill == false || qwenFlashWavesActive)
+            }
+            if modelKind.descriptor.supports("packedKVCache") {
+              Divider()
+              toggleField("Compress attention cache",
+                hint: "Reduces attention cache memory. Qwen uses 8-bit storage and may produce different output.",
+                value: optionalToggle(\.packedKVCache, defaultValue: false))
+            }
+            if modelKind.descriptor.supports("packedIndexCache") {
+              Divider()
+              toggleField("Compress attention index",
+                hint: "Uses 4-bit index storage. Qwen may select different attention positions.",
+                value: optionalToggle(\.packedIndexCache, defaultValue: false))
+            }
+            if modelKind.descriptor.supports("candidateIndex") {
+              Divider()
+              toggleField("Search candidate positions only",
+                hint: "Limits later attention searches to the candidates selected by the first indexer.",
+                value: optionalToggle(\.candidateIndex, defaultValue: false))
+
+            }
+            if modelKind.descriptor.supports("cedPrefill") {
+              Divider()
+              toggleField("Reduce decoder prefill work",
+                hint: "Processes the decoder tail needed to rebuild its attention windows.",
+                value: optionalToggle(\.cedPrefill, defaultValue: false))
+              .disabled(!settings.layerMajorPrefill || settings.dsparkEnabled)
+            }
+            if modelKind.descriptor.supports("deepseekANEPrefill") {
+              Divider()
+              toggleField("Use ANE for prefill",
+                hint: "Shares query projection work with ANE. Falls back to GPU when unavailable. May change rounding.",
+                value: optionalToggle(\.deepSeekANEPrefill, defaultValue: false))
+
+            }
+            if modelKind.descriptor.supports("groupedExperts") {
+              Divider()
+              toggleField(
+                "Prefill acceleration",
+                hint:
+                  "Speeds up prompt processing. Requires layer-major prefill. Changes apply on next load.",
+                value: qwenGroupedExperts
+              )
+              .disabled(!settings.layerMajorPrefill || qwenFlashWavesActive)
+            }
+            if modelKind.descriptor.editableSettings.contains("prefillThreshold") {
+              Divider()
+              integerField(
+                "Layer-major prefill threshold",
+                hint:
+                  "Minimum uncached prompt tokens required for layer-major prefill. The default is 1024.",
+                value: layerMajorPrefillThreshold
+              )
+              .disabled(!settings.layerMajorPrefill)
+            }
           }
           if modelKind.descriptor.supports("promptCache") {
             Divider()
@@ -1982,11 +1984,14 @@ struct ModelAdvancedView: View {
             )
             .appInput(width: 340)
           }
-          if modelKind.usesQwenEngine {
-            ForEach(QwenOptimization.allCases.filter { $0 != .mtpPolicy }) { feature in
-              Divider()
-              toggleField(feature.title, hint: feature.hint,
-                value: optionalToggle(feature.keyPath, defaultValue: false))
+          // Hidden for Qwen.
+          if showsTuningControls {
+            if modelKind.usesQwenEngine {
+              ForEach(QwenOptimization.allCases.filter { $0 != .mtpPolicy }) { feature in
+                Divider()
+                toggleField(feature.title, hint: feature.hint,
+                  value: optionalToggle(feature.keyPath, defaultValue: false))
+              }
             }
           }
           if modelKind.descriptor.supports("mtp") {
@@ -2002,16 +2007,19 @@ struct ModelAdvancedView: View {
             Divider()
             cacheMemoryField(.mtp, minimum: 10)
             .disabled(!mtpEnabled.wrappedValue || !mtpAvailable)
-            Divider()
-            toggleField(QwenOptimization.mtpPolicy.title, hint: QwenOptimization.mtpPolicy.hint,
-              value: optionalToggle(\.qwenMTPPolicy, defaultValue: false))
-              .disabled(!mtpEnabled.wrappedValue || !mtpAvailable)
-            if settings.qwenMTPPolicy == true {
+            // Hidden for Qwen.
+            if showsTuningControls {
               Divider()
-              qwenIntegerChoice("MTP draft tokens", range: 1...5, key: \.qwenMTPDraftTokens)
-              Divider()
-              qwenIntegerChoice("Zero-acceptance rounds before stopping MTP", range: 1...32,
-                key: \.qwenMTPZeroAcceptanceLimit)
+              toggleField(QwenOptimization.mtpPolicy.title, hint: QwenOptimization.mtpPolicy.hint,
+                value: optionalToggle(\.qwenMTPPolicy, defaultValue: false))
+                .disabled(!mtpEnabled.wrappedValue || !mtpAvailable)
+              if settings.qwenMTPPolicy == true {
+                Divider()
+                qwenIntegerChoice("MTP draft tokens", range: 1...5, key: \.qwenMTPDraftTokens)
+                Divider()
+                qwenIntegerChoice("Zero-acceptance rounds before stopping MTP", range: 1...32,
+                  key: \.qwenMTPZeroAcceptanceLimit)
+              }
             }
           }
           if modelKind.descriptor.editableSettings.contains("kvCachePrecision") {
@@ -2045,8 +2053,6 @@ struct ModelAdvancedView: View {
         }
         .appCard()
         .disabled(settingsLocked)
-        QwenFlashSettingsSection(settings: $settings, modelKind: modelKind,
-          settingsLocked: settingsLocked, language: language)
       }
       .frame(maxWidth: AppLayout.contentWidth)
       .frame(maxWidth: .infinity)
@@ -2055,6 +2061,9 @@ struct ModelAdvancedView: View {
     }
   }
 
+
+  /// Both Qwen models keep a short list of settings; their other controls use fixed values.
+  private var showsTuningControls: Bool { !modelKind.usesQwenEngine }
 
   private func qwenIntegerChoice(_ label: String, range: ClosedRange<Int>,
                                  key: WritableKeyPath<ModelAdvancedSettings, Int?>) -> some View {
@@ -2123,10 +2132,11 @@ struct ModelAdvancedView: View {
       let slots = control.slots(in: settings, blobBytes: blobBytes)
       let percent = ExpertMemory.percent(slots: slots, totalExperts: total)
       let percentText = String(format: "%.1f%%", locale: language.locale, percent)
-      let estimate = memoryProfile?.estimate(settings, mtpAvailable: mtpAvailable,
+      let estimate = memoryProfile?.requestEstimate(settings, mtpAvailable: mtpAvailable,
         dsparkAvailable: dsparkAvailable, contextTokens: 65_536)
+      let ceiling = promptCacheCeiling(contextTokens: 65_536, request: estimate)
       let exceeds = estimate.map { $0.total > Double(physicalMemory) } ?? false
-      let summary = L10n.string("≈ %@ GiB · %@ slots · Estimated total (64K) %@ GiB / This Mac %@ GiB",
+      let summary = L10n.string("≈ %@ GiB · %@ slots · One 64K request %@ GiB / This Mac %@ GiB",
         language: language,
         String(format: "%.1f", locale: language.locale, ExpertMemory.legacyGiB(slots: slots, blobBytes: blobBytes)),
         slots.formatted(.number.locale(language.locale)),
@@ -2147,12 +2157,20 @@ struct ModelAdvancedView: View {
           ), range: range, step: ExpertMemory.percentStep)
           .accessibilityLabel(L10n.string(control.percentTitle, language: language))
           .accessibilityValue(percentText)
-          .accessibilityHint(summary)
+          .accessibilityHint(summary + (ceiling.map { ". " + promptCacheCeilingText($0) } ?? ""))
           .accessibilityIdentifier("expert-cache-percent-\(control)")
-          Text(capacity == nil ? capacityText : summary)
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(capacity == nil ? .red : exceeds ? .orange : .secondary)
-            .frame(maxWidth: .infinity, alignment: .trailing)
+          VStack(alignment: .trailing, spacing: 2) {
+            Text(capacity == nil ? capacityText : summary)
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(capacity == nil ? .red : exceeds ? .orange : .secondary)
+            if capacity != nil, let ceiling {
+              Text(promptCacheCeilingText(ceiling))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(ceiling.total > Double(physicalMemory)
+                  ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .trailing)
           if exceeds {
             Label(L10n.string("The estimated total exceeds this Mac's memory. macOS may swap and slow down; lower the percentage.", language: language),
               systemImage: "exclamationmark.triangle.fill")
@@ -2198,14 +2216,29 @@ struct ModelAdvancedView: View {
     return L10n.string("Share of this model's routed experts kept in memory; the rest stream from the SSD. Excludes common weights and temporary buffers. Default: about %@. More memory means fewer SSD reads, but the speed gain shrinks. Applies on next load.", language: language, value)
   }
 
+  /// The long-run ceiling once the Prompt Cache budget is full; nil when it adds nothing.
+  private func promptCacheCeiling(contextTokens: Int, request: MemoryEstimate?) -> MemoryEstimate? {
+    guard settings.promptCacheMode != .off, let request,
+      let ceiling = memoryProfile?.estimate(settings, mtpAvailable: mtpAvailable,
+        dsparkAvailable: dsparkAvailable, contextTokens: contextTokens),
+      ceiling.total - request.total >= 0.05 * ExpertMemory.gib else { return nil }
+    return ceiling
+  }
+
+  private func promptCacheCeilingText(_ ceiling: MemoryEstimate) -> String {
+    L10n.string("Full Prompt Cache: %@ GiB", language: language,
+      String(format: "%.1f", locale: language.locale, ceiling.total / ExpertMemory.gib))
+  }
+
   private var memoryOverview: some View {
     HStack(spacing: 20) {
       Text(L10n.string("Estimated peak memory", language: language))
         .font(.callout.weight(.semibold))
         .foregroundStyle(.secondary)
       ForEach([65_536, 131_072], id: \.self) { tokens in
-        let estimate = memoryProfile?.estimate(settings, mtpAvailable: mtpAvailable,
+        let estimate = memoryProfile?.requestEstimate(settings, mtpAvailable: mtpAvailable,
           dsparkAvailable: dsparkAvailable, contextTokens: tokens)
+        let ceiling = promptCacheCeiling(contextTokens: tokens, request: estimate)
         let value = estimate.map { String(format: "%.1f GiB", locale: language.locale,
           $0.total / ExpertMemory.gib) } ?? "— GiB"
         VStack(alignment: .trailing, spacing: 3) {
@@ -2215,14 +2248,20 @@ struct ModelAdvancedView: View {
           Text(value)
             .font(.system(size: 16, weight: .bold))
             .monospacedDigit()
+          if let ceiling {
+            Text(promptCacheCeilingText(ceiling))
+              .font(.caption2.monospacedDigit())
+              .foregroundStyle(.tertiary)
+          }
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L10n.string("Estimated peak memory for %lld tokens: %@",
-          language: language, Int64(tokens), value))
+          language: language, Int64(tokens), value)
+          + (ceiling.map { ". " + promptCacheCeilingText($0) } ?? ""))
       }
     }
-    .help(L10n.string("Capacity estimate for an input-heavy context, including retained caches. 128K is extrapolated; actual usage may vary.", language: language))
+    .help(L10n.string("One input-heavy request, measured the way Throughput measures it. The small figure is the ceiling once the Prompt Cache budget is full. 128K is extrapolated; actual usage may vary.", language: language))
   }
 
   private var layerMajorPrefillThreshold: Binding<Int> {

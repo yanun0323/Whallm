@@ -69,11 +69,13 @@ final class ModelSettingsResetTests: XCTestCase {
       settings.qwenGroupedExperts = false
       settings.save(for: kind, defaults: store)
       let restored = ModelAdvancedSettings.loadOrDefault(for: kind, defaults: store)
-      XCTAssertFalse(restored.layerMajorPrefill)
-      XCTAssertEqual(restored.readyExpertDecode, false)
-      XCTAssertEqual(restored.batchedExpertPrefill, false)
-      XCTAssertEqual(restored.nextLayerPrefetch, false)
-      XCTAssertEqual(restored.qwenGroupedExperts, false)
+      // Both Qwen models hide these controls and keep them on (2026-10-09).
+      let optOut = !kind.usesQwenEngine
+      XCTAssertEqual(restored.layerMajorPrefill, !optOut)
+      XCTAssertEqual(restored.readyExpertDecode, !optOut)
+      XCTAssertEqual(restored.batchedExpertPrefill, !optOut)
+      XCTAssertEqual(restored.nextLayerPrefetch, !optOut)
+      XCTAssertEqual(restored.qwenGroupedExperts, !optOut)
     }
   }
 
@@ -101,9 +103,11 @@ final class ModelSettingsResetTests: XCTestCase {
       XCTAssertEqual(saved.readyExpertDecode, kind.descriptor.supports("readyExpertDecode"))
       XCTAssertEqual(saved.batchedExpertPrefill, kind.descriptor.supports("batchedExpertPrefill"))
       XCTAssertEqual(saved.expertCacheGiB, 8.25)
-      XCTAssertEqual(saved.anePrefillRatio, 0.5)
-      XCTAssertEqual(saved.packedKVCache, true)
-      XCTAssertEqual(saved.packedIndexCache, true)
+      // Both Qwen models hide these controls and fix their values (2026-10-09).
+      let fixed = kind.usesQwenEngine
+      XCTAssertEqual(saved.anePrefillRatio, fixed ? 0 : 0.5)
+      XCTAssertEqual(saved.packedKVCache, !fixed)
+      XCTAssertEqual(saved.packedIndexCache, !fixed)
       XCTAssertEqual(saved.approximationEnabled, kind.descriptor.supports("approximation"))
       var flow = ModelSettingsResetConfirmation()
       XCTAssertNil(flow.confirm(for: kind, locked: false))

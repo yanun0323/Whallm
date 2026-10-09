@@ -35,10 +35,8 @@ final class SwiftQwenModelTests: XCTestCase {
     XCTAssertEqual(settings, .defaults(for: swift))
     settings.readWorkers = 9
     settings.defaultTemperature = 0.4
-    settings.qwenSparseSDPA = true
-    settings.qwenNgramIO = "pread"
-    settings.qwenMTPPolicy = true
-    settings.qwenMTPDraftTokens = 3
+    settings.memoryLimitGiB = 24
+    settings.promptCacheEntries = 3
     settings.save(for: swift, defaults: store)
     XCTAssertEqual(ModelAdvancedSettings.loadOrDefault(for: swift, defaults: store), settings)
     XCTAssertEqual(store.data(forKey: "modelAdvancedSettings.\(fp8.rawValue)"), before)
@@ -85,7 +83,6 @@ final class SwiftQwenModelTests: XCTestCase {
     custom.packedKVCache = true
     custom.packedIndexCache = true
     custom.qwenNgramIO = "pread"
-    custom.qwenSparseSDPA = true
     custom.qwenMTPPolicy = true
     custom.qwenMTPDraftTokens = 3
     custom.qwenMTPZeroAcceptanceLimit = 4
@@ -100,18 +97,19 @@ final class SwiftQwenModelTests: XCTestCase {
     XCTAssertEqual(original.alias, "Original")
     XCTAssertEqual(added.runtime.readWorkers, 9)
     XCTAssertEqual(original.runtime.readWorkers, 16)
-    XCTAssertEqual(added.runtime.qwenNgramIO, "pread")
+    // Swift fixes its hidden tuning (2026-10-09), so these saved choices do not apply.
+    XCTAssertEqual(added.runtime.qwenNgramIO, "mmap")
     XCTAssertEqual(original.runtime.qwenNgramIO, "mmap")
-    XCTAssertTrue(added.runtime.qwenQuantizedKV)
-    XCTAssertTrue(added.runtime.qwenQuantizedIndex)
+    XCTAssertFalse(added.runtime.qwenQuantizedKV)
+    XCTAssertFalse(added.runtime.qwenQuantizedIndex)
     XCTAssertTrue(added.runtime.qwenPooledIndexCache)
     XCTAssertTrue(added.runtime.qwenNgramLookupOptimized)
     XCTAssertTrue(added.runtime.qwenCompileTensorOps)
     XCTAssertTrue(added.runtime.qwenPhaseMemory)
     XCTAssertTrue(added.runtime.qwenNextLayerPrefetch)
     XCTAssertTrue(added.runtime.mtpEnabled)
-    XCTAssertEqual(added.runtime.qwenMTPDraftTokens, 3)
-    XCTAssertEqual(added.runtime.qwenMTPZeroAcceptanceLimit, 4)
+    XCTAssertEqual(added.runtime.qwenMTPDraftTokens, 2)
+    XCTAssertEqual(added.runtime.qwenMTPZeroAcceptanceLimit, 32)
     XCTAssertEqual(added.defaults.temperature, 0.4)
     XCTAssertEqual(added.defaults.qwenAdaptiveSampling, false)
     XCTAssertEqual(modelKind(withAPIModelID: swift.apiModelID), swift)
@@ -142,13 +140,119 @@ final class SwiftQwenModelTests: XCTestCase {
   }
 
   @MainActor
-  func testSwiftShowsQwenSettingsInAllAppLanguages() {
-    for language in [AppLanguage.english, .simplifiedChinese, .traditionalChinese] {
-      let host = NSHostingView(rootView: QwenFlashSettingsSection(settings: .constant(.defaults(for: swift)),
-        modelKind: swift, settingsLocked: false, language: language).frame(width: 760))
-      XCTAssertGreaterThan(host.fittingSize.height, 200)
-      XCTAssertLessThan(host.fittingSize.height, 1_400)
+  func testQwenModelsFixHiddenTuningAndKeepTheVisibleSettings() throws {
+    let swift = ModelKind.swift1_5Qwen3_8FlashNext
+    // Arbitrary saved values, including ones for controls Swift no longer shows.
+    var saved = ModelAdvancedSettings.defaults(for: swift)
+    saved.readWorkers = 9
+    saved.prefetchReadWorkers = 3
+    saved.memoryLimitGiB = 24
+    saved.expertCacheGiB = 6
+    saved.mtpEnabled = false
+    saved.mtpCacheGiB = 0.5
+    saved.promptCacheMode = .disk
+    saved.promptCacheEntries = 3
+    saved.promptCacheMemoryGiB = 5
+    let warmup = FileManager.default.temporaryDirectory.appending(path: "warm-\(UUID().uuidString).txt")
+    try Data("Hello".utf8).write(to: warmup)
+    defer { try? FileManager.default.removeItem(at: warmup) }
+    saved.warmupPromptPath = warmup.path
+    saved.defaultMaxTokens = 2_048
+    saved.qwenAdaptiveSampling = false
+    saved.defaultTemperature = 0.3
+    saved.recentExpertCache = false
+    saved.prefillStepSize = 256
+    saved.layerMajorPrefill = false
+    saved.packedKVCache = true
+    saved.packedIndexCache = true
+    saved.qwenSortedExpertPrefill = false
+    saved.qwenQSAMaskedPrefill = false
+    saved.qwenQSAQueryChunk = 4
+    saved.qwenExpertWaveSlots = 16
+    saved.qwenNgramIO = "pread"
+    saved.qwenPackedGDNPrefill = true
+    saved.qwenMTPPolicy = false
+    saved.qwenPhaseMemory = false
+    let data = try JSONEncoder().encode(saved)
+    let loaded = try JSONDecoder().decode(ModelAdvancedSettings.self, from: data).normalized(for: swift)
+
+    // Visible settings keep the user's choices.
+    XCTAssertEqual(loaded.readWorkers, 9)
+    XCTAssertEqual(loaded.prefetchReadWorkers, 3)
+    XCTAssertEqual(loaded.memoryLimitGiB, 24)
+    XCTAssertEqual(loaded.expertCacheGiB, 6)
+    XCTAssertEqual(loaded.mtpEnabled, false)
+    XCTAssertEqual(loaded.mtpCacheGiB, 0.5)
+    XCTAssertEqual(loaded.promptCacheMode, .disk)
+    XCTAssertEqual(loaded.promptCacheEntries, 3)
+    XCTAssertEqual(loaded.promptCacheMemoryGiB, 5)
+    XCTAssertEqual(loaded.warmupPromptPath, warmup.path)
+    XCTAssertEqual(loaded.defaultMaxTokens, 2_048)
+    XCTAssertEqual(loaded.qwenAdaptiveSampling, false)
+    XCTAssertEqual(loaded.defaultTemperature, 0.3)
+    XCTAssertEqual(loaded.recentExpertCache, false)
+
+    // Hidden controls use the fixed values whatever was saved.
+    var fixed = loaded
+    fixed.applyQwenFixedTuning()
+    XCTAssertEqual(loaded, fixed)
+    XCTAssertEqual(loaded.prefillStepSize, 1_024)
+    XCTAssertTrue(loaded.layerMajorPrefill)
+    XCTAssertEqual(loaded.packedKVCache, false)
+    XCTAssertEqual(loaded.packedIndexCache, false)
+    XCTAssertEqual(loaded.qwenSortedExpertPrefill, true)
+    XCTAssertEqual(loaded.qwenQSAMaskedPrefill, true)
+    XCTAssertEqual(loaded.qwenQSAQueryChunk, 16)
+    XCTAssertEqual(loaded.qwenExpertWaveSlots, 0)
+    XCTAssertEqual(loaded.qwenNgramIO, "mmap")
+    XCTAssertEqual(loaded.qwenPackedGDNPrefill, false)
+    XCTAssertEqual(loaded.qwenMTPPolicy, true)
+    XCTAssertEqual(loaded.effectiveQwenMTPDraftTokens, 2)
+    XCTAssertEqual(loaded.effectiveQwenMTPZeroAcceptanceLimit, 32)
+    XCTAssertEqual(loaded.qwenPhaseMemory, true)
+    XCTAssertNoThrow(try loaded.validate(for: swift))
+
+    let defaults = ModelAdvancedSettings.defaults(for: swift)
+    XCTAssertEqual(defaults.mtpEnabled, true)
+    XCTAssertEqual(defaults.normalized(for: swift), defaults)
+    let model = InstalledModelInfo(url: URL(fileURLWithPath: "/fixture/swift"), size: 0,
+      quickIssues: [], hasMTP: false, hasDSpark: false, modelKind: swift, modelID: swift.descriptor.checkpointModelID)
+    let runtime = try XCTUnwrap(ModelLibrary.makeServerCatalog(models: [model], aliases: [:],
+      settings: [swift: saved], powerSavingLimitGBps: nil).models.first).runtime
+    XCTAssertFalse(runtime.mtpEnabled, "no MTP files")
+    XCTAssertEqual(runtime.prefillStepSize, 1_024)
+    XCTAssertEqual(runtime.qwenQSAQueryChunk, 16)
+    XCTAssertEqual(runtime.qwenSortedExpertPrefill, true)
+    XCTAssertEqual(runtime.readWorkers, 9)
+
+    // Qwen FP8 shows the same short list and uses the same fixed values.
+    let fp8 = ModelKind.qwen3_8FlashNext
+    var fp8Saved = saved
+    fp8Saved.qwenPackedGDNPrefill = false
+    let fp8Loaded = try JSONDecoder().decode(ModelAdvancedSettings.self,
+      from: JSONEncoder().encode(fp8Saved)).normalized(for: fp8)
+    XCTAssertEqual(fp8Loaded, loaded)
+    XCTAssertEqual(ModelAdvancedSettings.defaults(for: fp8).mtpEnabled, true)
+    var fp8Defaults = ModelAdvancedSettings.defaults(for: fp8)
+    fp8Defaults.applyQwenFixedTuning()
+    XCTAssertEqual(fp8Defaults, ModelAdvancedSettings.defaults(for: fp8))
+  }
+
+  @MainActor
+  func testLowerMLXCommandBufferLimitsApplyOnlyToQwenOnlyCatalogs() throws {
+    @MainActor func defaults(_ kinds: [ModelKind]) throws -> [String: String] {
+      try ModelLibrary.makeServerCatalog(models: kinds.map(installed), aliases: [:], settings: [:],
+        powerSavingLimitGBps: nil).runtimeEnvironmentDefaults
     }
+    let lowered = ["MLX_MAX_OPS_PER_BUFFER": "10", "MLX_MAX_MB_PER_BUFFER": "10"]
+    XCTAssertEqual(try defaults([.swift1_5Qwen3_8FlashNext]), lowered)
+    XCTAssertEqual(try defaults([.qwen3_8FlashNext]), lowered)
+    XCTAssertEqual(try defaults([.qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext]), lowered)
+    // One process serves the whole catalog, so any other model keeps MLX's own limits.
+    XCTAssertEqual(try defaults([.swift1_5Qwen3_8FlashNext, .deepSeekV4]), [:])
+    XCTAssertEqual(try defaults([.deepSeekV41]), [:])
+    XCTAssertEqual(try defaults([.mimoV26FlashRL, .qwen3_8FlashNext]), [:])
+    XCTAssertEqual(try defaults([]), [:])
   }
 
   private func installed(_ kind: ModelKind) -> InstalledModelInfo {

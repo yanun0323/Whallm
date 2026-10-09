@@ -270,16 +270,13 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var qwenExpertWaveSlots: Int? = 0
   var qwenNgramIO: String? = "mmap"
   var qwenNgramCacheMiB: Int? = 0
-  var qwenSparseSDPA: Bool? = false
   var qwenQSAQueryChunk: Int?
   var qwenQSASkipCompleteGather: Bool?
   var qwenPackedGDNPrefill: Bool? = false
   var qwenSortedExpertPrefill: Bool? = false
   var qwenQSAMaskedPrefill: Bool? = false
-  var qwenQSAIndexed: Bool? = false
   var qwenPrefillReadExperts: Int? = 1
   var qwenPrefillSeedExperts: Int? = 0
-  var qwenSharedExpertOverlap: Bool? = false
   var qwenMTPPolicy: Bool? = false
   var qwenMTPDraftTokens: Int? = 2
   var qwenMTPZeroAcceptanceLimit: Int? = 32
@@ -337,6 +334,11 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     // validation rejects any value that differs from the runtime default.
     settings.qwenQSAQueryChunk = 16
     settings.qwenQSASkipCompleteGather = true
+    if modelKind.usesQwenEngine {
+      // The catalog still sends MTP off when the installed model has no MTP files.
+      settings.mtpEnabled = true
+      settings.applyQwenFixedTuning()
+    }
     return settings
   }
 
@@ -378,19 +380,54 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.qwenExpertWaveSlots = qwen ? (settings.qwenExpertWaveSlots ?? 0) : 0
     settings.qwenNgramIO = qwen ? (settings.qwenNgramIO ?? "mmap") : "mmap"
     settings.qwenNgramCacheMiB = qwen ? (settings.qwenNgramCacheMiB ?? 0) : 0
-    settings.qwenSparseSDPA = qwen ? (settings.qwenSparseSDPA ?? false) : false
     settings.qwenQSAQueryChunk = qwen ? (settings.qwenQSAQueryChunk ?? 16) : 16
     settings.qwenQSASkipCompleteGather = qwen ? (settings.qwenQSASkipCompleteGather ?? true) : true
     settings.qwenPackedGDNPrefill = modelKind == .swift1_5Qwen3_8FlashNext
       ? (settings.qwenPackedGDNPrefill ?? false) : false
     settings.qwenSortedExpertPrefill = qwen ? (settings.qwenSortedExpertPrefill ?? false) : false
     settings.qwenQSAMaskedPrefill = qwen ? (settings.qwenQSAMaskedPrefill ?? false) : false
-    settings.qwenQSAIndexed = qwen ? (settings.qwenQSAIndexed ?? false) : false
     settings.qwenPrefillReadExperts = qwen ? qwenPrefillReadExperts ?? 1 : 1
     settings.qwenPrefillSeedExperts = qwen ? qwenPrefillSeedExperts ?? 0 : 0
-    settings.qwenSharedExpertOverlap = qwen ? qwenSharedExpertOverlap ?? false : false
     settings.dsparkEnabled = descriptor.supports("dspark") && settings.dsparkEnabled
+    if modelKind.usesQwenEngine {
+      settings.applyQwenFixedTuning()
+    }
     return settings
+  }
+
+  /// Both Qwen models show only a short list of Advanced settings. Every hidden
+  /// control uses these values, chosen by the App owner on 2026-10-09 (QSA queries
+  /// per chunk at the measured default 16); saved values for hidden controls are
+  /// replaced whenever settings are loaded or reset. Packed GDN stays off.
+  mutating func applyQwenFixedTuning() {
+    prefillStepSize = 1_024
+    moePrefillStepSize = 0
+    anePrefillRatio = 0
+    layerMajorPrefill = true
+    layerMajorPrefillThreshold = 1_024
+    readyExpertDecode = true
+    batchedExpertPrefill = true
+    nextLayerPrefetch = true
+    packedKVCache = false
+    packedIndexCache = false
+    qwenGroupedExperts = true
+    qwenPooledIndexCache = true
+    qwenNgramLookupOptimized = true
+    qwenCompileTensorOps = true
+    qwenPhaseMemory = true
+    qwenMTPPolicy = true
+    qwenMTPDraftTokens = 2
+    qwenMTPZeroAcceptanceLimit = 32
+    qwenPackedGDNPrefill = false
+    qwenSortedExpertPrefill = true
+    qwenQSAMaskedPrefill = true
+    qwenQSASkipCompleteGather = true
+    qwenQSAQueryChunk = 16
+    qwenExpertWaveSlots = 0
+    qwenNgramIO = "mmap"
+    qwenNgramCacheMiB = 0
+    qwenPrefillReadExperts = 1
+    qwenPrefillSeedExperts = 0
   }
 
   static func load(
@@ -786,16 +823,13 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       var qwenExpertWaveSlots: Int? = nil
       var qwenNgramIO: String? = nil
       var qwenNgramCacheBytes: Int? = nil
-      var qwenSparseSDPA: Bool? = nil
       var qwenQSAQueryChunk: Int? = nil
       var qwenQSASkipCompleteGather: Bool? = nil
       var qwenPackedGDNPrefill: Bool? = nil
       var qwenSortedExpertPrefill: Bool? = nil
       var qwenQSAMaskedPrefill: Bool? = nil
-      var qwenQSAIndexed: Bool? = nil
       var qwenPrefillReadExperts: Int? = nil
       var qwenPrefillSeedExperts: Int? = nil
-      var qwenSharedExpertOverlap: Bool? = nil
       let qwenMTPDraftTokens: Int
       let qwenMTPZeroAcceptanceLimit: Int
       let v41PackedKV: Bool
@@ -855,16 +889,13 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         case qwenExpertWaveSlots = "qwen_expert_wave_slots"
         case qwenNgramIO = "qwen_ngram_io"
         case qwenNgramCacheBytes = "qwen_ngram_cache_bytes"
-        case qwenSparseSDPA = "qwen_sparse_sdpa"
         case qwenQSAQueryChunk = "qwen_qsa_query_chunk"
         case qwenQSASkipCompleteGather = "qwen_qsa_skip_complete_gather"
         case qwenPackedGDNPrefill = "qwen_packed_gdn_prefill"
         case qwenSortedExpertPrefill = "qwen_sorted_expert_prefill"
         case qwenQSAMaskedPrefill = "qwen_qsa_masked_prefill"
-        case qwenQSAIndexed = "qwen_qsa_indexed"
         case qwenPrefillReadExperts = "qwen_prefill_read_experts"
         case qwenPrefillSeedExperts = "qwen_prefill_seed_experts"
-        case qwenSharedExpertOverlap = "qwen_shared_expert_overlap"
         case qwenMTPDraftTokens = "qwen_mtp_draft_tokens"
         case qwenMTPZeroAcceptanceLimit = "qwen_mtp_zero_acceptance_limit"
         case v41PackedKV = "v41_packed_kv"
@@ -891,16 +922,13 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         try values.encode(qwenExpertWaveSlots ?? 0, forKey: .qwenExpertWaveSlots)
         try values.encode(qwenNgramIO ?? "mmap", forKey: .qwenNgramIO)
         try values.encode(qwenNgramCacheBytes ?? 0, forKey: .qwenNgramCacheBytes)
-        try values.encode(qwenSparseSDPA ?? false, forKey: .qwenSparseSDPA)
         try values.encode(qwenQSAQueryChunk ?? 16, forKey: .qwenQSAQueryChunk)
         try values.encode(qwenQSASkipCompleteGather ?? true, forKey: .qwenQSASkipCompleteGather)
         try values.encode(qwenPackedGDNPrefill ?? false, forKey: .qwenPackedGDNPrefill)
         try values.encode(qwenSortedExpertPrefill ?? false, forKey: .qwenSortedExpertPrefill)
         try values.encode(qwenQSAMaskedPrefill ?? false, forKey: .qwenQSAMaskedPrefill)
-        try values.encode(qwenQSAIndexed ?? false, forKey: .qwenQSAIndexed)
         try values.encode(qwenPrefillReadExperts ?? 1, forKey: .qwenPrefillReadExperts)
         try values.encode(qwenPrefillSeedExperts ?? 0, forKey: .qwenPrefillSeedExperts)
-        try values.encode(qwenSharedExpertOverlap ?? false, forKey: .qwenSharedExpertOverlap)
         try values.encode(qwenMTPDraftTokens, forKey: .qwenMTPDraftTokens)
         try values.encode(qwenMTPZeroAcceptanceLimit, forKey: .qwenMTPZeroAcceptanceLimit)
         try values.encode(v41PackedKV, forKey: .v41PackedKV)
@@ -1030,6 +1058,16 @@ struct ModelCatalog: Codable, Equatable, Sendable {
 
   var availableModels: [CatalogModel] {
     models.map { CatalogModel(id: $0.id, alias: $0.alias) }
+  }
+
+  /// MLX reads its command-buffer limits once per process, and one runtime process
+  /// serves every catalog model, so the lower limits apply only when each model
+  /// uses the Qwen engine. Measured on Swift only; Qwen FP8 shares the engine.
+  var runtimeEnvironmentDefaults: [String: String] {
+    guard !models.isEmpty,
+      models.allSatisfy({ ModelKind(rawValue: $0.modelKind)?.usesQwenEngine == true })
+    else { return [:] }
+    return ["MLX_MAX_OPS_PER_BUFFER": "10", "MLX_MAX_MB_PER_BUFFER": "10"]
   }
 
   func encoded() throws -> Data {
@@ -1226,6 +1264,8 @@ final class ServerController: ObservableObject {
         .compactMap { $0 }
         .joined(separator: ":")
       environment["PYTHONDONTWRITEBYTECODE"] = "1"
+      // A value already present in the App's environment wins.
+      environment.merge(catalog.runtimeEnvironmentDefaults) { inherited, _ in inherited }
       environment["WHALLM_APP_PID"] = String(ProcessInfo.processInfo.processIdentifier)
       if let pythonHome = configuration.pythonHome {
         environment["PYTHONHOME"] = pythonHome

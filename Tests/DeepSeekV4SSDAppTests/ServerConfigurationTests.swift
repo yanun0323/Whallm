@@ -21,12 +21,14 @@ final class ServerConfigurationTests: XCTestCase {
           aliases: [:], settings: [kind: settings], powerSavingLimitGBps: nil)
         let runtime = try XCTUnwrap(catalog.models.first).runtime
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(runtime)) as? [String: Any])
+        // Qwen hides these controls and keeps them on (2026-10-09).
+        let effective = enabled || kind.usesQwenEngine
         for key in ["layer_major_prefill", "ready_expert_decode", "batched_expert_prefill"] {
-          XCTAssertEqual(json[key] as? Bool, enabled, "\(kind): \(key)")
+          XCTAssertEqual(json[key] as? Bool, effective, "\(kind): \(key)")
         }
-        XCTAssertEqual(json["qwen_next_layer_prefetch"] as? Bool, enabled && kind == .qwen3_8FlashNext)
+        XCTAssertEqual(json["qwen_next_layer_prefetch"] as? Bool, effective && kind == .qwen3_8FlashNext)
         XCTAssertEqual(json["v41_next_layer_prefetch"] as? Bool, enabled && kind == .deepSeekV41)
-        XCTAssertEqual(json["qwen_grouped_experts"] as? Bool, enabled && kind == .qwen3_8FlashNext)
+        XCTAssertEqual(json["qwen_grouped_experts"] as? Bool, effective && kind == .qwen3_8FlashNext)
       }
     }
   }
@@ -53,7 +55,7 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertTrue(runtime.qwenPhaseMemory)
     XCTAssertFalse(runtime.qwenQuantizedKV)
     XCTAssertFalse(runtime.qwenQuantizedIndex)
-    XCTAssertFalse(runtime.mtpEnabled)
+    XCTAssertTrue(runtime.mtpEnabled, "Qwen ships MTP on when its files are installed")
     XCTAssertEqual(runtime.anePrefillRatio, 0)
     XCTAssertEqual(settings.approximationEnabled, false)
     XCTAssertEqual(settings.slots, 3072)
@@ -69,8 +71,7 @@ final class ServerConfigurationTests: XCTestCase {
     for kind in [ModelKind.qwen3_8FlashNext, .deepSeekV4, .deepSeekV41] {
       var settings = ModelAdvancedSettings.defaults(for: kind)
       for feature in QwenOptimization.allCases {
-        XCTAssertEqual(settings[keyPath: feature.keyPath] == true,
-                       kind == .qwen3_8FlashNext && feature.keyPath != \ModelAdvancedSettings.qwenMTPPolicy)
+        XCTAssertEqual(settings[keyPath: feature.keyPath] == true, kind == .qwen3_8FlashNext)
         settings[keyPath: feature.keyPath] = true
       }
       settings.qwenMTPDraftTokens = 3
@@ -88,11 +89,12 @@ final class ServerConfigurationTests: XCTestCase {
       XCTAssertEqual(runtime.qwenNgramLookupOptimized, enabled)
       XCTAssertEqual(runtime.qwenCompileTensorOps, enabled)
       XCTAssertEqual(runtime.qwenPhaseMemory, enabled)
-      XCTAssertEqual(runtime.qwenMTPDraftTokens, enabled ? 3 : 2)
-      XCTAssertEqual(runtime.qwenMTPZeroAcceptanceLimit, enabled ? 4 : 32)
+      // Qwen fixes its MTP strategy at 2 / 32; other models send the runtime defaults.
+      XCTAssertEqual(runtime.qwenMTPDraftTokens, 2)
+      XCTAssertEqual(runtime.qwenMTPZeroAcceptanceLimit, 32)
       let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(runtime)) as? [String: Any])
       XCTAssertEqual(json["qwen_phase_memory"] as? Bool, enabled)
-      XCTAssertEqual(json["qwen_mtp_draft_tokens"] as? Int, enabled ? 3 : 2)
+      XCTAssertEqual(json["qwen_mtp_draft_tokens"] as? Int, 2)
     }
   }
 
@@ -276,11 +278,12 @@ final class ServerConfigurationTests: XCTestCase {
           powerSavingLimitGBps: nil)
         let entry = try XCTUnwrap(catalog.models.first)
         XCTAssertEqual(entry.runtime.prefetchReadWorkers, 3)
-        XCTAssertEqual(entry.runtime.moePrefillStepSize, 64)
+        XCTAssertEqual(entry.runtime.moePrefillStepSize, kind.usesQwenEngine ? 0 : 64)
         XCTAssertEqual(entry.runtime.expertEvictionPolicy, "lfu")
         XCTAssertEqual(entry.defaults.qwenAdaptiveSampling, adaptive)
+        // Approximate mode was removed from both Qwen models on 2026-10-08.
         XCTAssertEqual(entry.defaults.approximationMode,
-          "learned-route-drop-lowest-1")
+          kind.descriptor.supports("approximation") ? "learned-route-drop-lowest-1" : "exact")
       }
       settings.prefetchReadWorkers = 0
       XCTAssertThrowsError(try settings.validate(for: kind))
@@ -506,7 +509,7 @@ final class ServerConfigurationTests: XCTestCase {
         language: language, Int64(ModelKind.qwen3_8FlashNext.descriptor.defaults.slots))
       XCTAssertEqual(hint.filter(\.isNumber), "3072", hint)
     }
-    XCTAssertFalse(qwen.mtpEnabled ?? true)
+    XCTAssertTrue(qwen.mtpEnabled == true)
     XCTAssertEqual(qwen.mtpSlots, 32)
     XCTAssertEqual(qwen.anePrefillRatio, 0)
     qwen.slots = 900
@@ -541,7 +544,7 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertFalse(restoredQwen.bf16KVCache)
     XCTAssertTrue(restoredQwen.mtpEnabled == true)
     XCTAssertEqual(restoredQwen.mtpSlots, 512)
-    XCTAssertEqual(restoredQwen.anePrefillRatio, 0.5)
+    XCTAssertEqual(restoredQwen.anePrefillRatio, 0, "fixed for Qwen")
     XCTAssertFalse(restoredQwen.dsparkEnabled)
     XCTAssertEqual(restoredQwen.layerMajorPrefillThreshold, 1_024)
   }
@@ -568,15 +571,15 @@ final class ServerConfigurationTests: XCTestCase {
       settings.qwenGroupedExperts = enabled
       settings.save(for: .qwen3_8FlashNext, defaults: isolated.defaults)
       let restored = ModelAdvancedSettings.loadOrDefault(for: .qwen3_8FlashNext, defaults: isolated.defaults)
-      XCTAssertEqual(restored.qwenGroupedExperts, enabled)
+      XCTAssertEqual(restored.qwenGroupedExperts, true, "fixed on for Qwen")
       let catalog = try ModelLibrary.makeServerCatalog(
         models: [installedModel(.qwen3_8FlashNext, hasMTP: true)],
         aliases: [:], settings: [.qwen3_8FlashNext: restored], powerSavingLimitGBps: nil)
       let object = try XCTUnwrap(
         try XCTUnwrap(catalog.models.first).jsonObject() as? [String: Any])
       let runtime = try XCTUnwrap(object["runtime"] as? [String: Any])
-      XCTAssertEqual(runtime["qwen_grouped_experts"] as? Bool, enabled)
-      XCTAssertEqual(runtime["mtp_enabled"] as? Bool, false)
+      XCTAssertEqual(runtime["qwen_grouped_experts"] as? Bool, true)
+      XCTAssertEqual(runtime["mtp_enabled"] as? Bool, true)
     }
     XCTAssertEqual(settings.normalized(for: .deepSeekV4).qwenGroupedExperts, false)
     for language in [AppLanguage.english, .simplifiedChinese, .traditionalChinese] {
@@ -774,7 +777,7 @@ final class ServerConfigurationTests: XCTestCase {
         "expert_route_trace", "expert_page_cache_probe",
         "separate_prefill_io", "expert_file_cache_policy", "ready_expert_decode", "staged_expert_streaming",
         "qwen_next_layer_prefetch",
-        "qwen_expert_wave_slots", "qwen_ngram_io", "qwen_ngram_cache_bytes", "qwen_sparse_sdpa", "qwen_qsa_query_chunk", "qwen_qsa_skip_complete_gather", "qwen_packed_gdn_prefill", "qwen_sorted_expert_prefill", "qwen_qsa_masked_prefill", "qwen_qsa_indexed", "qwen_prefill_read_experts", "qwen_prefill_seed_experts", "qwen_shared_expert_overlap",
+        "qwen_expert_wave_slots", "qwen_ngram_io", "qwen_ngram_cache_bytes", "qwen_qsa_query_chunk", "qwen_qsa_skip_complete_gather", "qwen_packed_gdn_prefill", "qwen_sorted_expert_prefill", "qwen_qsa_masked_prefill", "qwen_prefill_read_experts", "qwen_prefill_seed_experts",
         "qwen_quantized_kv", "qwen_quantized_index", "qwen_pooled_index_cache", "qwen_ngram_lookup_optimized",
         "qwen_compile_tensor_ops", "qwen_phase_memory", "qwen_mtp_draft_tokens", "qwen_mtp_zero_acceptance_limit", "v41_packed_kv", "v41_packed_index",
         "v41_candidate_index", "v41_ced_prefill", "v41_next_layer_prefetch", "deepseek_ane_prefill", "v41_layer_major_prefill",
@@ -806,7 +809,7 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertEqual(qwenRuntime["ane_prefill"] as? Bool, true)
     XCTAssertNil(qwenRuntime["qwen_short_block"])
     XCTAssertEqual(qwenRuntime["qwen_grouped_experts"] as? Bool, true)
-    XCTAssertEqual(qwenRuntime["ane_prefill_ratio"] as? Double, 0.5)
+    XCTAssertEqual(qwenRuntime["ane_prefill_ratio"] as? Double, 0, "fixed for Qwen")
     XCTAssertEqual(models[0]["model_kind"] as? String, "deepseek-v4")
     XCTAssertTrue(models[0]["warmup_prompt_path"] is NSNull)
   }
