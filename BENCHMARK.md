@@ -1,7 +1,20 @@
 # Benchmark
 
-Recorded measurements for Swift1.5 on v1.1.10, the Qwen MTP draft-context change (2026-09-29), the V4.1 prefill change, v1.1.7, v1.1.4,
+Recorded measurements for both Qwen models on v1.1.11, Swift1.5 on v1.1.10, the Qwen MTP draft-context change (2026-09-29), the V4.1 prefill change, v1.1.7, v1.1.4,
 and v1.1.0. No new full-model performance measurements are claimed for v1.1.8. Measurement conditions and evidence gaps are stated below; these are not controlled speed comparisons of v1.1.10.
+
+## v1.1.11: both Qwen models with MTP (M5 Pro)
+
+Recorded by the user with the v1.1.11 App's built-in **Throughput** test on an M5 Pro, with MTP on. Slot count, output limit, temperature and seed are as displayed. These rows do not include a source commit, full configuration, cache state, raw run artifact or output token hash. Treat them as reference observations, not a controlled comparison with other versions.
+
+| Model | Context | Slots | Output limit | Input / Output | TTFT (ms) | TPOT (ms) | PP tok/s | TG tok/s | Total (s) | Throughput | Peak Memory | Temperature | Seed |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3.8-Flash-Next | Code | 2089 | 128 | 4096 / 128 | 8456.6 | 66.7 | 484.4 | 15.0 | 16.9 | 249.4 | 16.58 GiB | 0.0 | 42 |
+| Qwen3.8-Flash-Next | Code | 2089 | 128 | 8192 / 128 | 14968.3 | 58.1 | 547.3 | 17.2 | 22.4 | 372.2 | 17.41 GiB | 0.0 | 42 |
+| Qwen3.8-Flash-Next | Code | 2089 | 128 | 16384 / 128 | 32572.7 | 66.7 | 503.0 | 15.0 | 41.1 | 402.2 | 18.38 GiB | 0.0 | 42 |
+| Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 128 | 4096 / 128 | 7140.3 | 68.3 | 573.6 | 14.6 | 15.8 | 267.0 | 16.93 GiB | 0.0 | 42 |
+| Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 128 | 8192 / 128 | 13357.9 | 57.2 | 613.3 | 17.5 | 20.6 | 403.4 | 17.83 GiB | 0.0 | 42 |
+| Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 128 | 16384 / 128 | 28679.3 | 66.9 | 571.3 | 14.9 | 37.2 | 444.1 | 18.81 GiB | 0.0 | 42 |
 
 ## Swift1.5 Qwen3.8 Flash Next
 

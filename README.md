@@ -20,12 +20,12 @@ Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo
 
 | Model | Chip | Prefill | Decode | Peak memory | Expert cache slots |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 500.5–606.4 tok/s | 13.1–15.8 tok/s | 19 GiB | 2089 |
+| `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 571.3–613.3 tok/s | 14.6–17.5 tok/s | 19 GiB | 2089 |
+| `Qwen3.8-Flash-Next-FP8` | M5 Pro | 484.4–547.3 tok/s | 15.0–17.2 tok/s | 18 GiB | 2089 |
 | `DeepSeek-V4-Flash-0731` | M5 Pro | 53.6–201.0 tok/s | 5.9–7.7 tok/s | 23 GiB | 1152 |
-| `Qwen3.8-Flash-Next-FP8` | M5 Pro | 99.1–153.7 tok/s | 8.5–10.6 tok/s | 18 GiB | 3072 |
 | `DeepSeek-V4.1-Flash` | M2 Max | 13.9–65.9 tok/s | 1.8–2.2 tok/s | 33 GiB | 1152 |
 
-> Measured with the built-in Throughput test. Swift1.5 ran on v1.1.10 with 4,096 to 16,384 input tokens. The other models ran on v1.1.7 with 1,024 to 16,384 input tokens. Because the versions differ, don't compare the rows directly.
+> Measured with the built-in Throughput test. Both Qwen models ran on v1.1.11 with MTP on and 4,096 to 16,384 input tokens. The DeepSeek models ran on v1.1.7 with 1,024 to 16,384 input tokens. Because the versions differ, don't compare those rows directly.
 >
 > See the [full benchmark](#benchmarks) for details.
 
@@ -99,19 +99,18 @@ Except for the image table, rows use **Code** input and a **128-token** output l
 
 | Model | Version | Slots | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Swift1.5 Qwen3.8 | 1.1.10 | 2089 | 4096 | 7188.6 | 569.8 | 13.5 | 16.71 |
-| Swift1.5 Qwen3.8 | 1.1.10 | 2089 | 8192 | 13509.5 | 606.4 | 15.8 | 17.60 |
-| Swift1.5 Qwen3.8 | 1.1.10 | 2089 | 16384 | 32737.4 | 500.5 | 13.1 | 18.59 |
+| Swift1.5 Qwen3.8 | 1.1.11 | 2089 | 4096 | 7140.3 | 573.6 | 14.6 | 16.93 |
+| Swift1.5 Qwen3.8 | 1.1.11 | 2089 | 8192 | 13357.9 | 613.3 | 17.5 | 17.83 |
+| Swift1.5 Qwen3.8 | 1.1.11 | 2089 | 16384 | 28679.3 | 571.3 | 14.9 | 18.81 |
+| Qwen3.8 | 1.1.11 | 2089 | 4096 | 8456.6 | 484.4 | 15.0 | 16.58 |
+| Qwen3.8 | 1.1.11 | 2089 | 8192 | 14968.3 | 547.3 | 17.2 | 17.41 |
+| Qwen3.8 | 1.1.11 | 2089 | 16384 | 32572.7 | 503.0 | 15.0 | 18.38 |
 | DeepSeek V4 | 1.1.7 | 1152 | 1024 | 19112.3 | 53.6 | 7.7 | 22.77 |
 | DeepSeek V4 | 1.1.7 | 1152 | 4096 | 24498.6 | 167.2 | 5.9 | 22.80 |
 | DeepSeek V4 | 1.1.7 | 1152 | 8192 | 42137.5 | 194.4 | 6.8 | 22.83 |
 | DeepSeek V4 | 1.1.7 | 1152 | 16384 | 81517.9 | 201.0 | 6.3 | 22.90 |
-| Qwen3.8 | 1.1.7 | 3072 | 1024 | 10336.3 | 99.1 | 10.6 | 16.86 |
-| Qwen3.8 | 1.1.7 | 3072 | 4096 | 28831.0 | 142.1 | 9.2 | 16.92 |
-| Qwen3.8 | 1.1.7 | 3072 | 8192 | 53303.2 | 153.7 | 10.1 | 17.01 |
-| Qwen3.8 | 1.1.7 | 3072 | 16384 | 112353.1 | 145.8 | 8.5 | 17.18 |
 
-The Swift1.5 rows used temperature 0.0 and seed 42.
+The 1.1.11 rows ran with MTP on, temperature 0.0 and seed 42. Older measurements are kept in [BENCHMARK.md](BENCHMARK.md).
 
 ### M5 Pro: Swift1.5 image prompts with MTP
 
