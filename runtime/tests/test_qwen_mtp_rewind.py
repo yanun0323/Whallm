@@ -1,4 +1,5 @@
 """Qwen MTP verification rewind on a tiny full model. No checkpoint required."""
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ import numpy as np
 from deepseek_v4_ssd import qwen4_exp as qwen
 from deepseek_v4_ssd.manifest import NGram
 from deepseek_v4_ssd.model import _fork_prompt_cache, eval_prompt_cache
+from runtime.tests.test_qwen import FakeGreedyMTP
 from runtime.tests.test_qwen_speed import experts_fixture, tiny_args
 
 
@@ -26,6 +28,25 @@ def fork(cache):
     if values:
         mx.eval(*values)
     return copied
+
+
+class ScriptedDraft(FakeGreedyMTP):
+    """Drafts a known continuation, except at the listed sequence positions."""
+
+    def __init__(self, sequence, wrong):
+        super().__init__()
+        self.sequence, self.wrong = sequence, wrong
+
+    def __call__(self, hidden, token_ids, embedding, head, cache):
+        start, count = cache.offset, token_ids.shape[1]
+        cache.offset += count
+        logits = np.full((1, count, 32), -1_000.0, dtype=np.float32)
+        for position in range(count):
+            # The pair at draft offset i holds sequence[i + 1] and predicts the next.
+            index = start + position + 2
+            token = self.sequence[index] if index < len(self.sequence) else 0
+            logits[0, position, (token + (index in self.wrong)) % 32] = 1_000.0
+        return mx.array(logits), mx.zeros((1, count, 1))
 
 
 class VerificationRewindTests(unittest.TestCase):
@@ -63,9 +84,15 @@ class VerificationRewindTests(unittest.TestCase):
             model = self.model(pooled)
             prefilled = model.make_cache()
             eval_prompt_cache(prefilled, *model.forward_with_hidden(prompt, prefilled))
-            for keep in (1, 2, 3, 4):
-                with self.subTest(pooled=pooled, keep=keep):
-                    target, verified, inputs = fork(prefilled), fork(prefilled), []
+            for keep, in_place in ((keep, in_place) for keep in (1, 2, 3, 4) for in_place in (False, True)):
+                with self.subTest(pooled=pooled, keep=keep, in_place=in_place):
+                    target, inputs = fork(prefilled), []
+                    verified = model.verification_cache(target) if in_place else fork(prefilled)
+                    if in_place:
+                        # Attention rows are appended to the target's own KV; only
+                        # linear-attention state, which cannot be trimmed, is cloned.
+                        self.assertEqual([a is b for a, b in zip(verified, target)],
+                                         [False] * 3 + [True])
                     _, verified_hidden = model.forward_with_hidden(verified_ids, verified, inputs)
                     eval_prompt_cache(verified, verified_hidden)
                     with patch.object(qwen.StreamingExperts, "__call__",
@@ -90,6 +117,63 @@ class VerificationRewindTests(unittest.TestCase):
                     a, _ = model.forward_with_hidden(following, target)
                     b, _ = model.forward_with_hidden(following, reference)
                     np.testing.assert_allclose(np.asarray(a), np.asarray(b), atol=5e-5, rtol=5e-5)
+
+    def test_generation_verifies_in_place_with_the_tokens_and_state_of_a_copied_fork(self):
+        prompt, count = [1, 2, 3, 4, 5, 6, 7, 8, 9], 14
+        model = self.model(True)
+        # Plain greedy decoding supplies the continuation the drafts are scripted from.
+        cache = model.make_cache()
+        logits, _ = model.forward_with_hidden(mx.array([prompt]), cache)
+        sequence = list(prompt)
+        for _ in range(count):
+            sequence.append(int(mx.argmax(logits[0, -1]).item()))
+            logits, _ = model.forward_with_hidden(mx.array([sequence[-1:]]), cache)
+            eval_prompt_cache(cache, logits)
+
+        def generate():
+            target, rounds = model.make_cache(), []
+            # Rounds draft positions (10, 11), (13, 14), (15, 16), (16, 17), (19, 20):
+            # a wrong 14 is a partial acceptance, a wrong 15 a zero acceptance.
+            tokens = [token for token, _ in qwen.generate_mtp_tokens(
+                prompt, model, ScriptedDraft(sequence, {14, 15}), target, max_tokens=count,
+                prefill_step_size=4, draft_tokens=2, zero_acceptance_limit=32,
+                record_round=lambda proposed, accepted, *_: rounds.append(accepted))]
+            eval_prompt_cache(target)
+            return tokens, target, rounds
+
+        tokens, target, rounds = generate()
+        with patch.object(qwen.Model, "verification_cache", lambda _, cache: fork(cache)):
+            copied_tokens, copied_target, copied_rounds = generate()
+        self.assertEqual(tokens, sequence[len(prompt):])
+        self.assertEqual((tokens, rounds), (copied_tokens, copied_rounds))
+        self.assertEqual(set(rounds), {0, 1, 2})
+        for got, want in zip(target, copied_target):
+            self.assertEqual(got.size() if hasattr(got, "size") else None,
+                             want.size() if hasattr(want, "size") else None)
+            for a, b in zip(arrays(got), arrays(want), strict=True):
+                np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
+
+    def test_in_place_verification_does_not_write_into_a_stored_clone(self):
+        model = self.model(True)
+        target = model.make_cache()
+        eval_prompt_cache(target, *model.forward_with_hidden(
+            mx.array([[1, 2, 3, 4, 5, 6, 7, 8, 9]]), target))
+        stored = copy.deepcopy(target)  # how clone_cache keeps a prompt-end state
+
+        def buffers():
+            # Whole allocations, including the spare rows an append writes.
+            return [np.array(getattr(branch, name))
+                    for branch in stored[3].caches for name in ("keys", "values")]
+
+        before, inputs, verified_ids = buffers(), [], mx.array([[10, 11, 12, 13]])
+        verified = model.verification_cache(target)
+        _, hidden = model.forward_with_hidden(verified_ids, verified, inputs)
+        eval_prompt_cache(verified, hidden)
+        model.rewind_verification(target, verified, inputs, verified_ids, 2)
+        eval_prompt_cache(target)
+        self.assertEqual((stored[3].size(), target[3].size()), (9, 11))
+        for got, want in zip(buffers(), before, strict=True):
+            np.testing.assert_array_equal(got, want)
 
     def test_rewind_eval_waits_for_all_linear_state(self):
         prompt = mx.array([[1, 2, 3, 4, 5, 6, 7, 8, 9]])

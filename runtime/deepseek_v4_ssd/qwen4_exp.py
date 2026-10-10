@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .cancellation import check_cancelled
 
+import copy
 import math
 import time
 from dataclasses import dataclass, fields, replace
@@ -269,9 +270,11 @@ class NGramStore:
             row_ids.min() < 0 or row_ids.max() >= self._row_count
         ):
             raise ValueError("N-gram row is outside ngram.bin")
-        if self.optimized and self._reader is None:
-            from .qwen_ngram_lookup import lookup_rows
-            return lookup_rows(self._rows, row_ids, self._fp8_table)
+        if self._reader is None:
+            from .qwen_ngram_lookup import lookup_rows, request_rows
+            request_rows(self._rows._mmap, row_ids, self.descriptor.row_bytes)
+            if self.optimized:
+                return lookup_rows(self._rows, row_ids, self._fp8_table)
         copied = (self._reader.lookup(row_ids) if self._reader is not None
                   else np.array(self._rows[row_ids], copy=True))
         if self.optimized:
@@ -1072,6 +1075,21 @@ class Model(nn.Module):
         logits = self.lm_head(self.model.hyper_connection_mixer(hidden))
         return logits, hidden
 
+    def verification_cache(self, target_cache: list) -> list:
+        """Return the cache one verification writes, for ``rewind_verification``.
+
+        Attention layers verify on the target's own cache. Verification only
+        appends KV rows and a rejected tail is trimmed, so a copy would move the
+        whole context on every round and protect nothing. Linear-attention state
+        is replaced as a whole and cannot be trimmed: those layers get a clone,
+        which shares the unchanged arrays.
+
+        A verification that raises leaves its appended rows behind. The request
+        that owns ``target_cache`` must then discard it.
+        """
+        return [copy.deepcopy(cache) if layer.layer_type == "linear_attention" else cache
+                for layer, cache in zip(self.layers, target_cache)]
+
     def rewind_verification(
         self,
         target_cache: list,
@@ -1565,9 +1583,12 @@ def generate_mtp_tokens(
             sampling_tokens.append(anchor)
             generated += 1
             continue
-        verified_cache, copied = _fork_prompt_cache(target_cache)
-        if copied:
-            mx.eval(*copied)
+        if rewind:
+            verified_cache = main_model.verification_cache(target_cache)
+        else:
+            verified_cache, copied = _fork_prompt_cache(target_cache)
+            if copied:
+                mx.eval(*copied)
         verified_ids = mx.array([[anchor, *draft_tokens]], dtype=mx.int32)
         layer_inputs = [] if rewind else None
         verified_logits, verified_hidden = (

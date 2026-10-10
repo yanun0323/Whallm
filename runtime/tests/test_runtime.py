@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import importlib
 import json
+import mmap
 import os
 import sys
 import tempfile
@@ -66,6 +67,7 @@ from deepseek_v4_ssd.model import (
     _StreamingSwitchGLU,
     _configure_memory_limits,
     _correct_compressor,
+    _load_tensor_file,
     _select_moe_step_size,
     _select_prefill_step_size,
     _sparse_pooled_attention,
@@ -970,6 +972,52 @@ class MemoryLimitTests(unittest.TestCase):
         self.assertEqual(selected, cap)
         set_memory_limit.assert_called_once_with(cap)
         set_wired_limit.assert_called_once_with(cap)
+
+
+class TensorFileTests(unittest.TestCase):
+    def test_large_tensors_are_read_past_the_file_cache_with_unchanged_values(self):
+        page = mmap.PAGESIZE
+        rng = np.random.default_rng(5)
+        sources = {
+            # MLX stores float64 as float32, and a small tensor is not worth its own read.
+            "F64": rng.standard_normal((page,)),
+            "F16": np.arange(6, dtype=np.float16).reshape(2, 3),
+            # Several staging reads each. The last one ends inside the file's last page.
+            "BF16": rng.integers(0, 2**16, (5, page // 2 + 3), dtype=np.uint16),
+            "F32": rng.standard_normal((3, page)).astype(np.float32),
+            "I64": rng.integers(-2**62, 2**62, (page,), dtype=np.int64),
+            "BOOL": rng.integers(0, 2, (3, page)).astype(np.bool_),
+            "F8_E4M3": rng.integers(0, 256, (2 * page + 1,), dtype=np.uint8),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            # Installed files align tensors to 256 bytes, not to pages.
+            path, tensors, offset = Path(directory) / "common.bin", [], 256
+            with path.open("wb") as file:
+                for dtype, source in sources.items():
+                    file.seek(offset)
+                    file.write(source.tobytes())
+                    tensors.append(Tensor(dtype, dtype, source.shape, offset, source.nbytes))
+                    offset = (offset + source.nbytes + 255) // 256 * 256
+            with (
+                patch("deepseek_v4_ssd.model._DIRECT_TENSOR_BYTES", page),
+                patch("deepseek_v4_ssd.model._DIRECT_STAGING_BYTES", 2 * page),
+                patch("deepseek_v4_ssd.model.configure_expert_file_cache_policy",
+                      wraps=configure_expert_file_cache_policy) as policy,
+            ):
+                weights = _load_tensor_file(path, tuple(tensors))
+                mx.eval(*weights.values())
+                self.assertEqual([call.args[1] for call in policy.call_args_list], ["bypass"])
+                os.truncate(path, tensors[-1].offset + page)
+                with self.assertRaises(EOFError):
+                    _load_tensor_file(path, tuple(tensors))
+
+        self.assertEqual({name: value.dtype for name, value in weights.items()}, {
+            "F64": mx.float32, "F16": mx.float16, "BF16": mx.bfloat16, "F32": mx.float32,
+            "I64": mx.int64, "BOOL": mx.bool_, "F8_E4M3": mx.uint8})
+        for name, source in sources.items():
+            value = weights[name].view(mx.uint16) if name == "BF16" else weights[name]
+            np.testing.assert_array_equal(
+                np.asarray(value), source.astype(np.float32) if name == "F64" else source)
 
 
 class PrefillTests(unittest.TestCase):

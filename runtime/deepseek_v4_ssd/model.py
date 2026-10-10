@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import copy
 import json
+import mmap
+import os
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
 
@@ -17,6 +21,7 @@ from .dspark import VerificationMetrics, load_dspark_model
 from .cancellation import check_cancelled
 from .expert_cache import BatchedExperts, ExpertCache, _ReadLimiter
 from .fp8_cache import CorrectPoolingCache, MXFP8PoolingCache
+from .io_metrics import configure_expert_file_cache_policy
 from .manifest import InstalledModel, Tensor
 
 _ORIGINAL_SPARSE_POOLED_ATTENTION = deepseek_v4._sparse_pooled_attention
@@ -1080,32 +1085,106 @@ def _load_common_weights(installed_model: InstalledModel) -> dict[str, mx.array]
     )
 
 
+_TENSOR_DTYPES = {
+    "BOOL": (np.bool_, None),
+    "F16": (np.float16, None),
+    "BF16": (np.uint16, mx.bfloat16),
+    "F32": (np.float32, None),
+    "F64": (np.float64, None),
+    "I8": (np.int8, None),
+    "I16": (np.int16, None),
+    "I32": (np.int32, None),
+    "I64": (np.int64, None),
+    "U8": (np.uint8, None),
+    "U16": (np.uint16, None),
+    "U32": (np.uint32, None),
+    "U64": (np.uint64, None),
+    "F8_E4M3": (np.uint8, None),
+    "F8_E8M0": (np.uint8, None),
+}
+# Tensors at least this large are read past the OS file cache, in parallel.
+_DIRECT_TENSOR_BYTES = 1 << 20
+_DIRECT_STAGING_BYTES = 8 << 20
+_DIRECT_READ_WORKERS = 4
+
+
 def _load_tensor_file(path, tensors: tuple[Tensor, ...]) -> dict[str, mx.array]:
     mapped = np.memmap(path, mode="r", dtype=np.uint8)
     weights: dict[str, mx.array] = {}
+    direct = []
     for tensor in tensors:
-        weights[tensor.name] = _tensor_from_buffer(mapped, tensor)
+        storage = _direct_dtype(tensor) if tensor.length >= _DIRECT_TENSOR_BYTES else None
+        if storage is None:
+            weights[tensor.name] = _tensor_from_buffer(mapped, tensor)
+            continue
+        array = mx.empty(tensor.shape, dtype=storage)
+        direct.append((tensor, array))
+        mlx_view = _TENSOR_DTYPES[tensor.dtype][1]
+        weights[tensor.name] = array if mlx_view is None else array.view(mlx_view)
+    if direct:
+        _read_direct(path, direct)
     return weights
 
 
+def _direct_dtype(tensor: Tensor):
+    """MLX dtype whose buffer holds this tensor's file bytes unchanged, if any."""
+    numpy_dtype = _TENSOR_DTYPES.get(tensor.dtype, (None, None))[0]
+    if numpy_dtype is None:
+        return None
+    item_size = np.dtype(numpy_dtype).itemsize
+    # MLX stores float64 input as float32, so those bytes cannot be read in place.
+    storage = mx.array(np.empty(0, dtype=numpy_dtype)).dtype
+    if storage.size != item_size or tensor.length != int(np.prod(tensor.shape)) * item_size:
+        return None
+    return storage
+
+
+def _read_direct(path, items: list[tuple[Tensor, mx.array]]) -> None:
+    """Fill MLX buffers from the file without leaving a copy in the OS file cache.
+
+    Cache-bypassing reads need page-aligned offsets, and tensor offsets are not.
+    Each worker reads whole pages into its own staging buffer and copies the
+    tensor's bytes out, as PrefillReader does for experts.
+    """
+    mx.eval(*(array for _, array in items))
+    targets = [memoryview(array).cast("B") for _, array in items]
+    page = mmap.PAGESIZE
+    local = threading.local()
+    descriptor = os.open(path, os.O_RDONLY)
+
+    def read(index: int) -> None:
+        tensor, target = items[index][0], targets[index]
+        staging = getattr(local, "staging", None)
+        if staging is None:
+            staging = local.staging = memoryview(mmap.mmap(-1, _DIRECT_STAGING_BYTES))
+        end = (tensor.offset + tensor.length + page - 1) // page * page
+        done = 0
+        while done < tensor.length:
+            position = tensor.offset + done
+            begin = position // page * page
+            part = staging[:min(len(staging), end - begin)]
+            try:
+                count = os.preadv(descriptor, [part], begin)
+            finally:
+                part.release()
+            take = min(begin + count - position, tensor.length - done)
+            if take <= 0:
+                raise EOFError(f"{path} ended inside tensor {tensor.name}")
+            target[done:done + take] = staging[position - begin:position - begin + take]
+            done += take
+
+    try:
+        configure_expert_file_cache_policy(descriptor, "bypass")
+        with ThreadPoolExecutor(_DIRECT_READ_WORKERS) as pool:
+            list(pool.map(read, range(len(items))))
+    finally:
+        os.close(descriptor)
+        for target in targets:
+            target.release()
+
+
 def _tensor_from_buffer(buffer: np.memmap, tensor: Tensor) -> mx.array:
-    numpy_dtype, mlx_view = {
-        "BOOL": (np.bool_, None),
-        "F16": (np.float16, None),
-        "BF16": (np.uint16, mx.bfloat16),
-        "F32": (np.float32, None),
-        "F64": (np.float64, None),
-        "I8": (np.int8, None),
-        "I16": (np.int16, None),
-        "I32": (np.int32, None),
-        "I64": (np.int64, None),
-        "U8": (np.uint8, None),
-        "U16": (np.uint16, None),
-        "U32": (np.uint32, None),
-        "U64": (np.uint64, None),
-        "F8_E4M3": (np.uint8, None),
-        "F8_E8M0": (np.uint8, None),
-    }.get(tensor.dtype, (None, None))
+    numpy_dtype, mlx_view = _TENSOR_DTYPES.get(tensor.dtype, (None, None))
     if numpy_dtype is None:
         raise ValueError(f"unsupported tensor dtype {tensor.dtype} for {tensor.name}")
     item_size = np.dtype(numpy_dtype).itemsize

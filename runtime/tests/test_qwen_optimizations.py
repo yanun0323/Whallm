@@ -1,8 +1,10 @@
+import mmap
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
 from threading import Event
+from unittest.mock import patch
 
 import mlx.core as mx
 import numpy as np
@@ -14,6 +16,7 @@ from deepseek_v4_ssd.model import RuntimeConfig, _fork_prompt_cache, _cache_arra
 from deepseek_v4_ssd.model_manager import validate_runtime_config, _parse_runtime
 from deepseek_v4_ssd.model_support.state import persistence_cache_state, restore_persistence_cache
 from deepseek_v4_ssd.qwen4_exp import ModelArgs, QSAAttention, NGramStore, GroupRMSNorm, generate_mtp_tokens
+from deepseek_v4_ssd.qwen_ngram_lookup import request_rows
 from deepseek_v4_ssd.qwen_pooled_cache import QSAPooledIndexCache, QSAPooledQuantizedIndexCache
 from deepseek_v4_ssd.qwen_quantized_cache import QSAQuantizedCache
 from deepseek_v4_ssd.qwen_mtp_policy import MTPDraftPolicy
@@ -135,6 +138,48 @@ class QwenOptimizationTests(unittest.TestCase):
                 for invalid in (127, 255, -1, 256):
                     with self.assertRaises(ValueError):
                         candidate.lookup(np.array([invalid]))
+
+    def test_ngram_rows_request_each_of_their_pages_once(self):
+        class Mapped:
+            def __init__(self):
+                self.requests = []
+
+            def madvise(self, option, start, length):
+                self.requests.append((option, start // mmap.PAGESIZE, length))
+
+        # Rows of three quarters of a page: row 0 is on page 0, row 1 on pages
+        # 0 and 1, row 5 on pages 3 and 4.
+        mapped = Mapped()
+        request_rows(mapped, np.array([[5, 0], [1, 5]]), 3 * mmap.PAGESIZE // 4)
+        self.assertEqual(mapped.requests,
+                         [(mmap.MADV_WILLNEED, page, mmap.PAGESIZE) for page in (0, 1, 3, 4)])
+        request_rows(mapped, np.empty((1, 0, 16), dtype=np.int64), 160)
+        self.assertEqual(len(mapped.requests), 4)
+
+    def test_ngram_mapped_lookups_request_their_rows_and_return_the_same_values(self):
+        descriptor = NGram("ngram.bin", "F8_E4M3", 1, 1, 256, (0,) * 16, (256,) * 16)
+        ids = np.array([[3, 200], [3, 64]])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ngram.bin"
+            np.arange(256, dtype=np.uint8).tofile(path)
+            for options in ({}, {"optimized": True}, {"io_backend": "pread"}):
+                with self.subTest(**options):
+                    store = NGramStore(path, descriptor, 0.5, **options)
+                    self.addCleanup(store.close)
+                    with patch("deepseek_v4_ssd.qwen_ngram_lookup.request_rows",
+                               wraps=request_rows) as request:
+                        values = store.lookup(ids)
+                    if "io_backend" in options:
+                        request.assert_not_called()
+                    else:
+                        (_, requested, row_bytes), _ = request.call_args
+                        np.testing.assert_array_equal(requested, ids)
+                        self.assertEqual((request.call_count, row_bytes), (1, 1))
+                    # FP8 0x03, 0xC8 and 0x40, scaled by one half.
+                    np.testing.assert_array_equal(
+                        np.asarray(values.astype(mx.float32)).reshape(2, 2),
+                        np.array([[0.5 * 3 / 512, -0.5 * 4.0], [0.5 * 3 / 512, 0.5 * 2.0]],
+                                 dtype=np.float32))
 
     def test_mtp_policy_consecutive_rejections_and_limits(self):
         policy = MTPDraftPolicy(2, 2)
