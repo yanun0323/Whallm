@@ -22,12 +22,11 @@ Whallm 让你在 Apple Silicon Mac 上运行大语言模型。共享权重放在
 | --- | --- | ---: | ---: | ---: | ---: |
 | `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 552.5–588.9 tok/s | 18.6–19.8 tok/s | 14 GiB | 2089 |
 | `Swift1.5-Qwen3.8-Flash-Next` | M2 Max | 250.0–270.3 tok/s | 14.7–15.8 tok/s | 14 GiB | 2089 |
-| `Qwen3.8-Flash-Next-FP8` | M5 Pro | 484.4–547.3 tok/s | 15.0–17.2 tok/s | 18 GiB | 2089 |
 | `Qwen3.8-Flash-Next-FP8` | M2 Max | 253.0–272.7 tok/s | 14.4–17.2 tok/s | 14 GiB | 2089 |
 | `DeepSeek-V4-Flash-0731` | M5 Pro | 53.6–201.0 tok/s | 5.9–7.7 tok/s | 23 GiB | 1152 |
 | `DeepSeek-V4.1-Flash` | M2 Max | 13.9–65.9 tok/s | 1.8–2.2 tok/s | 33 GiB | 1152 |
 
-> 使用内置 Throughput 测试测量。Swift1.5 的数据行和 M2 Max 的 Qwen3.8 FP8 数据行使用 v1.1.12，开启 MTP 和 **使用 8-bit 常驻权重**，输入 4,096 至 16,384 tokens；输出上限 Swift1.5 是 512 tokens，Qwen3.8 FP8 是 128 tokens。M5 Pro 的 Qwen3.8 FP8 数据行使用 v1.1.11、开启 MTP，输入长度相同；DeepSeek 使用 v1.1.7，输入 1,024 至 16,384 tokens。版本和设置不同，请勿直接比较这些行。
+> 使用内置 Throughput 测试测量。Swift1.5 的数据行和 M2 Max 的 Qwen3.8 FP8 数据行使用 v1.1.12，开启 MTP 和 **使用 8-bit 常驻权重**，输入 4,096 至 16,384 tokens；输出上限 Swift1.5 是 512 tokens，Qwen3.8 FP8 是 128 tokens。DeepSeek 使用 v1.1.7，输入 1,024 至 16,384 tokens。版本和设置不同，请勿直接比较这些行。
 >
 > 详细数据见[完整性能测试](#性能测试)。
 

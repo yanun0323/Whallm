@@ -22,12 +22,11 @@ Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo
 | --- | --- | ---: | ---: | ---: | ---: |
 | `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 552.5–588.9 tok/s | 18.6–19.8 tok/s | 14 GiB | 2089 |
 | `Swift1.5-Qwen3.8-Flash-Next` | M2 Max | 250.0–270.3 tok/s | 14.7–15.8 tok/s | 14 GiB | 2089 |
-| `Qwen3.8-Flash-Next-FP8` | M5 Pro | 484.4–547.3 tok/s | 15.0–17.2 tok/s | 18 GiB | 2089 |
 | `Qwen3.8-Flash-Next-FP8` | M2 Max | 253.0–272.7 tok/s | 14.4–17.2 tok/s | 14 GiB | 2089 |
 | `DeepSeek-V4-Flash-0731` | M5 Pro | 53.6–201.0 tok/s | 5.9–7.7 tok/s | 23 GiB | 1152 |
 | `DeepSeek-V4.1-Flash` | M2 Max | 13.9–65.9 tok/s | 1.8–2.2 tok/s | 33 GiB | 1152 |
 
-> Measured with the built-in Throughput test. The Swift1.5 rows and the M2 Max Qwen3.8 FP8 row ran on v1.1.12 with MTP and **Use 8-bit resident weights** on and 4,096 to 16,384 input tokens. The output limit was 512 tokens for Swift1.5 and 128 tokens for Qwen3.8 FP8. The M5 Pro Qwen3.8 FP8 row ran on v1.1.11 with MTP on and the same input sizes. The DeepSeek models ran on v1.1.7 with 1,024 to 16,384 input tokens. Because the versions and settings differ, don't compare those rows directly.
+> Measured with the built-in Throughput test. The Swift1.5 rows and the M2 Max Qwen3.8 FP8 row ran on v1.1.12 with MTP and **Use 8-bit resident weights** on and 4,096 to 16,384 input tokens. The output limit was 512 tokens for Swift1.5 and 128 tokens for Qwen3.8 FP8. The DeepSeek models ran on v1.1.7 with 1,024 to 16,384 input tokens. Because the versions and settings differ, don't compare those rows directly.
 >
 > See the [full benchmark](#benchmarks) for details.
 

@@ -22,12 +22,11 @@ Whallm은 Apple Silicon Mac에서 대규모 언어 모델을 실행합니다. �
 | --- | --- | ---: | ---: | ---: | ---: |
 | `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 552.5–588.9 tok/s | 18.6–19.8 tok/s | 14 GiB | 2089 |
 | `Swift1.5-Qwen3.8-Flash-Next` | M2 Max | 250.0–270.3 tok/s | 14.7–15.8 tok/s | 14 GiB | 2089 |
-| `Qwen3.8-Flash-Next-FP8` | M5 Pro | 484.4–547.3 tok/s | 15.0–17.2 tok/s | 18 GiB | 2089 |
 | `Qwen3.8-Flash-Next-FP8` | M2 Max | 253.0–272.7 tok/s | 14.4–17.2 tok/s | 14 GiB | 2089 |
 | `DeepSeek-V4-Flash-0731` | M5 Pro | 53.6–201.0 tok/s | 5.9–7.7 tok/s | 23 GiB | 1152 |
 | `DeepSeek-V4.1-Flash` | M2 Max | 13.9–65.9 tok/s | 1.8–2.2 tok/s | 33 GiB | 1152 |
 
-> 내장 Throughput 테스트로 측정했습니다. Swift1.5 행과 M2 Max의 Qwen3.8 FP8 행은 v1.1.12에서 MTP와 **Use 8-bit resident weights**를 켜고 입력 4,096~16,384 토큰으로 측정했습니다. 출력 제한은 Swift1.5가 512 토큰, Qwen3.8 FP8이 128 토큰입니다. M5 Pro의 Qwen3.8 FP8 행은 v1.1.11에서 MTP를 켜고 같은 입력 길이로, DeepSeek는 v1.1.7에서 입력 1,024~16,384 토큰으로 측정했습니다. 버전과 설정이 다르므로 이 행들을 직접 비교하지 마세요.
+> 내장 Throughput 테스트로 측정했습니다. Swift1.5 행과 M2 Max의 Qwen3.8 FP8 행은 v1.1.12에서 MTP와 **Use 8-bit resident weights**를 켜고 입력 4,096~16,384 토큰으로 측정했습니다. 출력 제한은 Swift1.5가 512 토큰, Qwen3.8 FP8이 128 토큰입니다. DeepSeek는 v1.1.7에서 입력 1,024~16,384 토큰으로 측정했습니다. 버전과 설정이 다르므로 이 행들을 직접 비교하지 마세요.
 >
 > 자세한 내용은 [전체 벤치마크](#벤치마크)를 참고하세요.
 
