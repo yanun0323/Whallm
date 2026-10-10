@@ -1,7 +1,27 @@
 # Benchmark
 
-Recorded measurements for both Qwen models on v1.1.11, Swift1.5 on v1.1.10, the Qwen MTP draft-context change (2026-09-29), the V4.1 prefill change, v1.1.7, v1.1.4,
+Recorded measurements for Swift1.5 after v1.1.11 with 8-bit resident weights, both Qwen models on v1.1.11, Swift1.5 on v1.1.10, the Qwen MTP draft-context change (2026-09-29), the V4.1 prefill change, v1.1.7, v1.1.4,
 and v1.1.0. No new full-model performance measurements are claimed for v1.1.8. Measurement conditions and evidence gaps are stated below; these are not controlled speed comparisons of v1.1.10.
+
+## After v1.1.11: Swift1.5 with MTP and 8-bit resident weights (M5 Pro, M2 Max)
+
+Recorded by the user with the built-in **Throughput** test on a build from source after v1.1.11, with MTP and **Use 8-bit resident weights** on. Slot count, output limit, temperature and seed are as displayed. These rows do not include a source commit, full configuration, cache state, raw run artifact or output token hash. Treat them as reference observations, not a controlled comparison with other versions.
+
+### M5 Pro
+
+| Model | Context | Slots | Output limit | Input / Output | TTFT (ms) | TPOT (ms) | PP tok/s | TG tok/s | Total (s) | Throughput | Peak Memory | Temperature | Seed |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 512 | 4096 / 512 | 6976.5 | 51.4 | 587.1 | 19.4 | 33.3 | 138.5 | 13.13 GiB | 0.0 | 42 |
+| Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 512 | 8192 / 512 | 13911.4 | 50.5 | 588.9 | 19.8 | 39.7 | 219.2 | 13.86 GiB | 0.0 | 42 |
+| Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 512 | 16384 / 512 | 29654.2 | 53.7 | 552.5 | 18.6 | 57.1 | 296.0 | 14.29 GiB | 0.0 | 42 |
+
+### M2 Max
+
+| Model | Context | Slots | Output limit | Input / Output | TTFT (ms) | TPOT (ms) | PP tok/s | TG tok/s | Total (s) | Throughput | Peak Memory | Temperature | Seed |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 512 | 4096 / 512 | 15151.2 | 66.8 | 270.3 | 15.0 | 49.3 | 93.4 | 13.15 GiB | 0.0 | 42 |
+| Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 512 | 8192 / 512 | 30693.5 | 63.5 | 266.9 | 15.8 | 63.2 | 137.8 | 13.84 GiB | 0.0 | 42 |
+| Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 512 | 16384 / 512 | 65538.0 | 68.0 | 250.0 | 14.7 | 100.3 | 168.5 | 14.42 GiB | 0.0 | 42 |
 
 ## v1.1.11: both Qwen models with MTP (M5 Pro)
 

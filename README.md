@@ -20,12 +20,13 @@ Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo
 
 | Model | Chip | Prefill | Decode | Peak memory | Expert cache slots |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 571.3–613.3 tok/s | 14.6–17.5 tok/s | 19 GiB | 2089 |
+| `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 552.5–588.9 tok/s | 18.6–19.8 tok/s | 14 GiB | 2089 |
+| `Swift1.5-Qwen3.8-Flash-Next` | M2 Max | 250.0–270.3 tok/s | 14.7–15.8 tok/s | 14 GiB | 2089 |
 | `Qwen3.8-Flash-Next-FP8` | M5 Pro | 484.4–547.3 tok/s | 15.0–17.2 tok/s | 18 GiB | 2089 |
 | `DeepSeek-V4-Flash-0731` | M5 Pro | 53.6–201.0 tok/s | 5.9–7.7 tok/s | 23 GiB | 1152 |
 | `DeepSeek-V4.1-Flash` | M2 Max | 13.9–65.9 tok/s | 1.8–2.2 tok/s | 33 GiB | 1152 |
 
-> Measured with the built-in Throughput test. Both Qwen models ran on v1.1.11 with MTP on and 4,096 to 16,384 input tokens. The DeepSeek models ran on v1.1.7 with 1,024 to 16,384 input tokens. Because the versions differ, don't compare those rows directly.
+> Measured with the built-in Throughput test. Swift1.5 ran on a build from source after v1.1.11 with MTP and **Use 8-bit resident weights** on, 4,096 to 16,384 input tokens and a 512-token output limit. Qwen3.8 FP8 ran on v1.1.11 with MTP on and the same input sizes. The DeepSeek models ran on v1.1.7 with 1,024 to 16,384 input tokens. Because the versions and settings differ, don't compare those rows directly.
 >
 > See the [full benchmark](#benchmarks) for details.
 
@@ -38,7 +39,7 @@ Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo
 
 The server listens on `http://127.0.0.1:11434`. A model loads the first time you use it. The server keeps one model loaded and runs one request at a time. If a model you just installed is missing from the Chat list, restart the server.
 
-The [1.1.11 release notes](Packaging/ReleaseNotes/1.1.11.md) list the changes, upgrade steps and known limits.
+The [1.1.12 release notes](Packaging/ReleaseNotes/1.1.12.md) list the changes, upgrade steps and known limits.
 
 ## Requirements
 
@@ -90,7 +91,7 @@ Whallm keeps shared weights in memory and reads the chosen experts from SSD. It 
 
 ## Benchmarks
 
-Except for the image table, rows use **Code** input and a **128-token** output limit. For those rows the build revision and cache state were not recorded, so treat these numbers as a reference, not as a controlled comparison between versions or speed-ups.
+Except for the image table, rows use **Code** input. The output limit is **512 tokens** for the Swift1.5 rows and **128 tokens** for the other rows. For those rows the build revision and cache state were not recorded, so treat these numbers as a reference, not as a controlled comparison between versions or speed-ups.
 
 - **TTFT**: time until the first token appears.
 - **Prefill**: input processing speed. **Decode**: output speed. Both are in tokens per second.
@@ -100,9 +101,9 @@ Except for the image table, rows use **Code** input and a **128-token** output l
 
 | Model | Version | Slots | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Swift1.5 Qwen3.8 | 1.1.11 | 2089 | 4096 | 7140.3 | 573.6 | 14.6 | 16.93 |
-| Swift1.5 Qwen3.8 | 1.1.11 | 2089 | 8192 | 13357.9 | 613.3 | 17.5 | 17.83 |
-| Swift1.5 Qwen3.8 | 1.1.11 | 2089 | 16384 | 28679.3 | 571.3 | 14.9 | 18.81 |
+| Swift1.5 Qwen3.8 | 1.1.11+ | 2089 | 4096 | 6976.5 | 587.1 | 19.4 | 13.13 |
+| Swift1.5 Qwen3.8 | 1.1.11+ | 2089 | 8192 | 13911.4 | 588.9 | 19.8 | 13.86 |
+| Swift1.5 Qwen3.8 | 1.1.11+ | 2089 | 16384 | 29654.2 | 552.5 | 18.6 | 14.29 |
 | Qwen3.8 | 1.1.11 | 2089 | 4096 | 8456.6 | 484.4 | 15.0 | 16.58 |
 | Qwen3.8 | 1.1.11 | 2089 | 8192 | 14968.3 | 547.3 | 17.2 | 17.41 |
 | Qwen3.8 | 1.1.11 | 2089 | 16384 | 32572.7 | 503.0 | 15.0 | 18.38 |
@@ -111,7 +112,7 @@ Except for the image table, rows use **Code** input and a **128-token** output l
 | DeepSeek V4 | 1.1.7 | 1152 | 8192 | 42137.5 | 194.4 | 6.8 | 22.83 |
 | DeepSeek V4 | 1.1.7 | 1152 | 16384 | 81517.9 | 201.0 | 6.3 | 22.90 |
 
-The 1.1.11 rows ran with MTP on, temperature 0.0 and seed 42. Older measurements are kept in [BENCHMARK.md](BENCHMARK.md).
+The 1.1.11 rows ran with MTP on, temperature 0.0 and seed 42. The 1.1.11+ rows come from a build from source after 1.1.11, with MTP and **Use 8-bit resident weights** on, temperature 0.0 and seed 42. Older measurements are kept in [BENCHMARK.md](BENCHMARK.md).
 
 ### M5 Pro: Swift1.5 image prompts with MTP
 
@@ -130,6 +131,9 @@ With MTP on, output was 1.38× and 1.43× as fast, and the first token arrived s
 
 | Model | Version | Slots | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Swift1.5 Qwen3.8 | 1.1.11+ | 2089 | 4096 | 15151.2 | 270.3 | 15.0 | 13.15 |
+| Swift1.5 Qwen3.8 | 1.1.11+ | 2089 | 8192 | 30693.5 | 266.9 | 15.8 | 13.84 |
+| Swift1.5 Qwen3.8 | 1.1.11+ | 2089 | 16384 | 65538.0 | 250.0 | 14.7 | 14.42 |
 | Qwen3.8 | 1.1.7 | 3072 | 1024 | 14016.3 | 73.1 | 9.0 | 16.86 |
 | Qwen3.8 | 1.1.7 | 3072 | 4096 | 40902.4 | 100.1 | 7.6 | 16.92 |
 | Qwen3.8 | 1.1.7 | 3072 | 8192 | 79125.0 | 103.5 | 8.3 | 17.01 |
@@ -138,6 +142,8 @@ With MTP on, output was 1.38× and 1.43× as fast, and the first token arrived s
 | DeepSeek V4.1 | 1.1.7 | 1152 | 4096 | 106742.4 | 38.4 | 1.8 | 32.11 |
 | DeepSeek V4.1 | 1.1.7 | 1152 | 8192 | 144011.4 | 56.9 | 2.1 | 32.19 |
 | DeepSeek V4.1 | 1.1.7 | 1152 | 16384 | 248481.9 | 65.9 | 1.9 | 32.75 |
+
+The 1.1.11+ rows use the same build and settings as on M5 Pro.
 
 To test your own Mac, open **Throughput**, then pick:
 
