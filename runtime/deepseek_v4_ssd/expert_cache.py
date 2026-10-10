@@ -394,7 +394,7 @@ class _SlotPool:
         )
         self._slots: list[mx.array | None] = [None] * slots
         self._views: list[memoryview | None] = [None] * slots
-        self._weights: list[object | None] = [None] * slots
+        self._slot_weights: list[object | None] = [None] * slots
         self._loaded = bytearray(slots)
 
     def resize(self, slots: int) -> None:
@@ -402,13 +402,13 @@ class _SlotPool:
         previous = len(self._slots)
         if slots < previous:
             del self._views[slots:]
-            del self._weights[slots:]
+            del self._slot_weights[slots:]
             del self._slots[slots:]
             del self._loaded[slots:]
         elif slots > previous:
             self._slots.extend([None] * (slots - previous))
             self._views.extend([None] * (slots - previous))
-            self._weights.extend([None] * (slots - previous))
+            self._slot_weights.extend([None] * (slots - previous))
             self._loaded.extend(bytes(slots - previous))
 
     def prepare(self, slots: list[int]) -> None:
@@ -433,9 +433,9 @@ class _SlotPool:
                 raise RuntimeError("expert slot is empty")
             # The region views share the slot's buffer, so they follow every
             # later read into this slot and are built once per slot.
-            if self._weights[slot] is None:
-                self._weights[slot] = self._layout.individual([array], self._array)[0]
-            weights.append(self._weights[slot])
+            if self._slot_weights[slot] is None:
+                self._slot_weights[slot] = self._layout.individual([array], self._array)[0]
+            weights.append(self._slot_weights[slot])
         return tuple(weights)
 
     def _array(self, packed: mx.array, name: str) -> mx.array:

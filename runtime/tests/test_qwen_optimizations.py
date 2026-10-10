@@ -11,13 +11,13 @@ import numpy as np
 from mlx_lm.models.cache import CacheList, KVCache
 
 from deepseek_v4_ssd.cancellation import GenerationCancelled, cancellation_scope
+from deepseek_v4_ssd.io_metrics import request_rows
 from deepseek_v4_ssd.manifest import NGram
 from deepseek_v4_ssd.model import RuntimeConfig, _fork_prompt_cache, _cache_arrays, eval_prompt_cache
 from deepseek_v4_ssd.model_manager import validate_runtime_config, _parse_runtime
 from deepseek_v4_ssd.model_support.state import persistence_cache_state, restore_persistence_cache
 from deepseek_v4_ssd.qwen4_exp import ModelArgs, QSAAttention, NGramStore, GroupRMSNorm, generate_mtp_tokens
-from deepseek_v4_ssd.qwen_ngram_lookup import request_rows
-from deepseek_v4_ssd.qwen_pooled_cache import QSAPooledIndexCache, QSAPooledQuantizedIndexCache
+from deepseek_v4_ssd.qwen_pooled_cache import QSAIndexCache, QSAPooledIndexCache, QSAPooledQuantizedIndexCache
 from deepseek_v4_ssd.qwen_quantized_cache import QSAQuantizedCache
 from deepseek_v4_ssd.qwen_mtp_policy import MTPDraftPolicy
 from deepseek_v4_ssd.qwen_phase_budget import QwenPhaseBudget
@@ -69,8 +69,33 @@ class QwenOptimizationTests(unittest.TestCase):
             pooled = cache.pooled(keys[:, 0], 2, pool)
             mx.eval(pooled)
         self.assertEqual(calls, [(0, 2), (1, 2), (2, 2)])
-        self.assertEqual(cache.nbytes, cache.keys.nbytes + cache.values.nbytes + pooled.nbytes)
+        self.assertEqual(cache.nbytes, cache.keys.nbytes + pooled.nbytes)
         self.assertTrue(any(array is pooled for array in _cache_arrays([cache])))
+
+    def test_index_keys_are_kept_once_and_saved_in_the_earlier_state_layout(self):
+        raw = mx.arange(7 * 4).reshape(1, 1, 7, 4).astype(mx.bfloat16)
+        for kind in (QSAIndexCache, QSAPooledIndexCache):
+            with self.subTest(kind=kind.__name__):
+                # A KVCache given the keys as values too is what the index used before.
+                cache, earlier = kind(), KVCache()
+                for start, end in ((0, 2), (2, 5)):
+                    keys, _ = cache.update_and_fetch(raw[:, :, start:end], raw[:, :, start:end])
+                    expected, _ = earlier.update_and_fetch(raw[:, :, start:end], raw[:, :, start:end])
+                    np.testing.assert_array_equal(bits(keys), bits(expected))
+                self.assertEqual(cache.nbytes * 2, earlier.nbytes)
+                for saved, expected in zip(cache.state, earlier.state, strict=True):
+                    np.testing.assert_array_equal(bits(saved), bits(expected))
+                # Each restores the other's saved state, then continues identically.
+                restored, downgraded = kind(), KVCache()
+                restored.state, downgraded.state = earlier.state, cache.state
+                self.assertEqual((restored.size(), downgraded.size()), (5, 5))
+                # Five saved rows of four BF16 values: one copy against two.
+                self.assertEqual((restored.nbytes, downgraded.nbytes), (40, 80))
+                for target in (restored, downgraded, earlier):
+                    target.trim(1)
+                    keys, _ = target.update_and_fetch(raw[:, :, 5:], raw[:, :, 5:])
+                    np.testing.assert_array_equal(
+                        bits(keys), bits(mx.concatenate([raw[:, :, :4], raw[:, :, 5:]], axis=2)))
 
     def test_qsa_append_fork_trim_restore_match_baseline(self):
         for quantized in (False, True):
@@ -139,7 +164,7 @@ class QwenOptimizationTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         candidate.lookup(np.array([invalid]))
 
-    def test_ngram_rows_request_each_of_their_pages_once(self):
+    def test_mapped_rows_request_each_of_their_pages_once(self):
         class Mapped:
             def __init__(self):
                 self.requests = []
@@ -166,7 +191,7 @@ class QwenOptimizationTests(unittest.TestCase):
                 with self.subTest(**options):
                     store = NGramStore(path, descriptor, 0.5, **options)
                     self.addCleanup(store.close)
-                    with patch("deepseek_v4_ssd.qwen_ngram_lookup.request_rows",
+                    with patch("deepseek_v4_ssd.qwen4_exp.request_rows",
                                wraps=request_rows) as request:
                         values = store.lookup(ids)
                     if "io_backend" in options:

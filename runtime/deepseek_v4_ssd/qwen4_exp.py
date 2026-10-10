@@ -19,6 +19,7 @@ from mlx_lm.models.rope_utils import initialize_rope
 from mlx_lm.models.switch_layers import _gather_sort, _scatter_unsort
 
 from .expert_cache import ExpertCache, QwenBatchedExperts, QwenExpertWeights
+from .io_metrics import request_rows
 from .manifest import InstalledModel, NGram
 # Kept as module-level names for existing callers and checkpoint-contract tests.
 from .qwen_ngram_hash import ngram_ids, shift_right_ignore_eos as _shift_right_ignore_eos
@@ -271,9 +272,9 @@ class NGramStore:
         ):
             raise ValueError("N-gram row is outside ngram.bin")
         if self._reader is None:
-            from .qwen_ngram_lookup import lookup_rows, request_rows
             request_rows(self._rows._mmap, row_ids, self.descriptor.row_bytes)
             if self.optimized:
+                from .qwen_ngram_lookup import lookup_rows
                 return lookup_rows(self._rows, row_ids, self._fp8_table)
         copied = (self._reader.lookup(row_ids) if self._reader is not None
                   else np.array(self._rows[row_ids], copy=True))
@@ -1131,12 +1132,12 @@ class Model(nn.Module):
 
     def make_cache(self):
         from .qwen_quantized_cache import QSAQuantizedCache
-        from .qwen_pooled_cache import QSAPooledIndexCache, QSAPooledQuantizedIndexCache
+        from .qwen_pooled_cache import QSAIndexCache, QSAPooledIndexCache, QSAPooledQuantizedIndexCache
         def index_cache():
             if self.pooled_index_cache:
                 return (QSAPooledQuantizedIndexCache(4, self.args.indexer_head_dim)
                         if self.quantize_index else QSAPooledIndexCache())
-            return QSAQuantizedCache(4, self.args.indexer_head_dim) if self.quantize_index else KVCache()
+            return QSAQuantizedCache(4, self.args.indexer_head_dim) if self.quantize_index else QSAIndexCache()
         return [
             ArraysCache(size=4)
             if layer.layer_type == "linear_attention"
@@ -1257,7 +1258,8 @@ class MTPModel(nn.Module):
         return wide_hidden
 
     def make_cache(self) -> CacheList:
-        return CacheList(KVCache(), KVCache())
+        from .qwen_pooled_cache import QSAIndexCache
+        return CacheList(KVCache(), QSAIndexCache())
 
     def sanitize(self, weights: dict[str, mx.array]) -> dict[str, mx.array]:
         sanitized = {}

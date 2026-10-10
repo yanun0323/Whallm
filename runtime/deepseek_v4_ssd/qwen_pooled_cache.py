@@ -1,8 +1,9 @@
-"""Opt-in derived QSA index-key cache; raw history remains the source of truth.
+"""QSA index-key caches: the raw history, and an opt-in cache of derived rows.
 
-Derived rows are immutable, so speculative forks can share them. Serialization
-saves raw history only and rebuilds derived rows on restore. No model weights or
-RNG are captured by the cache.
+Raw history remains the source of truth. Derived rows are immutable, so
+speculative forks can share them. Serialization saves raw history only and
+rebuilds derived rows on restore. No model weights or RNG are captured by the
+cache.
 """
 from __future__ import annotations
 
@@ -53,18 +54,42 @@ class _PooledKeys:
         return super().nbytes + (0 if self.pooled_keys is None else self.pooled_keys.nbytes)
 
 
-class QSAPooledIndexCache(_PooledKeys, KVCache):
+class QSAIndexCache(KVCache):
+    """Raw QSA index keys, kept once.
+
+    The indexer has keys and no values. A KVCache given the keys as its values
+    too holds them twice, so this one gives it zero-width values. The saved
+    state still lists the keys twice, as earlier Prompt Caches do: either kind
+    of cache restores from the other.
+    """
+
+    def update_and_fetch(self, keys, values):
+        keys, _ = super().update_and_fetch(keys, keys[..., :0])
+        return keys, keys
+
+    @property
+    def state(self):
+        keys, _ = KVCache.state.fget(self)
+        return keys, keys
+
+    @state.setter
+    def state(self, value):
+        keys = value[0]
+        KVCache.state.fset(self, (keys, keys[..., :0]))
+
+
+class QSAPooledIndexCache(_PooledKeys, QSAIndexCache):
     def __init__(self):
         super().__init__()
         self._reset_pooled()
 
     @property
     def state(self):
-        return KVCache.state.fget(self)
+        return QSAIndexCache.state.fget(self)
 
     @state.setter
     def state(self, value):
-        KVCache.state.fset(self, value)
+        QSAIndexCache.state.fset(self, value)
         self._reset_pooled()
 
 

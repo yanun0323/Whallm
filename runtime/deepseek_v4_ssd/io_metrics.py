@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import ctypes
 import fcntl
+import mmap
 import os
 import sys
 from dataclasses import dataclass
 from functools import cache
+
+import numpy as np
 
 _RUSAGE_INFO_V2_FLAVOR = 2
 _PROT_READ = 0x1
@@ -111,6 +114,19 @@ def configure_expert_file_cache_policy(
     # Darwin bsd/sys/fcntl.h defines F_RDAHEAD as 45. Some supported CPython
     # builds do not export the constant; this fallback remains Darwin-only.
     fcntl.fcntl(descriptor, getattr(fcntl, "F_RDAHEAD", 45), 0)
+
+
+def request_rows(mapped, row_ids, row_bytes: int) -> None:
+    """Ask the OS for the pages of these rows before a mapped read touches them.
+
+    A page fault waits for its own page, so absent rows arrive one SSD read at
+    a time. Requested first, their pages are read concurrently. This names only
+    rows the caller reads next; their values and order are unchanged.
+    """
+    first = np.asarray(row_ids).reshape(-1) * row_bytes
+    pages = np.unique(np.concatenate([first, first + row_bytes - 1]) // mmap.PAGESIZE)
+    for page in pages.tolist():
+        mapped.madvise(mmap.MADV_WILLNEED, page * mmap.PAGESIZE, mmap.PAGESIZE)
 
 
 class _RUsageInfoV2(ctypes.Structure):

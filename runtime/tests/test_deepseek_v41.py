@@ -26,6 +26,7 @@ from deepseek_v4_ssd.deepseek_v41_ssd import (
     load as load_deepseek_v41,
 )
 from deepseek_v4_ssd.expert_cache import ExpertWeights, ResidentExperts
+from deepseek_v4_ssd.io_metrics import request_rows
 from deepseek_v4_ssd.manifest import (
     DEEPSEEK_V41_EXPERT_REGIONS,
     DEEPSEEK_V41_MODEL_ID,
@@ -383,7 +384,9 @@ class DeepSeekV41ContractTests(unittest.TestCase):
                 dimension=32,
                 block_size=32,
             )
-            actual = embedding(indices)
+            with patch("deepseek_v4_ssd.deepseek_v41_ssd.request_rows",
+                       wraps=request_rows) as request:
+                actual = embedding(indices)
             expected = dequant_fp8_rows(
                 mx.array(weight[[[3, 1, 3]]]),
                 mx.array(scale[[[3, 1, 3]]]),
@@ -391,6 +394,10 @@ class DeepSeekV41ContractTests(unittest.TestCase):
             mx.eval(actual, expected)
 
         np.testing.assert_array_equal(np.array(actual), np.array(expected))
+        # Both mapped tables are asked for the rows about to be read, by row width.
+        self.assertEqual([call.args[2] for call in request.call_args_list], [32, 1])
+        for call in request.call_args_list:
+            np.testing.assert_array_equal(call.args[1], [[3, 1, 3]])
 
     def test_model_cache_grows_and_rejects_the_context_ceiling(self):
         class Args:

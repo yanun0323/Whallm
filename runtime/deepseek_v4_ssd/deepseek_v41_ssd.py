@@ -15,6 +15,7 @@ from .deepseek_v41.packed_cache import PackedRows
 from .deepseek_v41.dequant import dequant_fp8_rows
 from .deepseek_v41.model import Model
 from .expert_cache import ExpertCache
+from .io_metrics import request_rows
 from .model import _EmptySwitchGLU, _StreamingSwitchGLU
 
 
@@ -56,6 +57,8 @@ class SSDEngramEmbedding(nn.Module):
         row_ids = np.asarray(indices, dtype=np.int64)
         if row_ids.size and (row_ids.min() < 0 or row_ids.max() >= self.rows):
             raise ValueError("V4.1 engram row is outside the installed table")
+        request_rows(self.weight._mmap, row_ids, self.dimension)
+        request_rows(self.scale._mmap, row_ids, self.dimension // self.block_size)
         weight = mx.array(np.array(self.weight[row_ids], copy=True))
         scale = mx.array(np.array(self.scale[row_ids], copy=True))
         return dequant_fp8_rows(weight, scale, self.block_size)

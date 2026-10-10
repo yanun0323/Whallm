@@ -11,6 +11,7 @@ import numpy as np
 from deepseek_v4_ssd import qwen4_exp as qwen
 from deepseek_v4_ssd.manifest import NGram
 from deepseek_v4_ssd.model import _fork_prompt_cache, eval_prompt_cache
+from deepseek_v4_ssd.qwen_pooled_cache import QSAIndexCache
 from runtime.tests.test_qwen import FakeGreedyMTP
 from runtime.tests.test_qwen_speed import experts_fixture, tiny_args
 
@@ -76,6 +77,12 @@ class VerificationRewindTests(unittest.TestCase):
         self.assertIsNotNone(model.layers[1].ple)
         self.assertTrue(model.supports_verification_rewind)
         return model
+
+    def test_model_and_draft_caches_keep_the_index_history_once(self):
+        for pooled in (False, True):
+            self.assertIsInstance(self.model(pooled).make_cache()[3].caches[1], QSAIndexCache)
+        draft = qwen.MTPModel(tiny_args(), self.experts)
+        self.assertIsInstance(draft.make_cache().caches[1], QSAIndexCache)
 
     def test_rewind_matches_direct_prefix_forward_without_routed_experts(self):
         prompt = mx.array([[1, 2, 3, 4, 5, 6, 7, 8, 9]])
