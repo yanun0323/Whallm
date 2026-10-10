@@ -6,71 +6,81 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Whallm</title>
         <item>
-            <title>1.1.11</title>
-            <pubDate>Fri, 09 Oct 2026 22:43:42 +0800</pubDate>
-            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.11</link>
-            <sparkle:version>1.1.11</sparkle:version>
-            <sparkle:shortVersionString>1.1.11</sparkle:shortVersionString>
+            <title>1.1.12</title>
+            <pubDate>Sun, 11 Oct 2026 00:32:25 +0800</pubDate>
+            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.12</link>
+            <sparkle:version>1.1.12</sparkle:version>
+            <sparkle:shortVersionString>1.1.12</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.11
+            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.12
 
-Changes since v1.1.10.
+Changes since v1.1.11.
 
-## Qwen images with MTP
+## Use less memory with 8-bit resident weights
 
-- Send images to both Qwen models with MTP on. The main model and the MTP draft layer now receive the image content and its positions, following the pairing used by vLLM's MTP drafter.
-- You no longer need to turn off MTP and reload the model before sending images. Image requests still skip the prompt cache.
-- On the full Swift1.5 model, red, blue and two-image prompts were answered correctly with MTP on, and every token MTP produced matched the model's own greedy choice. Output was about 1.4× faster than with MTP off on two test images.
+- Both Qwen models have a new setting, **Use 8-bit resident weights**, in **Model → Advanced Settings**. It is off by default.
+- When it is on, the weights that stay in memory, except experts, are kept in 8 bits instead of BF16. This uses less memory and usually speeds up output, most with MTP on.
+- Output can differ slightly from output with the setting off.
+- **Estimated peak memory** now drops when you turn the setting on. For Swift1.5 the estimate is about 3.7 GiB lower.
 
-## Faster Qwen MTP
+## New Qwen defaults
 
-- MTP is now on by default for both Qwen models, with 2 draft tokens. It turns off for a request only after 32 rounds in a row with no accepted draft.
-- When the main model checks drafts, it starts computing each expert as soon as that expert is in memory instead of waiting for all of them. Output is unchanged. On the M5 Pro with Swift1.5, output was 8–18% faster and the first token was not slower.
-- The prompt cache now works with MTP. Saved entries include the draft layer's state and are kept apart from non-MTP entries.
-- The App starts the runtime with smaller MLX command buffers when every installed model uses the Qwen engine. Output was 2–4% faster on Swift1.5 with identical tokens and no extra memory.
-- Sorted expert Prefill and masked QSA Prefill are now always on for Qwen.
+- **Experts in memory** now defaults to 8.5% (2,089 slots, about 5.1 GiB). It was about 12.5% (7.5 GiB).
+- **MTP experts in memory** now defaults to 100% (512 slots, about 1.2 GiB). It was about 8%.
+- Together, the two defaults use about 1.3 GiB less memory than before.
 
-## Simpler Qwen settings
+## Less work per token for Qwen
 
-- Both Qwen models show the same short **Advanced Settings** list: Alias, generation, experts in memory, read workers, MLX memory guideline, Prompt Cache, warmup and MTP. Every other Qwen option uses a fixed value.
-- Set the number of experts kept in memory as a percentage, with the estimated memory use and slot count shown next to it.
-- The memory estimate shows the cost of one request as the main number and the full Prompt Cache limit on a second line. **Throughput** shows the same estimate under the measured peak memory, and its table now scrolls sideways.
-- The **Advance** page in the sidebar is renamed **Performance**.
+- Output no longer rebuilds each expert's weight views for every token. They are built once and reused.
+- When the main model checks MTP drafts, it no longer copies the whole attention history every round.
+- N-gram lookups ask macOS for all the pages they need at once instead of one at a time.
+- Loading reads large weights with four workers.
+- QSA index keys are stored once instead of twice.
 
-## Removed Qwen experiments
+Output tokens are unchanged by these five changes.
 
-- Removed sparse SDPA, indexed QSA and shared-expert overlap. Model catalogs that still list these options as `false` keep working; `true` is rejected with an error.
-- Approximate mode is no longer offered for Qwen. API requests that ask for it on a Qwen model return `400`. DeepSeek keeps approximate mode.
+## DeepSeek V4.1
 
-## Chat
-
-- Your messages now appear as bubbles on the right. Replies use the full width and show bold, italic, code and links.
-- Reasoning folds away once the answer starts; you can open it again.
-- The message box is smaller, Seed moved to the bottom row, and the "Enter a message…" hint is now visible.
-- Long waits, such as processing a long prompt, no longer let Chat and tool-call streams go quiet: the server sends an empty update every 10 seconds.
+- Engram lookups ask macOS for all the pages they need at once, as Qwen N-gram lookups do.
 
 ## Upgrade notes
 
-- Qwen settings that are now hidden are replaced by fixed values. Your Alias, generation, memory, worker, Prompt Cache, warmup and MTP settings are kept.
-- MTP turns on by default for Qwen. MTP output can differ slightly from output with MTP off. Turn off **Use MTP** in **Model → Advanced Settings** if you need the non-MTP output.
+- The new defaults apply to new installs and when you reset a model's settings. Your saved settings are kept.
+- Prompt Cache entries saved with **Use 8-bit resident weights** on are kept apart from entries saved with it off.
+
+## Benchmarks
+
+Measured with the built-in **Throughput** test on a build from source shortly before this release: Swift1.5, MTP and **Use 8-bit resident weights** on, **Code** input, a 512-token output limit, 2,089 expert slots, temperature 0 and seed 42.
+
+| Chip | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| M5 Pro | 4096 | 6976.5 | 587.1 | 19.4 | 13.13 |
+| M5 Pro | 8192 | 13911.4 | 588.9 | 19.8 | 13.86 |
+| M5 Pro | 16384 | 29654.2 | 552.5 | 18.6 | 14.29 |
+| M2 Max | 4096 | 15151.2 | 270.3 | 15.0 | 13.15 |
+| M2 Max | 8192 | 30693.5 | 266.9 | 15.8 | 13.84 |
+| M2 Max | 16384 | 65538.0 | 250.0 | 14.7 | 14.42 |
+
+The v1.1.11 run on the same M5 Pro peaked at 16.93 to 18.81 GiB and produced 14.6 to 17.5 tokens per second. That run used a 128-token output limit and did not have 8-bit resident weights, so this is not a controlled comparison.
 
 ## Validation
 
-- **705 Python tests passed**; **193 Swift tests ran, with 4 skipped and no failures**.
+- **719 Python tests passed**; **195 Swift tests ran, with 4 skipped and no failures**.
 - Packaging checks cover signatures, bundled files and startup in English, Simplified Chinese and Traditional Chinese without access to the build folder, for both the App and the unzipped download.
 
 ## Known limits
 
-- Speed and image results come from one M5 Pro with Swift1.5 only. Qwen3.8 FP8 was not measured for the new defaults, image input with MTP, or faster verification.
-- Image checks use simple generated images and short answers. They do not measure image quality in general.
-- MTP is not faster for every prompt.
+- **Estimated peak memory** was about 2 GiB higher than the measured peak in the runs above. The estimate includes a safety allowance and memory that MLX holds for reuse; the measured number does not.
+- The lower estimate for 8-bit resident weights is calculated from the model's file list. It was compared with measurements only for Swift1.5.
+- There are no measurements for Qwen3.8 FP8 with 8-bit resident weights.
+- The benchmark rows come from one M5 Pro and one M2 Max.
 
 Requires Apple Silicon and macOS 15 or later. Model weights are downloaded separately. This is a distribution build; local-only debug and Dry run features are not included.
 
-[Full changelog](https://github.com/yanun0323/Whallm/compare/v1.1.10...v1.1.11)
+[Full changelog](https://github.com/yanun0323/Whallm/compare/v1.1.11...v1.1.12)
 ]]></description>
-            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.11/Whallm-macOS-arm64.zip" length="201897514" type="application/octet-stream" sparkle:edSignature="QN6LUvt+rhid3fAZuILpx4lji7Sxh4MudvsSkDVAGa0w63h6Z7lXM+t/Q4M/CYJ6rZz+GSRukJaRAsVM6BsVBw=="/>
+            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.12/Whallm-macOS-arm64.zip" length="201918028" type="application/octet-stream" sparkle:edSignature="VemiMaiuPXdsP7+/Nf1G+9LD2zgGTPhISZ79GOf+Lj6v5qBBlyn2W3m43Fi2/COHWPdok4YdOoJ1/97H7Yx4Dg=="/>
         </item>
         <item>
             <title>1.1.7</title>
@@ -111,6 +121,6 @@ This alpha adds a Throughput benchmark page and updates model defaults. Select *
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: lrj3Y+onIvg3sYGJR4fDVZclFVGpoexUuJoO8BFQAiQ0QQEG5GpWzklmyGzSjZQoqVZj1lkJEPfCsr4RldNwAA==
-length: 8525
+edSignature: xtM12uxDzRROH/gkzQfsxNRZH7di1cYZcqq+5NHmQTjqQ8axfYU6noLZwrw5O/JjU1TUXvSmZ82M1TdG45TsAA==
+length: 8079
 -->
