@@ -123,6 +123,26 @@ class ReadyVerificationTests(unittest.TestCase):
                 mx.eval(experts(value, indices))
                 self.assertEqual([len(call.args) for call in submit.call_args_list], expected)
 
+    def test_slot_weights_follow_the_expert_read_into_a_reused_slot(self):
+        cache = ExpertCache(self.model, slots=4, read_workers=2)
+        self.addCleanup(cache.close)
+        blobs = np.fromfile(self.model.root / "experts/layer_00.bin", dtype=np.uint8).reshape(
+            EXPERTS, self.model.expert_blob_size)
+        seen = {}
+        for experts in ([0, 1, 2, 3], [4, 5, 6, 7], [8, 1, 9, 10]):
+            resident = cache.get_many(0, experts)
+            for expert in experts:
+                weights = resident.individual_weights[resident.slots[expert]]
+                slot = cache._entries[(0, expert)].slot
+                # Every slot hands out the views it built for its first expert.
+                self.assertIs(seen.setdefault(slot, weights), weights)
+                for region, actual in zip(self.model.expert_regions, (
+                        weights.gate_up, weights.gate_up_scales, weights.down, weights.down_scales)):
+                    expected = blobs[expert, region.offset:region.offset + region.length]
+                    self.assertEqual(np.asarray(actual).tobytes(), expected.tobytes(),
+                                     (expert, region.name))
+        self.assertGreater(cache.metrics.evictions, 0)
+
     def test_cancelled_or_failed_reads_release_their_reserved_slots(self):
         cache = self.cache()
         experts = self.experts(cache)
