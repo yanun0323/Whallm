@@ -628,7 +628,50 @@ final class MemoryPlanningTests: XCTestCase {
     XCTAssertEqual(try estimate().total, inactive.total)
   }
 
-  private func profile() throws -> MemoryPlanningProfile {
+  func test8BitResidentWeightsShrinkLoadedWeightsButNotLoading() throws {
+    // BF16 sizes; only the first three follow the runtime's repacking rule.
+    let shapes: [(String, [Int])] = [
+      ("lm_head.weight", [248_320, 2_560]),
+      ("model.language_model.layers.0.self_attn.q_proj.weight", [12_288, 2_560]),
+      ("model.language_model.layers.0.mlp.shared_expert.up_proj.weight", [640, 2_560]),
+      ("model.language_model.embed_tokens.weight", [248_320, 2_560]),
+      ("model.language_model.layers.0.mlp.gate.weight", [512, 2_560]),
+      ("model.language_model.layers.0.linear_attn.in_proj_a.weight", [48, 2_560]),
+      ("model.language_model.layers.0.linear_attn.conv1d.weight", [10_240, 1, 4])]
+    func tensors(_ list: [(String, [Int])]) throws -> [InstalledTensor] {
+      try JSONDecoder().decode([InstalledTensor].self, from: JSONSerialization.data(withJSONObject:
+        list.map { ["name": $0.0, "dtype": "BF16", "shape": $0.1, "offset": 0, "length": $0.1.reduce(2, *)] }))
+    }
+    let draft = [("mtp.layers.0.self_attn.o_proj.weight", [2_560, 6_144]), ("mtp.layers.0.mlp.gate.weight", [512, 2_560])]
+    let p = try profile(common: tensors(shapes), mtp: tensors(draft))
+    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    s.mtpEnabled = false
+    func estimate(_ on: Bool) throws -> MemoryEstimate {
+      s.qwen8BitCommonTensors = on
+      return try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false))
+    }
+    let lmHead = 248_320.0 * 2_560 * 2, qProj = 12_288.0 * 2_560 * 2, up = 640.0 * 2_560 * 2
+    let saved = (lmHead + qProj + up) * 15 / 32
+    var off = try estimate(false), on = try estimate(true)
+    XCTAssertEqual(off.decoding.model - on.decoding.model, saved, accuracy: 1)
+    XCTAssertEqual(off.prefill.model - on.prefill.model, saved, accuracy: 1)
+    XCTAssertEqual(on.loading.total, off.loading.total) // Repacking starts from the loaded BF16 weights.
+    // Layer-major prefill restores one projection at a time and never a whole-step lm_head.
+    XCTAssertEqual(on.prefill.temporary - off.prefill.temporary, qProj, accuracy: 1)
+    XCTAssertEqual(on.decoding.temporary, off.decoding.temporary)
+    XCTAssertLessThan(on.total, off.total)
+    s.layerMajorPrefill = false
+    off = try estimate(false); on = try estimate(true)
+    XCTAssertEqual(on.prefill.temporary - off.prefill.temporary, lmHead, accuracy: 1)
+    s.layerMajorPrefill = true
+    s.mtpEnabled = true
+    let oProj = 2_560.0 * 6_144 * 2
+    off = try estimate(false); on = try estimate(true)
+    XCTAssertEqual(off.decoding.auxiliary - on.decoding.auxiliary, oProj * 15 / 32, accuracy: 1)
+    XCTAssertEqual(on.loading.total, off.loading.total)
+  }
+
+  private func profile(common: [InstalledTensor] = [], mtp: [InstalledTensor] = []) throws -> MemoryPlanningProfile {
     let file: (String, UInt64) throws -> InstalledFile = { name, size in
       try JSONDecoder().decode(InstalledFile.self, from: JSONSerialization.data(withJSONObject:
         ["path": name, "size": size, "sha256": "fixture"]))
@@ -636,8 +679,8 @@ final class MemoryPlanningTests: XCTestCase {
     let manifest = InstalledManifest(formatVersion: 2, modelID: "fixture", revision: "fixture",
       layerCount: 48, expertCount: 512, selectedExpertCount: 10, expertBlobSize: 2_611_200,
       files: [try file("common.bin", 9 * 1_073_741_824), try file("mtp/common.bin", 200_000_000)],
-      commonTensors: [], expertRegions: [],
-      mtp: MTPDescriptor(layerCount: 1, useDedicatedEmbeddings: false, commonTensors: []),
+      commonTensors: common, expertRegions: [],
+      mtp: MTPDescriptor(layerCount: 1, useDedicatedEmbeddings: false, commonTensors: mtp),
       modelKind: .qwen3_8FlashNext, maximumContext: 262_144)
     return MemoryPlanningProfile(kind: .qwen3_8FlashNext, manifest: manifest,
       config: ["hidden_size": 2_560, "head_dim": 256, "num_attention_heads": 24])

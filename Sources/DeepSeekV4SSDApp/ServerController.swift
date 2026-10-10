@@ -302,9 +302,15 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.slots = descriptor.defaults.slots
     let blob = ExpertMemory.blobBytes(for: modelKind)
     if blob > 0 {
-      settings.expertCacheGiB = ExpertMemory.defaultGiB(slots: settings.slots, blobBytes: blob)
+      // Qwen defaults to 8.5% of its experts; a rounded budget would resolve to other slots.
+      settings.expertCacheGiB = modelKind.usesQwenEngine
+        ? ExpertMemory.exactGiB(slots: settings.slots, blobBytes: blob)
+        : ExpertMemory.defaultGiB(slots: settings.slots, blobBytes: blob)
       if descriptor.supports("mtp") {
-        settings.mtpCacheGiB = ExpertMemory.defaultGiB(slots: 32, blobBytes: blob)
+        // 100%: every MTP routed expert stays in memory.
+        let mtpSlots = ExpertMemory.totalExperts(for: .mtp, kind: modelKind, manifest: nil)
+        settings.mtpSlots = mtpSlots
+        settings.mtpCacheGiB = ExpertMemory.exactGiB(slots: mtpSlots, blobBytes: blob)
       }
       if descriptor.supports("dspark") {
         settings.dsparkCacheGiB = ExpertMemory.defaultGiB(slots: 768, blobBytes: blob)

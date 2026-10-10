@@ -128,7 +128,7 @@
         "sampling"
       ],
       "defaults": {
-        "slots": 3072,
+        "slots": 2089,
         "promptCacheEntries": 2,
         "bf16KVCache": false,
         "maxTokens": 8192,
@@ -193,7 +193,7 @@
       ],
       "editableSettings": ["sampling"],
       "defaults": {
-        "slots": 3072,
+        "slots": 2089,
         "promptCacheEntries": 2,
         "bf16KVCache": false,
         "maxTokens": 8192,

@@ -95,12 +95,18 @@ final class ExpertCacheControlTests: XCTestCase {
     XCTAssertEqual(ExpertMemory.totalExperts(for: .expert, kind: .deepSeekV41, manifest: nil), 15_360)
     XCTAssertEqual(ExpertMemory.totalExperts(for: .mtp, kind: .qwen3_8FlashNext, manifest: nil), 512)
     XCTAssertEqual(ExpertMemory.totalExperts(for: .dspark, kind: .deepSeekV4, manifest: nil), 768)
-    // The 7.5 GiB Qwen default is 3084 of 24576 experts.
-    let kind = ModelKind.swift1_5Qwen3_8FlashNext
-    let blob = ExpertMemory.blobBytes(for: kind)
-    let slots = ExpertCacheControl.expert.slots(in: .defaults(for: kind), blobBytes: blob)
-    XCTAssertEqual(slots, 3_084)
-    XCTAssertEqual(ExpertMemory.percent(slots: slots, totalExperts: 24_576), 12.55, accuracy: 0.01)
+    // Both Qwen kinds default to 8.5% of 24576 experts and to every MTP expert.
+    for kind in [ModelKind.qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext] {
+      let blob = ExpertMemory.blobBytes(for: kind)
+      let defaults = ModelAdvancedSettings.defaults(for: kind)
+      let slots = ExpertCacheControl.expert.slots(in: defaults, blobBytes: blob)
+      XCTAssertEqual(slots, 2_089)
+      XCTAssertEqual(defaults.slots, 2_089)
+      XCTAssertEqual(ExpertMemory.percent(slots: slots, totalExperts: 24_576), 8.5, accuracy: 0.01)
+      XCTAssertEqual(ExpertCacheControl.mtp.slots(in: defaults, blobBytes: blob), 512)
+      XCTAssertEqual(defaults.mtpSlots, 512)
+      XCTAssertNoThrow(try defaults.validate(for: kind))
+    }
   }
 
   func testPercentRangeKeepsTheMinimumAndThisMacsMemory() {

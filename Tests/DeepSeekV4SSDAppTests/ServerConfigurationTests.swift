@@ -58,8 +58,8 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertTrue(runtime.mtpEnabled, "Qwen ships MTP on when its files are installed")
     XCTAssertEqual(runtime.anePrefillRatio, 0)
     XCTAssertEqual(settings.approximationEnabled, false)
-    XCTAssertEqual(settings.slots, 3072)
-    XCTAssertEqual(settings.expertCacheGiB, 7.5)
+    XCTAssertEqual(settings.slots, 2089)
+    XCTAssertEqual(settings.expertCacheGiB, ExpertMemory.exactGiB(slots: 2089, blobBytes: 2_611_200))
     XCTAssertEqual(settings.promptCacheMode, .memory)
     XCTAssertEqual(settings.defaultMaxTokens, 8192)
   }
@@ -502,15 +502,15 @@ final class ServerConfigurationTests: XCTestCase {
     deepSeek.save(for: .deepSeekV4, defaults: isolated.defaults)
 
     var qwen = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    XCTAssertEqual(qwen.slots, 3_072)
+    XCTAssertEqual(qwen.slots, 2_089)
     for language in [AppLanguage.english, .simplifiedChinese, .traditionalChinese] {
       let hint = L10n.string(
         "Number of routed experts in the Active Parameters Cache. The recommended value is %lld.",
         language: language, Int64(ModelKind.qwen3_8FlashNext.descriptor.defaults.slots))
-      XCTAssertEqual(hint.filter(\.isNumber), "3072", hint)
+      XCTAssertEqual(hint.filter(\.isNumber), "2089", hint)
     }
     XCTAssertTrue(qwen.mtpEnabled == true)
-    XCTAssertEqual(qwen.mtpSlots, 32)
+    XCTAssertEqual(qwen.mtpSlots, 512)
     XCTAssertEqual(qwen.anePrefillRatio, 0)
     qwen.slots = 900
     qwen.bf16KVCache = true
@@ -633,7 +633,7 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertEqual(deepSeek.slots, 640)
     XCTAssertEqual(deepSeek.defaultTemperature, 0.7)
     XCTAssertEqual(deepSeek.layerMajorPrefillThreshold, 1_024)
-    XCTAssertEqual(qwen.slots, 3_072)
+    XCTAssertEqual(qwen.slots, 2_089)
     XCTAssertEqual(qwen.defaultTemperature, 0.7)
   }
 

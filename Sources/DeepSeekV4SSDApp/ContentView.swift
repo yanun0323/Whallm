@@ -2105,7 +2105,7 @@ struct ModelAdvancedView: View {
     }
     let recommendedSlots: Int? = switch label {
     case "Expert cache GiB": modelKind.descriptor.defaults.slots
-    case "MTP expert cache GiB": 32
+    case "MTP expert cache GiB": ExpertCacheControl.mtp.legacySlots(in: .defaults(for: modelKind))
     case "DSpark expert cache GiB": 768
     default: nil
     }
