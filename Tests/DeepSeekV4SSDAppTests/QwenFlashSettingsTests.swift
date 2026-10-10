@@ -87,7 +87,8 @@ final class QwenFlashSettingsTests: XCTestCase {
     let runtime = try catalog(.defaults(for: .qwen3_8FlashNext)).models[0].runtime
     var json = try object(runtime)
     for key in ["qwen_expert_wave_slots", "qwen_ngram_io", "qwen_ngram_cache_bytes",
-                "qwen_packed_gdn_prefill", "qwen_sorted_expert_prefill", "qwen_qsa_masked_prefill"] {
+                "qwen_packed_gdn_prefill", "qwen_sorted_expert_prefill", "qwen_qsa_masked_prefill",
+                "qwen_8bit_common_tensors"] {
       json.removeValue(forKey: key)
     }
     let legacy = try JSONDecoder().decode(ModelCatalog.Entry.Runtime.self,
@@ -99,6 +100,39 @@ final class QwenFlashSettingsTests: XCTestCase {
     XCTAssertEqual(encoded["qwen_packed_gdn_prefill"] as? Bool, false)
     XCTAssertEqual(encoded["qwen_sorted_expert_prefill"] as? Bool, false)
     XCTAssertEqual(encoded["qwen_qsa_masked_prefill"] as? Bool, false)
+    XCTAssertEqual(encoded["qwen_8bit_common_tensors"] as? Bool, false)
+  }
+
+  /// The one visible Qwen choice added after the fixed tuning (2026-10-10).
+  @MainActor
+  func testEightBitResidentWeightsAreAnOptInForQwenOnly() throws {
+    for kind in ModelLibrary.supportedModelKinds {
+      let defaults = ModelAdvancedSettings.defaults(for: kind)
+      XCTAssertEqual(defaults.qwen8BitCommonTensors, false)
+      XCTAssertEqual(try object(catalog(defaults, kind: kind).models[0].runtime)["qwen_8bit_common_tensors"]
+        as? Bool, false)
+    }
+    for kind in qwenKinds {
+      var saved = ModelAdvancedSettings.defaults(for: kind)
+      saved.qwen8BitCommonTensors = true
+      let loaded = try JSONDecoder().decode(ModelAdvancedSettings.self,
+        from: JSONEncoder().encode(saved)).normalized(for: kind)
+      XCTAssertEqual(loaded.qwen8BitCommonTensors, true)
+      XCTAssertNoThrow(try loaded.validate(for: kind))
+      XCTAssertEqual(try object(catalog(loaded, kind: kind).models[0].runtime)["qwen_8bit_common_tensors"]
+        as? Bool, true)
+      var reset = ModelSettingsResetConfirmation()
+      reset.begin(for: kind, locked: false); reset.advance()
+      XCTAssertEqual(reset.confirm(for: kind, locked: false)?.qwen8BitCommonTensors, false)
+    }
+    var qwen = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    qwen.qwen8BitCommonTensors = true
+    for kind in [ModelKind.deepSeekV4, .deepSeekV41, .mimoV26FlashRL] {
+      let other = qwen.normalized(for: kind)
+      XCTAssertEqual(other.qwen8BitCommonTensors, false)
+      XCTAssertEqual(try object(catalog(other, kind: kind).models[0].runtime)["qwen_8bit_common_tensors"]
+        as? Bool, false)
+    }
   }
 
   func testRemainingCopyIsLocalizedAndSettingsLockWhileLoaded() {

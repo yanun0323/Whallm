@@ -77,7 +77,7 @@ def prepare(model_path: Path, output: Path) -> None:
             paired_hidden,
             paired_tokens,
             model.model.embed_tokens.weight,
-            model.lm_head.weight,
+            model.lm_head,
             mtp.make_cache(),
         )
         local_sample = mtp.hyper_connection_mixer(local_wide)

@@ -17,6 +17,7 @@ DEFAULTS = {
     "qwen_qsa_skip_complete_gather": True,
     "qwen_qsa_dense_threshold": 0,
     "qwen_qsa_masked_prefill": False,
+    "qwen_8bit_common_tensors": False,
 }
 
 
@@ -56,6 +57,12 @@ def validate_flash_config(config) -> None:
         raise ValueError("qwen_qsa_skip_complete_gather must be a boolean")
     if type(getattr(config, "qwen_qsa_masked_prefill", False)) is not bool:
         raise ValueError("qwen_qsa_masked_prefill must be a boolean")
+    common = getattr(config, "qwen_8bit_common_tensors", False)
+    if type(common) is not bool:
+        raise ValueError("qwen_8bit_common_tensors must be a boolean")
+    # Qwen ANE Prefill compiles the BF16 q_proj weights it finds at load.
+    if common and getattr(config, "ane_prefill", False) and getattr(config, "ane_prefill_ratio", 0) > 0:
+        raise ValueError("qwen_8bit_common_tensors does not support ANE Prefill")
     threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
     if type(threshold) is not int or not 0 <= threshold <= 262_144:
         raise ValueError("qwen_qsa_dense_threshold must be an integer from 0 through 262144")
@@ -86,6 +93,9 @@ def add_flash_arguments(parser: argparse.ArgumentParser) -> None:
                         help="experimental positioned N-gram reads instead of mmap")
     parser.add_argument("--qwen-ngram-cache-bytes", type=int, default=0,
                         help="packed N-gram row LRU payload limit; requires pread; max 512 MiB")
+    parser.add_argument("--qwen-8bit-common-tensors", action=argparse.BooleanOptionalAction,
+                        default=False, help="store Qwen projections, lm_head and MTP included, as "
+                        "affine 8-bit; output is not bit-identical")
 
 
 def _add_qsa_arguments(parser):

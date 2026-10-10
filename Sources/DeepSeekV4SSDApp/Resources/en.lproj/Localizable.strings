@@ -269,6 +269,8 @@
 "Compile grouped normalization" = "Compile grouped normalization";
 "Adjust memory between prompt and answer" = "Adjust memory between prompt and answer";
 "Customize MTP strategy" = "Customize MTP strategy";
+"Use 8-bit resident weights" = "Use 8-bit resident weights";
+"Stores the model weights that stay in memory, except experts, in 8 bits instead of BF16. Uses less memory and speeds up generation, especially with MTP. Generated text may change." = "Stores the model weights that stay in memory, except experts, in 8 bits instead of BF16. Uses less memory and speeds up generation, especially with MTP. Generated text may change.";
 "Reuses completed attention-index blocks instead of recalculating them. Retains extra index data." = "Reuses completed attention-index blocks instead of recalculating them. Retains extra index data.";
 "Reads repeated N-gram rows once per lookup and uses a decoding table." = "Reads repeated N-gram rows once per lookup and uses a decoding table.";
 "Reuses a compiled normalization calculation, not the whole generation graph." = "Reuses a compiled normalization calculation, not the whole generation graph.";

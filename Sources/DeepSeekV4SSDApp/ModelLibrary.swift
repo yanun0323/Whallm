@@ -409,6 +409,7 @@ final class ModelLibrary: ObservableObject {
           qwenQSAMaskedPrefill: modelKind.usesQwenEngine && settings.qwenQSAMaskedPrefill == true,
             qwenPrefillReadExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillReadExperts ?? 1 : 1,
             qwenPrefillSeedExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillSeedExperts ?? 0 : 0,
+          qwen8BitCommonTensors: modelKind.usesQwenEngine && settings.qwen8BitCommonTensors == true,
           qwenMTPDraftTokens: modelKind.usesQwenEngine ? settings.effectiveQwenMTPDraftTokens : 2,
           qwenMTPZeroAcceptanceLimit: modelKind.usesQwenEngine ? settings.effectiveQwenMTPZeroAcceptanceLimit : 32,
           v41PackedKV: modelKind == .deepSeekV41 && settings.packedKVCache == true,

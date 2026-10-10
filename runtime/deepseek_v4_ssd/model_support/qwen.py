@@ -19,6 +19,9 @@ class QwenSupport(ModelSupport):
         from ..qwen4_exp import load
         from ..model import _load_qwen_mtp
         model, cache = load(installed, config, raw_config, weights, read_limiter)
+        # The model holds the loaded arrays now; without this reference each
+        # BF16 projection is freed as soon as its 8-bit form replaces it.
+        del weights
         model.mtp = None
         model.mtp_expert_cache = None
         try:
@@ -26,6 +29,9 @@ class QwenSupport(ModelSupport):
                 model.mtp, model.mtp_expert_cache = _load_qwen_mtp(
                     installed, model.args, config, read_limiter,
                 )
+            if getattr(config, "qwen_8bit_common_tensors", False):
+                from .. import qwen_common_tensors
+                qwen_common_tensors.quantize_common_tensors(model)
             return model, cache
         except Exception:
             self.close(model, cache)

@@ -269,6 +269,8 @@
 "Compile grouped normalization" = "編譯分組正規化計算";
 "Adjust memory between prompt and answer" = "依讀取問題／產生回答調整記憶體";
 "Customize MTP strategy" = "自訂 MTP 策略";
+"Use 8-bit resident weights" = "使用 8-bit 常駐權重";
+"Stores the model weights that stay in memory, except experts, in 8 bits instead of BF16. Uses less memory and speeds up generation, especially with MTP. Generated text may change." = "將常駐記憶體的模型權重（專家除外）由 BF16 改以 8-bit 儲存。可減少記憶體用量並加快生成速度，開啟 MTP 時最明顯。產生的文字可能改變。";
 "Reuses completed attention-index blocks instead of recalculating them. Retains extra index data." = "重用已完成區塊的注意力索引，避免重複計算；會保留額外索引資料。";
 "Reads repeated N-gram rows once per lookup and uses a decoding table." = "每次查找只讀取一次重複的 N-gram 資料列，並透過查表解碼。";
 "Reuses a compiled normalization calculation, not the whole generation graph." = "重用已編譯的正規化計算；不是重用整個生成流程。";

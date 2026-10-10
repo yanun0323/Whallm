@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import mlx.core as mx
+import mlx.nn as nn
 import numpy as np
 from mlx_lm.models.cache import CacheList, KVCache
 
@@ -171,10 +172,11 @@ class MTPAdvanceTests(unittest.TestCase):
         model.set_dtype(mx.float32)
         hidden = mx.random.normal((1, 3, 256)) * .1
         embedding = mx.random.normal((32, 64)) * .1
-        output_weight = mx.random.normal((32, 64)) * .1
+        head = nn.Linear(64, 32, bias=False)
+        head.weight = mx.random.normal((32, 64)) * .1
         tokens = mx.array([[1, 2, 3]])
         full_cache, advance_cache = model.make_cache(), model.make_cache()
-        logits, expected = model(hidden, tokens, embedding, output_weight, full_cache)
+        logits, expected = model(hidden, tokens, embedding, head, full_cache)
         eval_prompt_cache([full_cache], logits, expected)
         original = model.hyper_connection_mixer
         model.hyper_connection_mixer = lambda _: (_ for _ in ()).throw(AssertionError('final mixer called'))
@@ -187,8 +189,8 @@ class MTPAdvanceTests(unittest.TestCase):
             for a, b in zip(got.state, want.state):
                 np.testing.assert_array_equal(bits(a), bits(b))
         next_hidden = hidden[:, -1:]
-        a, _ = model(next_hidden, mx.array([[4]]), embedding, output_weight, advance_cache)
-        b, _ = model(next_hidden, mx.array([[4]]), embedding, output_weight, full_cache)
+        a, _ = model(next_hidden, mx.array([[4]]), embedding, head, advance_cache)
+        b, _ = model(next_hidden, mx.array([[4]]), embedding, head, full_cache)
         np.testing.assert_array_equal(bits(a), bits(b))
 
     def test_prefill_and_full_accept_sync_use_advance_without_changing_tokens(self):

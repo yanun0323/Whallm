@@ -267,6 +267,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var qwenNgramLookupOptimized: Bool? = false
   var qwenCompileTensorOps: Bool? = false
   var qwenPhaseMemory: Bool? = false
+  var qwen8BitCommonTensors: Bool? = false
   var qwenExpertWaveSlots: Int? = 0
   var qwenNgramIO: String? = "mmap"
   var qwenNgramCacheMiB: Int? = 0
@@ -377,6 +378,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.mtpEnabled = descriptor.supports("mtp") ? (settings.mtpEnabled ?? false) : false
     settings.mtpSlots = settings.mtpSlots ?? 32
     let qwen = modelKind.usesQwenEngine
+    settings.qwen8BitCommonTensors = qwen ? (settings.qwen8BitCommonTensors ?? false) : false
     settings.qwenExpertWaveSlots = qwen ? (settings.qwenExpertWaveSlots ?? 0) : 0
     settings.qwenNgramIO = qwen ? (settings.qwenNgramIO ?? "mmap") : "mmap"
     settings.qwenNgramCacheMiB = qwen ? (settings.qwenNgramCacheMiB ?? 0) : 0
@@ -830,6 +832,7 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       var qwenQSAMaskedPrefill: Bool? = nil
       var qwenPrefillReadExperts: Int? = nil
       var qwenPrefillSeedExperts: Int? = nil
+      var qwen8BitCommonTensors: Bool? = nil
       let qwenMTPDraftTokens: Int
       let qwenMTPZeroAcceptanceLimit: Int
       let v41PackedKV: Bool
@@ -896,6 +899,7 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         case qwenQSAMaskedPrefill = "qwen_qsa_masked_prefill"
         case qwenPrefillReadExperts = "qwen_prefill_read_experts"
         case qwenPrefillSeedExperts = "qwen_prefill_seed_experts"
+        case qwen8BitCommonTensors = "qwen_8bit_common_tensors"
         case qwenMTPDraftTokens = "qwen_mtp_draft_tokens"
         case qwenMTPZeroAcceptanceLimit = "qwen_mtp_zero_acceptance_limit"
         case v41PackedKV = "v41_packed_kv"
@@ -929,6 +933,7 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         try values.encode(qwenQSAMaskedPrefill ?? false, forKey: .qwenQSAMaskedPrefill)
         try values.encode(qwenPrefillReadExperts ?? 1, forKey: .qwenPrefillReadExperts)
         try values.encode(qwenPrefillSeedExperts ?? 0, forKey: .qwenPrefillSeedExperts)
+        try values.encode(qwen8BitCommonTensors ?? false, forKey: .qwen8BitCommonTensors)
         try values.encode(qwenMTPDraftTokens, forKey: .qwenMTPDraftTokens)
         try values.encode(qwenMTPZeroAcceptanceLimit, forKey: .qwenMTPZeroAcceptanceLimit)
         try values.encode(v41PackedKV, forKey: .v41PackedKV)

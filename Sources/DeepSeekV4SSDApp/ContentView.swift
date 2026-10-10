@@ -2022,6 +2022,11 @@ struct ModelAdvancedView: View {
               }
             }
           }
+          if modelKind.usesQwenEngine {
+            Divider()
+            toggleField(QwenFlashCopy.commonTensors, hint: QwenFlashCopy.commonTensorsHint,
+              value: optionalToggle(\.qwen8BitCommonTensors, defaultValue: false))
+          }
           if modelKind.descriptor.editableSettings.contains("kvCachePrecision") {
             Divider()
             toggleField(

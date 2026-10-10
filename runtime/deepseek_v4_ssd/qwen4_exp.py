@@ -1210,7 +1210,7 @@ class MTPModel(nn.Module):
         target_hidden: mx.array,
         next_token_ids: mx.array,
         embedding_weight: mx.array,
-        lm_head_weight: mx.array,
+        lm_head: nn.Module,
         cache: CacheList | None,
         *,
         next_embeddings: mx.array | None = None,
@@ -1219,7 +1219,7 @@ class MTPModel(nn.Module):
         wide_hidden = self.advance(target_hidden, next_token_ids, embedding_weight, cache,
                                    next_embeddings=next_embeddings, rope_positions=rope_positions)
         output = self.hyper_connection_mixer(wide_hidden)
-        logits = output @ lm_head_weight.T
+        logits = lm_head(output)
         return logits, wide_hidden
 
     def advance(
@@ -1383,7 +1383,7 @@ def generate_mtp_tokens(
         )[0]
 
     embedding_weight = main_model.model.embed_tokens.weight
-    lm_head_weight = main_model.lm_head.weight
+    lm_head = main_model.lm_head
     # Roll back rejected drafts without replaying accepted tokens through the MoE.
     rewind = getattr(main_model, "supports_verification_rewind", False) is True
     if cached_tokens:
@@ -1408,7 +1408,7 @@ def generate_mtp_tokens(
             state_hidden = advance(hidden, token_ids, embedding_weight, mtp_cache, **extra)
         else:
             _, state_hidden = mtp_model(
-                hidden, token_ids, embedding_weight, lm_head_weight, mtp_cache, **extra)
+                hidden, token_ids, embedding_weight, lm_head, mtp_cache, **extra)
         # Evaluate the whole layer before shared expert slots may be recycled;
         # evaluating only cache arrays would not fence the trailing MoE work.
         eval_prompt_cache([mtp_cache], state_hidden)
@@ -1544,7 +1544,7 @@ def generate_mtp_tokens(
                 draft_hidden,
                 mx.array([[draft_input]], dtype=mx.int32),
                 embedding_weight,
-                lm_head_weight,
+                lm_head,
                 mtp_cache,
                 **image_kwargs,
             )

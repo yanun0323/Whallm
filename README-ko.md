@@ -65,8 +65,9 @@ Whallm은 Apple Silicon Mac에서 대규모 언어 모델을 실행합니다. �
 
 ### 설정
 
-- 두 Qwen 모델의 **Advanced Settings**는 같습니다. Alias, 생성, 메모리, 읽기 작업자 수, Prompt Cache, 워밍업, MTP만 보이고 나머지는 고정값을 씁니다.
+- 두 Qwen 모델의 **Advanced Settings**는 같습니다. Alias, 생성, 메모리, 읽기 작업자 수, Prompt Cache, 워밍업, MTP, 8-bit 상주 가중치만 보이고 나머지는 고정값을 씁니다.
 - MTP는 기본으로 켜져 있습니다. 대부분 출력이 빨라지지만 모든 프롬프트에서 빨라지지는 않습니다. MTP를 껐을 때와 출력이 조금 다를 수 있습니다.
+- **Use 8-bit resident weights**는 기본으로 꺼져 있습니다. 켜면 메모리에 상주하는 가중치(전문가 제외)를 BF16 대신 8-bit로 저장합니다. 메모리를 덜 쓰고 대부분 출력도 빨라지며, MTP를 켰을 때 효과가 가장 큽니다. 껐을 때와 출력이 조금 다를 수 있습니다.
 
 ### 이미지
 

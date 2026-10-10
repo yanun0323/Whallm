@@ -43,7 +43,7 @@ extension ModelAdvancedSettings {
   }
 }
 
-/// English localization keys for Qwen setting validation and dependency hints.
+/// English localization keys for a Qwen setting, validation and dependency hints.
 enum QwenFlashCopy {
   static let wavesConflict = "Expert waves temporarily disable whole-layer batching, next-layer prefetch, and grouped prefill. Their saved choices are restored when waves are disabled."
   static let invalidWaves = "Experts per wave must be an integer from 0 to 512."
@@ -52,6 +52,8 @@ enum QwenFlashCopy {
   static let invalidQueryChunk = "QSA queries per chunk must be an integer from 1 to 128."
   static let invalidReadBatch = "Experts per prefill read must be an integer from 1 to 32."
   static let invalidSeeds = "Warm decode experts per layer must be an integer from 0 to 128."
+  static let commonTensors = "Use 8-bit resident weights"
+  static let commonTensorsHint = "Stores the model weights that stay in memory, except experts, in 8 bits instead of BF16. Uses less memory and speeds up generation, especially with MTP. Generated text may change."
   static let allKeys = [wavesConflict, invalidWaves, invalidBackend, invalidCache,
-    invalidQueryChunk, invalidReadBatch, invalidSeeds]
+    invalidQueryChunk, invalidReadBatch, invalidSeeds, commonTensors, commonTensorsHint]
 }

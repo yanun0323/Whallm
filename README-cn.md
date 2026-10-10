@@ -65,8 +65,9 @@ App 不含模型权重。仅 DeepSeek V4.1 的专家和 Engram 文件就需要�
 
 ### 设置
 
-- 两款 Qwen 的 **Advanced Settings** 相同，只保留 Alias、生成、内存、读取线程数、Prompt Cache、预热和 MTP。其余选项都使用固定值。
+- 两款 Qwen 的 **Advanced Settings** 相同，只保留 Alias、生成、内存、读取线程数、Prompt Cache、预热、MTP 和 8-bit 常驻权重。其余选项都使用固定值。
 - MTP 默认开启。它通常能加快输出，但不是每个提示词都会变快。输出可能与关闭 MTP 时略有不同。
+- **使用 8-bit 常驻权重** 默认关闭。开启后，常驻内存的权重（专家除外）改为以 8-bit 代替 BF16 存储，可减少内存用量，通常也会加快输出，开启 MTP 时最明显。输出可能与关闭时略有不同。
 
 ### 图片
 

@@ -91,6 +91,8 @@ class RuntimeConfig:
     qwen_ngram_lookup_optimized: bool = False
     qwen_compile_tensor_ops: bool = False
     qwen_phase_memory: bool = False
+    # App setting, off by default: Qwen projections in 8 bits (qwen_common_tensors.py).
+    qwen_8bit_common_tensors: bool = False
     qwen_expert_wave_slots: int = 0
     qwen_ngram_io: str = "mmap"
     qwen_ngram_cache_bytes: int = 0
