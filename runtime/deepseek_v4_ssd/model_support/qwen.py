@@ -8,7 +8,7 @@ import time
 from typing import Any
 import mlx.core as mx
 from mlx_lm.models.base import create_ssm_mask
-from ..model import eval_prompt_cache
+from ..model import _select_moe_step_size, eval_prompt_cache
 from ..cancellation import GenerationCancelled, check_cancelled
 from ..expert_layout import GateUpMXFP4Layout
 from .base import ModelSupport
@@ -49,6 +49,7 @@ class QwenSupport(ModelSupport):
             (getattr(config, "batched_expert_prefill", True)
              and not getattr(config, "qwen_expert_wave_slots", 0)),
             routed_max_tokens=getattr(config, "qwen_prefill_routed_max_tokens", 512),
+            moe_step_size=getattr(config, "moe_prefill_step_size", 0),
         )
 
     def validate_media_runtime(self, runtime):
@@ -254,12 +255,18 @@ def _qwen_layer_major_prefill(
     next_layer_prefetch: bool = False,
     batched_expert_prefill: bool = True,
     routed_max_tokens: int = 0,
+    moe_step_size: int = 0,
 ) -> mx.array | None:
     """Populate Qwen caches layer-major, using whole layers or bounded pair waves.
 
     Up to ``routed_max_tokens`` prompt tokens, each layer runs every chunk's
     attention half first and reads only the experts the prompt routes to.
     Chunks, their order and the arithmetic stay the same as whole-layer reads.
+
+    Longer prompts with sorted whole-layer experts run the attention halves of
+    consecutive chunks, up to ``moe_step_size`` tokens (0: 4096), then one
+    routed-expert call for their MoE halves. Each row is computed as in a call
+    per chunk.
     """
     if not token_ids:
         return None
@@ -284,23 +291,38 @@ def _qwen_layer_major_prefill(
         record_compute_submit = getattr(expert_cache, "record_compute_submit", None)
         inputs = mx.array(token_ids)[None]
         hidden = mx.tile(core.embed_tokens(inputs), (1, 1, core.args.hc_count))
+        # Every layer's experts share one configuration. The sync diagnostic
+        # times each stage of one chunk, so it keeps chunks apart.
+        experts = getattr(getattr(core.layers[0], "mlp", None), "experts", None)
+        joins = getattr(experts, "shares_expert_call", None)
+        spans = _expert_spans(
+            len(token_ids), step_size, _select_moe_step_size(moe_step_size, len(token_ids)),
+            joins if batched_expert_prefill and not sync_enabled and callable(joins) else None)
+
+        def chunk_mask(layer, chunk, layer_cache):
+            if layer.layer_type != "linear_attention":
+                return None
+            return create_ssm_mask(chunk[..., : core.args.hidden_size], layer_cache)
+
+        def prefetch_next(layer_index):
+            if batched_expert_prefill and next_layer_prefetch and layer_index + 1 < len(core.layers):
+                expert_cache.prefetch_layer(layer_index + 1)
+
         for layer_index, (layer, layer_cache) in enumerate(zip(core.layers, prompt_cache)):
             check_cancelled()
             outputs = []
             with expert_cache.batched_layer(layer_index) if batched_expert_prefill else nullcontext():
-                for start in range(0, len(token_ids), step_size):
+                for span in spans:
+                    if len(span) > 1:
+                        outputs.extend(_qwen_merged_span(
+                            layer, layer_index, layer_cache, hidden, inputs, span, step_size,
+                            chunk_mask, prefetch_next, record_compute_submit))
+                        continue
+                    start, end = span[0]
                     check_cancelled()
-                    end = min(start + step_size, len(token_ids))
                     chunk = hidden[:, start:end]
                     chunk_ids = inputs[:, start:end]
-                    mask = (
-                        create_ssm_mask(
-                            chunk[..., : core.args.hidden_size],
-                            layer_cache,
-                        )
-                        if layer.layer_type == "linear_attention"
-                        else None
-                    )
+                    mask = chunk_mask(layer, chunk, layer_cache)
                     diagnostic = _PrefillSync(layer_cache) if sync_enabled else None
                     try:
                         if diagnostic is None:
@@ -310,12 +332,8 @@ def _qwen_layer_major_prefill(
                                        *(() if mask is None else (mask,)))
                             output = layer(chunk, chunk_ids, mask, layer_cache,
                                            prefill_boundary=diagnostic)
-                        if (
-                            batched_expert_prefill and next_layer_prefetch
-                            and start == 0
-                            and layer_index + 1 < len(core.layers)
-                        ):
-                            expert_cache.prefetch_layer(layer_index + 1)
+                        if start == 0:
+                            prefetch_next(layer_index)
                         if callable(record_compute_submit):
                             record_compute_submit(layer_index)
                         if diagnostic is None:
@@ -341,6 +359,79 @@ def _qwen_layer_major_prefill(
                           f"layers={len(core.layers)} tokens={len(token_ids)}",
                           file=sys.stderr, flush=True)
                 return hidden
+
+
+def _expert_spans(
+    token_count: int,
+    step_size: int,
+    span_tokens: int,
+    joins=None,
+) -> list[list[tuple[int, int]]]:
+    """Group consecutive Prefill chunks whose MoE halves share one expert call.
+
+    A group holds whole chunks and at most ``span_tokens`` tokens. A chunk for
+    which ``joins(tokens)`` is false, or every chunk without ``joins``, is alone.
+    """
+    spans = []
+    for start in range(0, token_count, step_size):
+        chunk = (start, min(start + step_size, token_count))
+        if (spans and joins is not None and joins(chunk[1] - chunk[0])
+                and joins(spans[-1][0][1] - spans[-1][0][0])
+                and chunk[1] - spans[-1][0][0] <= span_tokens):
+            spans[-1].append(chunk)
+        else:
+            spans.append([chunk])
+    return spans
+
+
+def _qwen_merged_span(
+    layer: Any,
+    layer_index: int,
+    layer_cache: Any,
+    hidden: mx.array,
+    inputs: mx.array,
+    span: list[tuple[int, int]],
+    step_size: int,
+    chunk_mask,
+    prefetch_next,
+    record_compute_submit,
+) -> list[mx.array]:
+    """One layer's output for the chunks of ``span``.
+
+    Attention never depends on the same layer's MoE output, so each chunk's
+    attention half runs first, in order, as in the per-chunk loop. Their MoE
+    halves then share one routed-expert call.
+    """
+    attended = []
+    for start, end in span:
+        check_cancelled()
+        chunk = hidden[:, start:end]
+        try:
+            value = layer.attend(chunk, inputs[:, start:end], chunk_mask(layer, chunk, layer_cache),
+                                 layer_cache)
+            if start == 0:
+                prefetch_next(layer_index)
+            eval_prompt_cache([layer_cache], value)
+        except GenerationCancelled:
+            raise
+        except Exception as error:
+            error.add_note(f"Qwen prefill: layer={layer_index} (0-based) "
+                           f"token_range=[{start},{end}) step_size={step_size}")
+            raise
+        attended.append(value)
+    check_cancelled()
+    try:
+        outputs = layer.feed_forward_merged(attended)
+        if callable(record_compute_submit):
+            record_compute_submit(layer_index)
+        mx.eval(*outputs)
+    except GenerationCancelled:
+        raise
+    except Exception as error:
+        error.add_note(f"Qwen prefill experts: layer={layer_index} (0-based) "
+                       f"token_range=[{span[0][0]},{span[-1][1]}) step_size={step_size}")
+        raise
+    return outputs
 
 
 def _qwen_routed_layer_major_prefill(

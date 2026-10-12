@@ -1,8 +1,8 @@
 """Qwen changes that move or compute less without changing results.
 
-Routed-expert Prefill, whole-block cache-bypassing slot reads and the cached
-RoPE frequencies must reproduce the earlier bytes exactly. Tiny synthetic
-models; no checkpoint required.
+Routed-expert Prefill, merged sorted-expert Prefill calls, whole-block
+cache-bypassing slot reads and the cached RoPE frequencies must reproduce the
+earlier bytes exactly. Tiny synthetic models; no checkpoint required.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from deepseek_v4_ssd.manifest import InstalledModel, Tensor
 from deepseek_v4_ssd.model import RuntimeConfig, _cache_arrays
 from deepseek_v4_ssd.model_manager import _parse_runtime, validate_runtime_config
 from deepseek_v4_ssd.model_support import get_support
-from deepseek_v4_ssd.model_support.qwen import _qwen_layer_major_prefill
+from deepseek_v4_ssd.model_support.qwen import _expert_spans, _qwen_layer_major_prefill
 from deepseek_v4_ssd.qwen_flash_config import add_flash_arguments, flash_arguments
 
 EXPERTS = 16
@@ -36,12 +36,12 @@ def bits(value):
     return np.asarray(value.view(mx.uint8)).copy()
 
 
-def write_experts(root: Path, layers: int, seed: int):
+def write_experts(root: Path, layers: int, seed: int, hidden: int = HIDDEN):
     """MXFP4 experts with 4-byte scale rows; the blob is not a multiple of 4 KiB."""
     mx.random.seed(seed)
-    gate, gate_scales = mx.quantize(mx.random.normal((EXPERTS, 2 * HIDDEN, HIDDEN)).astype(mx.bfloat16) * .03,
+    gate, gate_scales = mx.quantize(mx.random.normal((EXPERTS, 2 * hidden, hidden)).astype(mx.bfloat16) * .03,
                                     group_size=32, bits=4, mode="mxfp4")
-    down, down_scales = mx.quantize(mx.random.normal((EXPERTS, HIDDEN, HIDDEN)).astype(mx.bfloat16) * .03,
+    down, down_scales = mx.quantize(mx.random.normal((EXPERTS, hidden, hidden)).astype(mx.bfloat16) * .03,
                                     group_size=32, bits=4, mode="mxfp4")
     mx.eval(gate, gate_scales, down, down_scales)
     arrays = (gate, gate_scales, down, down_scales)
@@ -66,14 +66,14 @@ def write_experts(root: Path, layers: int, seed: int):
     return installed, weights
 
 
-def tiny_model(cache):
+def tiny_model(cache, hidden: int = HIDDEN):
     args = qwen.ModelArgs(
-        hidden_size=HIDDEN, num_hidden_layers=2, layer_types=("linear_attention", "full_attention"),
+        hidden_size=hidden, num_hidden_layers=2, layer_types=("linear_attention", "full_attention"),
         num_attention_heads=4, num_key_value_heads=2, head_dim=32,
         linear_num_value_heads=4, linear_num_key_heads=2, linear_key_head_dim=32,
         linear_value_head_dim=32, indexer_n_heads=2, indexer_head_dim=32, indexer_budget=4,
         indexer_compress_ratio=2, hc_count=4, hc_lowrank=16, partial_rotary_factor=0.5,
-        num_experts=EXPERTS, num_experts_per_tok=2, moe_intermediate_size=HIDDEN,
+        num_experts=EXPERTS, num_experts_per_tok=2, moe_intermediate_size=hidden,
         shared_expert_intermediate_size=64, vocab_size=64, max_position_embeddings=256,
         ple_layer_ids=(),
     )
@@ -199,6 +199,100 @@ class RoutedPrefillTests(unittest.TestCase):
         with patch("deepseek_v4_ssd.model_support.qwen._qwen_layer_major_prefill") as prefill:
             get_support("qwen3.8-flash-next").prefill(None, [1], [], 1, None, config)
         self.assertEqual(prefill.call_args.kwargs["routed_max_tokens"], 128)
+        # Same output, so cached prompts stay compatible.
+        installed = SimpleNamespace(root="/missing", revision="r", model_id="m")
+        self.assertEqual(_prompt_cache_contract(installed, config),
+                         _prompt_cache_contract(installed, RuntimeConfig()))
+
+
+class MergedExpertPrefillTests(unittest.TestCase):
+    # Two experts per token over 16 experts: chunks of 32+ tokens take MLX's
+    # sorted kernel alone, as 1024-token chunks do with 10 of 512 experts.
+    TOKENS = [(index * 7 + 3) % 64 for index in range(5 * 32 + 10)]
+    # From this width the per-row and sorted expert kernels round differently;
+    # at 128 they happen to agree. A layer's residual absorbs that difference,
+    # so only the MoE block's own output shows it.
+    WIDTH = 1024
+
+    def test_merged_block_matches_each_chunk_from_the_sorted_kernel_threshold(self):
+        with tempfile.TemporaryDirectory() as directory:
+            installed, _ = write_experts(Path(directory), layers=2, seed=15, hidden=self.WIDTH)
+            with ExpertCache(installed, slots=EXPERTS, read_workers=2) as cache:
+                moe = tiny_model(cache, self.WIDTH).layers[0].mlp
+                moe.experts.grouped_prefill = moe.experts.sorted_prefill = True
+                mx.random.seed(16)
+                # 32 tokens: exactly four rows per expert.
+                values = [mx.random.normal((1, tokens, self.WIDTH)).astype(mx.bfloat16)
+                          for tokens in (32, 32, 40)]
+                with cache.reuse_layer_buffers(), cache.batched_layer(0):
+                    separate = [bits(moe(value)) for value in values]
+                    merged = [bits(value) for value in moe.merged(values)]
+        for got, want in zip(merged, separate):
+            np.testing.assert_array_equal(got, want)
+
+    def run_prefill(self, installed, moe_step_size, sorted_prefill=True):
+        with ExpertCache(installed, slots=EXPERTS, read_workers=2) as cache:
+            model = tiny_model(cache, self.WIDTH)
+            for layer in model.layers:
+                layer.mlp.experts.grouped_prefill = True
+                layer.mlp.experts.sorted_prefill = sorted_prefill
+            prompt_cache = model.make_cache()
+            hidden = _qwen_layer_major_prefill(model, self.TOKENS, prompt_cache, 32, cache,
+                                               next_layer_prefetch=True, moe_step_size=moe_step_size)
+            state = [bits(array) for array in _cache_arrays(prompt_cache)]
+            return bits(hidden), state, cache.metrics.gather_qmm_calls
+
+    def test_prefill_merges_whole_chunks_with_the_same_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            installed, _ = write_experts(Path(directory), layers=2, seed=15, hidden=self.WIDTH)
+            per_chunk = self.run_prefill(installed, 32)
+            # Six chunks per layer, two expert products each.
+            self.assertEqual(per_chunk[2], 2 * 6 * 2)
+            # 64: four calls per layer. 0 (the whole 170-token prompt): the five
+            # 32-token chunks share one call; the 10-token tail stays alone.
+            for moe_step_size, calls in ((64, 4), (0, 2)):
+                with self.subTest(moe_step_size=moe_step_size):
+                    merged = self.run_prefill(installed, moe_step_size)
+                    np.testing.assert_array_equal(merged[0], per_chunk[0])
+                    self.assertEqual(len(merged[1]), len(per_chunk[1]))
+                    for got, want in zip(merged[1], per_chunk[1]):
+                        np.testing.assert_array_equal(got, want)
+                    self.assertEqual(merged[2], 2 * calls * 2)
+            # Without the sorted kernel a longer call gains nothing; chunks stay apart.
+            self.assertEqual(self.run_prefill(installed, 0, sorted_prefill=False)[2], 2 * 6 * 2)
+
+    def test_only_sorted_chunks_that_take_the_sorted_kernel_alone_join(self):
+        # Qwen: 10 of 512 experts, so 205 tokens average four rows per expert.
+        experts = qwen.StreamingExperts(0, SimpleNamespace(
+            model=SimpleNamespace(selected_expert_count=10, expert_count=512)))
+        experts.grouped_prefill = experts.sorted_prefill = True
+        self.assertFalse(experts.shares_expert_call(204))
+        self.assertTrue(experts.shares_expert_call(205))
+        for flag in ("grouped_prefill", "sorted_prefill"):
+            with self.subTest(flag=flag):
+                setattr(experts, flag, False)
+                self.assertFalse(experts.shares_expert_call(1024))
+                setattr(experts, flag, True)
+
+    def test_spans_hold_whole_joining_chunks_up_to_the_limit(self):
+        joins = lambda tokens: tokens >= 205
+        self.assertEqual(_expert_spans(5000, 1024, 4096, joins),
+                         [[(0, 1024), (1024, 2048), (2048, 3072), (3072, 4096)], [(4096, 5000)]])
+        self.assertEqual(_expert_spans(3000, 1024, 3000, joins),
+                         [[(0, 1024), (1024, 2048), (2048, 3000)]])
+        # A tail too short for the sorted kernel stays alone even within the limit.
+        self.assertEqual(_expert_spans(2248, 1024, 4096, joins),
+                         [[(0, 1024), (1024, 2048)], [(2048, 2248)]])
+        # Smaller limits than a chunk, short chunks and no joins keep every chunk alone.
+        for spans in (_expert_spans(3000, 1024, 512, joins), _expert_spans(3000, 1024, 4096, None),
+                      _expert_spans(600, 128, 4096, joins)):
+            self.assertTrue(all(len(span) == 1 for span in spans))
+
+    def test_qwen_passes_the_moe_step_and_keeps_the_prompt_cache_contract(self):
+        config = RuntimeConfig(moe_prefill_step_size=8192)
+        with patch("deepseek_v4_ssd.model_support.qwen._qwen_layer_major_prefill") as prefill:
+            get_support("qwen3.8-flash-next").prefill(None, [1], [], 1, None, config)
+        self.assertEqual(prefill.call_args.kwargs["moe_step_size"], 8192)
         # Same output, so cached prompts stay compatible.
         installed = SimpleNamespace(root="/missing", revision="r", model_id="m")
         self.assertEqual(_prompt_cache_contract(installed, config),

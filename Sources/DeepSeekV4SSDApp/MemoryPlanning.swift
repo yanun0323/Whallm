@@ -205,9 +205,11 @@ struct MemoryPlanningProfile {
     let threshold = qwen ? 128 : s.layerMajorPrefillThreshold ?? 1_024
     let layerMajor = s.layerMajorPrefill && (!dspark || v41) && input >= threshold
     let batched = layerMajor && s.batchedExpertPrefill == true && !flashWaves
+    let moeTokens = min(Double(input), Double((s.moePrefillStepSize ?? 0) == 0 ? 4_096 : s.moePrefillStepSize!))
+    // Qwen's sorted whole-layer prefill runs one expert call for whole Prefill chunks, up to moeTokens.
     let moeStep = v41 && layerMajor ? min(Double(input), 4_096)
-      : !qwen && layerMajor
-        ? min(Double(input), Double((s.moePrefillStepSize ?? 0) == 0 ? 4_096 : s.moePrefillStepSize!)) : step
+      : !qwen && layerMajor ? moeTokens
+      : qwen && batched && s.effectiveQwenSortedExpertPrefill ? max(step, moeTokens) : step
     guard let cache = cacheFootprint(s, tokens: tokens, step: step, layerMajor: layerMajor,
       dim: dim, hidden: hidden, window: window, indexDim: indexDim) else { return nil }
 

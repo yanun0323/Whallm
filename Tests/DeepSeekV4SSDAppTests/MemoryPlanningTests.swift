@@ -600,6 +600,23 @@ final class MemoryPlanningTests: XCTestCase {
     XCTAssertNil(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
   }
 
+  func testQwenSortedPrefillCountsExpertWorkForMergedChunks() throws {
+    let p = try profile()
+    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    s.mtpEnabled = false
+    func temporary(_ tokens: Int) throws -> Double {
+      try XCTUnwrap(p.requestEstimate(s, mtpAvailable: false, dsparkAvailable: false,
+        contextTokens: tokens)).prefill.temporary
+    }
+    let merged = (try temporary(16_384), try temporary(1_024))
+    s.qwenSortedExpertPrefill = false
+    let perChunk = (try temporary(16_384), try temporary(1_024))
+    // One expert call covers 4,096 tokens instead of one 1,024-token chunk:
+    // 10 experts x (2,560 + 2 x 640) BF16 values plus FP32 mixing per token.
+    XCTAssertEqual(merged.0 - perChunk.0, 3_072 * (10 * 3_840 * 2 + 2_560 * 4 * 4 * 2), accuracy: 1)
+    XCTAssertEqual(merged.1, perChunk.1)
+  }
+
   func testStreamingStagingAndSeedEstimatesAreSeparateFromDecodeCapacity() throws {
     let p = try profile()
     var settings = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)

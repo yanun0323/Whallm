@@ -783,6 +783,12 @@ def _qmm(value: mx.array, weight: mx.array, scales: mx.array) -> mx.array:
 
 # MTP verifies at most six rows; larger calls keep one whole-union acquisition.
 READY_VERIFICATION_ROWS = 16
+# Whole-layer Prefill groups token/expert rows by expert from this many rows.
+GROUPED_PREFILL_ROWS = 64
+# MLX 0.32.2 runs expert-sorted rows through its segmented kernel only when they
+# average at least four per expert (GatherQMM::eval_gpu). Fewer rows take a
+# per-row kernel that rounds differently.
+SORTED_KERNEL_ROWS_PER_EXPERT = 4
 
 
 class StreamingExperts(nn.Module):
@@ -854,7 +860,7 @@ class StreamingExperts(nn.Module):
             if getattr(self.cache, "route_cache_enabled", False):
                 self.cache.observe_batched_routes(self.layer, np.asarray(indices, dtype=np.int32))
             source = mx.expand_dims(value, (-2, -3))
-            grouped = self.grouped_prefill and indices.size >= 64
+            grouped = self.grouped_prefill and indices.size >= GROUPED_PREFILL_ROWS
             selected = indices
             if grouped:
                 source, selected, inverse = _gather_sort(source, indices)
@@ -894,6 +900,17 @@ class StreamingExperts(nn.Module):
         if record_sync is not None:
             record_sync(time.perf_counter() - sync_started)
         return self._routed(value, selected)
+
+    def shares_expert_call(self, tokens: int) -> bool:
+        """Whether a whole-layer Prefill chunk of ``tokens`` may join a longer expert call.
+
+        The sorted kernel computes each row the same way in a call of any length,
+        and a longer call leaves fewer partly filled row tiles per expert. A chunk
+        too short for that kernel would take another one alone, so it stays alone.
+        """
+        rows = tokens * self.cache.model.selected_expert_count
+        return (self.grouped_prefill and self.sorted_prefill and rows >= GROUPED_PREFILL_ROWS
+                and rows >= SORTED_KERNEL_ROWS_PER_EXPERT * self.cache.model.expert_count)
 
     def _routed(self, value: mx.array, selected: np.ndarray) -> mx.array:
         """Consume already materialized routes without a second GPU-to-host wait."""
@@ -995,6 +1012,28 @@ class SparseMoE(nn.Module):
 
     def __call__(self, value: mx.array, routes: tuple[mx.array, mx.array] | None = None) -> mx.array:
         """``routes`` is ``self.route(value)`` when the caller already computed it."""
+        indices, scores, shared = self._gates(value, routes)
+        return self._combine(self.experts(value, indices), scores, shared)
+
+    def merged(self, values: list[mx.array]) -> list[mx.array]:
+        """Apply this block to each value, with one routed-expert call for all of them.
+
+        The router, shared expert and score sum still run on each value alone:
+        their BF16 products round differently for another number of rows.
+        """
+        gates = [self._gates(value) for value in values]
+        routed = self.experts(mx.concatenate(values, axis=1),
+                              mx.concatenate([indices for indices, _, _ in gates], axis=1))
+        outputs, start = [], 0
+        for value, (_, scores, shared) in zip(values, gates):
+            end = start + value.shape[1]
+            outputs.append(self._combine(routed[:, start:end], scores, shared))
+            start = end
+        return outputs
+
+    def _gates(
+        self, value: mx.array, routes: tuple[mx.array, mx.array] | None = None
+    ) -> tuple[mx.array, mx.array, mx.array]:
         probabilities, indices = self.route(value) if routes is None else routes
         scores = mx.take_along_axis(probabilities, indices, axis=-1)
         if self.norm_topk_prob:
@@ -1002,7 +1041,10 @@ class SparseMoE(nn.Module):
         if getattr(self.cache, "route_trace_enabled", False):
             self.cache.record_routes(self.layer, np.asarray(indices, dtype=np.int32))
         shared = mx.sigmoid(self.shared_expert_gate(value)) * self.shared_expert(value)
-        routed = self.experts(value, indices)
+        return indices, scores, shared
+
+    @staticmethod
+    def _combine(routed: mx.array, scores: mx.array, shared: mx.array) -> mx.array:
         routed = (routed * scores[..., None].astype(routed.dtype)).sum(axis=-2)
         return routed + shared
 
@@ -1103,6 +1145,13 @@ class DecoderLayer(nn.Module):
         if prefill_boundary is not None:
             prefill_boundary("layer_output", result)
         return self.mlp_hyper_connection.inject(residual, result, injection)
+
+    def feed_forward_merged(self, hiddens: list[mx.array]) -> list[mx.array]:
+        """``feed_forward`` of each hidden, with one routed-expert call for all of them."""
+        mixed = [self.mlp_hyper_connection(hidden) for hidden in hiddens]
+        results = self.mlp.merged([value for value, _, _ in mixed])
+        return [self.mlp_hyper_connection.inject(residual, result, injection)
+                for (_, residual, injection), result in zip(mixed, results)]
 
     def prepare_feed_forward(self, hidden: mx.array) -> tuple:
         """Mixer outputs and router results that ``feed_forward`` computes for this input.
