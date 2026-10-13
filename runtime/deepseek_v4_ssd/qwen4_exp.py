@@ -746,7 +746,9 @@ class QSAAttention(nn.Module):
         """
         from .qwen_qsa_selected import selected_block_attention
         ratio = self.args.indexer_compress_ratio
-        # Bound the FP32 index scores near 64 MiB per chunk.
+        # FP32 index scores take about 64 MiB per index head per chunk. Quarter-size
+        # chunks gave the same output but a higher MLX peak and ~13% more time at
+        # 64K-126K keys (M2 Max, 2026-10-13).
         chunk = max(MASKED_PREFILL_MIN_QUERIES, (64 << 20) // (pooled.shape[1] * 4))
         outputs = []
         for start in range(0, query.shape[2], chunk):
