@@ -213,11 +213,14 @@ def _masked_prefill_off_enabled() -> bool:
 
 def masked_prefill_override(config):
     """Diagnostic only: run QSA Prefill on the gathered path despite App tuning."""
-    if not getattr(config, "qwen_qsa_masked_prefill", False) or not _masked_prefill_off_enabled():
+    # Without masked prefill the selected-block kernel serves every chunk past the
+    # indexer budget, so it goes too.
+    if not _masked_prefill_off_enabled() or not (getattr(config, "qwen_qsa_masked_prefill", False)
+                                                 or getattr(config, "qwen_qsa_selected_kernel", False)):
         return config
-    print("[DEBUG-qwen-qsa-masked-off] masked QSA prefill disabled for this runtime",
-          file=sys.stderr, flush=True)
-    return replace(config, qwen_qsa_masked_prefill=False)
+    print("[DEBUG-qwen-qsa-masked-off] masked QSA prefill and the selected-block kernel "
+          "disabled for this runtime", file=sys.stderr, flush=True)
+    return replace(config, qwen_qsa_masked_prefill=False, qwen_qsa_selected_kernel=False)
 
 
 class _PrefillSync:

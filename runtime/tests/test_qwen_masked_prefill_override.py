@@ -38,24 +38,30 @@ class MaskedPrefillOverrideTests(unittest.TestCase):
         return runtime, loaded[0], log.getvalue()
 
     def test_override_reaches_model_load_runtime_config_and_cache_contract(self):
-        config = RuntimeConfig(qwen_qsa_masked_prefill=True, persistent_prompt_cache=False)
+        # The App turns both on for Qwen.
+        config = RuntimeConfig(qwen_qsa_masked_prefill=True, qwen_qsa_selected_kernel=True,
+                               persistent_prompt_cache=False)
         runtime, loaded, log = self.open_runtime(config, WHALLM_QWEN_QSA_MASKED_PREFILL_OFF='1')
-        self.assertFalse(loaded.qwen_qsa_masked_prefill)
-        self.assertFalse(runtime.config.qwen_qsa_masked_prefill)
-        self.assertTrue(config.qwen_qsa_masked_prefill)  # Caller's settings object is unchanged.
+        for value in (loaded, runtime.config):
+            self.assertFalse(value.qwen_qsa_masked_prefill)
+            self.assertFalse(value.qwen_qsa_selected_kernel)
+        # Caller's settings object is unchanged.
+        self.assertTrue(config.qwen_qsa_masked_prefill and config.qwen_qsa_selected_kernel)
         installed = SimpleNamespace(model_id='m', revision='r', format_version=1, model_kind='qwen')
         self.assertEqual(_prompt_cache_contract(installed, runtime.config),
                          _prompt_cache_contract(installed, RuntimeConfig(persistent_prompt_cache=False)))
         self.assertEqual(log.count('[DEBUG-qwen-qsa-masked-off]'), 1)
 
     def test_default_and_explicit_zero_keep_the_configured_path(self):
-        config = RuntimeConfig(qwen_qsa_masked_prefill=True, persistent_prompt_cache=False)
+        config = RuntimeConfig(qwen_qsa_masked_prefill=True, qwen_qsa_selected_kernel=True,
+                               persistent_prompt_cache=False)
         for environment in ({}, {'WHALLM_QWEN_QSA_MASKED_PREFILL_OFF': '0'},
                             {'WHALLM_QWEN_QSA_MASKED_PREFILL_OFF': 'yes'}):
             with self.subTest(environment=environment):
                 runtime, loaded, log = self.open_runtime(config, **environment)
                 self.assertTrue(loaded.qwen_qsa_masked_prefill)
                 self.assertTrue(runtime.config.qwen_qsa_masked_prefill)
+                self.assertTrue(runtime.config.qwen_qsa_selected_kernel)
                 self.assertEqual(log, '')
 
     def test_marker_enables_and_zero_overrides_marker(self):
@@ -70,12 +76,16 @@ class MaskedPrefillOverrideTests(unittest.TestCase):
                 os.environ['WHALLM_QWEN_QSA_MASKED_PREFILL_OFF'] = '0'
                 self.assertFalse(qwen._masked_prefill_off_enabled())
 
-    def test_configs_without_masked_prefill_are_returned_unchanged(self):
+    def test_override_needs_masked_prefill_or_the_selected_kernel(self):
         config = RuntimeConfig(qwen_qsa_masked_prefill=False)
-        with patch.dict(os.environ, {'WHALLM_QWEN_QSA_MASKED_PREFILL_OFF': '1'}), \
-                redirect_stderr(io.StringIO()) as log:
-            self.assertIs(qwen.masked_prefill_override(config), config)
-        self.assertEqual(log.getvalue(), '')
+        with patch.dict(os.environ, {'WHALLM_QWEN_QSA_MASKED_PREFILL_OFF': '1'}):
+            with redirect_stderr(io.StringIO()) as log:
+                self.assertIs(qwen.masked_prefill_override(config), config)
+            self.assertEqual(log.getvalue(), '')
+            # A CLI run can turn on the kernel alone.
+            with redirect_stderr(io.StringIO()):
+                changed = qwen.masked_prefill_override(RuntimeConfig(qwen_qsa_selected_kernel=True))
+            self.assertFalse(changed.qwen_qsa_selected_kernel)
 
 
 if __name__ == '__main__':
