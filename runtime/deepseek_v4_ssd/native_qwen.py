@@ -23,7 +23,9 @@ from transformers import AutoTokenizer
 
 from .cancellation import GenerationCancelled, check_cancelled
 from .expert_cache import CacheMetrics
-from .generation import ChatInterface, GeneratedPiece, GenerationOptions, RuntimeMetrics
+from .generation import (
+    ChatInterface, GeneratedPiece, GenerationOptions, RuntimeMetrics, fit_context_window,
+)
 from .manifest import InstalledModel
 from .media import MediaRequest
 from .model import RuntimeConfig
@@ -507,11 +509,8 @@ class NativeQwenRuntime(ChatInterface):
                 tokens = list(prompt) if isinstance(prompt, list) else self._encode_prompt(prompt)
             if not tokens:
                 raise ValueError("the prompt has no tokens")
-            available = getattr(self.installed, "maximum_context", 262_144) - len(tokens)
-            if available < 1:
-                raise ValueError("prompt exceeds the checkpoint context limit")
-            if options.max_tokens > available:
-                options = replace(options, max_tokens=available)
+            options = fit_context_window(
+                len(tokens), options, getattr(self.installed, "maximum_context", 262_144))
             reused = 0 if images is not None else self._continue_from_cache(tokens)
             if images is not None:
                 self.engine.reset()

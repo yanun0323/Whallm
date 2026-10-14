@@ -87,7 +87,8 @@ class ModelSupportTests(unittest.TestCase):
             path = Path(directory) / "catalog.json"
             for key, value in (("kind", raw["models"][0]["kind"]),
                                ("apiModelID", raw["models"][0]["apiModelID"]),
-                               ("directoryName", "../escape")):
+                               ("directoryName", "../escape"),
+                               ("maximumContext", 0)):
                 invalid = json.loads(json.dumps(raw))
                 invalid["models"][1][key] = value
                 path.write_text(json.dumps(invalid))

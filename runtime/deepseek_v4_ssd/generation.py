@@ -123,6 +123,28 @@ class GenerationOptions:
     repetition_penalty: float = 1.0
     approximation_mode: str = EXACT_APPROXIMATION_MODE
     seed: int | None = None
+    # Input plus output token limit; None uses the model's maximum context.
+    context_window: int | None = None
+
+
+class ContextWindowExceeded(ValueError):
+    """The prompt leaves no room for output in the context window."""
+
+
+def fit_context_window(
+    prompt_tokens: int, options: GenerationOptions, maximum_context: int,
+) -> GenerationOptions:
+    """Reject a prompt that fills the window and shorten output to the space left."""
+    limit = min(options.context_window or maximum_context, maximum_context)
+    available = limit - prompt_tokens
+    if available < 1:
+        raise ContextWindowExceeded(
+            f"The prompt has {prompt_tokens} tokens. The context window allows {limit} tokens "
+            "including at least 1 output token."
+        )
+    if options.max_tokens > available:
+        return replace(options, max_tokens=available)
+    return options
 
 
 @dataclass(frozen=True)
@@ -1399,13 +1421,10 @@ class ModelRuntime(ChatInterface):
                 mx.random.seed(options.seed if options.seed is not None else secrets.randbits(32))
                 prompt_tokens = list(prepared.token_ids) if has_media else (
                     list(prompt) if isinstance(prompt, list) else self._encode_prompt(prompt))
-                available_tokens = getattr(
-                    self.installed, "maximum_context", 1_048_576
-                ) - len(prompt_tokens)
-                if available_tokens < 1:
-                    raise ValueError("prompt exceeds the checkpoint context limit")
-                if options.max_tokens > available_tokens:
-                    options = replace(options, max_tokens=available_tokens)
+                options = fit_context_window(
+                    len(prompt_tokens), options,
+                    getattr(self.installed, "maximum_context", 1_048_576),
+                )
                 dspark = getattr(self.model, "dspark", None)
                 mtp = getattr(self.model, "mtp", None)
                 for cache in (self.expert_cache, getattr(dspark, "expert_cache", None),

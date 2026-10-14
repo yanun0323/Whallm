@@ -42,6 +42,7 @@
         "topP": 0.98,
         "topK": 0
       },
+      "maximumContext": 1048576,
       "automaticMemoryGiB": 0,
       "prefillThreshold": null
     },
@@ -90,6 +91,7 @@
         "topP": 0.98,
         "topK": 0
       },
+      "maximumContext": 1048576,
       "automaticMemoryGiB": 0,
       "prefillThreshold": null
     },
@@ -136,6 +138,7 @@
         "topP": 0.8,
         "topK": 20
       },
+      "maximumContext": 262144,
       "automaticMemoryGiB": 48,
       "prefillThreshold": 128
     },
@@ -168,6 +171,7 @@
         "topP": 0.95,
         "topK": 0
       },
+      "maximumContext": 1048576,
       "automaticMemoryGiB": 40,
       "prefillThreshold": null
     },
@@ -201,6 +205,7 @@
         "topP": 0.8,
         "topK": 20
       },
+      "maximumContext": 262144,
       "automaticMemoryGiB": 48,
       "prefillThreshold": 128
     },
@@ -230,6 +235,7 @@
         "topP": 0.8,
         "topK": 20
       },
+      "maximumContext": 262144,
       "automaticMemoryGiB": 48,
       "prefillThreshold": 128
     },
@@ -258,6 +264,7 @@
         "topP": 0.8,
         "topK": 20
       },
+      "maximumContext": 262144,
       "automaticMemoryGiB": 48,
       "prefillThreshold": 128
     }

@@ -25,6 +25,8 @@ public struct ModelPackageDescriptor: Decodable, Sendable {
   public let features: Set<String>
   public let editableSettings: Set<String>
   public let defaults: Defaults
+  /// Largest input plus output token count the model accepts.
+  public let maximumContext: Int
   public let automaticMemoryGiB: Int
   public let prefillThreshold: Int?
 
@@ -57,7 +59,7 @@ public enum ModelPackages {
     else { throw RepackError.invalidPlan("invalid model package catalog") }
     for model in models {
       guard !model.kind.isEmpty, !model.apiModelID.isEmpty,
-        model.manifestVersion > 0, model.automaticMemoryGiB >= 0,
+        model.manifestVersion > 0, model.automaticMemoryGiB >= 0, model.maximumContext > 0,
         model.prefillThreshold.map({ $0 > 0 }) ?? true,
         model.checkpointRevision.range(of: "^[0-9a-f]{40}$", options: .regularExpression) != nil,
         model.defaults.slots >= 6, model.defaults.promptCacheEntries >= 1,

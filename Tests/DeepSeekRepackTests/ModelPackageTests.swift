@@ -53,7 +53,10 @@ final class ModelPackageTests: XCTestCase {
     var catalog = original
     catalog["models"] = models
     XCTAssertEqual(try ModelPackages.decodeDescriptors(JSONSerialization.data(withJSONObject: catalog)).count, models.count)
-    for (field, value) in [("kind", "deepseek-v4"), ("directoryName", "../outside")] {
+    let invalidFields: [(String, Any)] = [
+      ("kind", "deepseek-v4"), ("directoryName", "../outside"), ("maximumContext", 0),
+    ]
+    for (field, value) in invalidFields {
       var invalid = models
       invalid[invalid.count - 1][field] = value
       catalog["models"] = invalid

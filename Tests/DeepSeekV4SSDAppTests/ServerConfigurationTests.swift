@@ -168,6 +168,36 @@ final class ServerConfigurationTests: XCTestCase {
     }
   }
 
+  func testContextWindowDefaultsToTheModelMaximumAndIsValidated() throws {
+    let isolated = try isolatedDefaults()
+    defer { isolated.defaults.removePersistentDomain(forName: isolated.suite) }
+    XCTAssertEqual(ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext).contextWindow, 262_144)
+    XCTAssertEqual(ModelAdvancedSettings.defaults(for: .deepSeekV4).contextWindow, 1_048_576)
+
+    // Settings saved before this option use the model maximum.
+    let encoded = try JSONEncoder().encode(ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext))
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    object.removeValue(forKey: "contextWindow")
+    isolated.defaults.set(
+      try JSONSerialization.data(withJSONObject: object),
+      forKey: "modelAdvancedSettings.qwen3.8-flash-next")
+    XCTAssertEqual(
+      ModelAdvancedSettings.loadOrDefault(for: .qwen3_8FlashNext, defaults: isolated.defaults)
+        .contextWindow, 262_144)
+
+    var settings = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
+    settings.contextWindow = 8_192
+    XCTAssertNoThrow(try settings.validate(for: .qwen3_8FlashNext))
+    for invalid in [8_191, 262_145] {
+      settings.contextWindow = invalid
+      XCTAssertThrowsError(try settings.validate(for: .qwen3_8FlashNext))
+    }
+    // Max tokens above the model maximum must fail validation, not crash.
+    settings.contextWindow = 262_144
+    settings.defaultMaxTokens = 272_000
+    XCTAssertThrowsError(try settings.validate(for: .qwen3_8FlashNext))
+  }
+
   @MainActor
   func testSSDSettingsDefaultsMigrateAndPreserveExplicitChoices() throws {
     let isolated = try isolatedDefaults()
@@ -714,6 +744,7 @@ final class ServerConfigurationTests: XCTestCase {
     qwen.mtpEnabled = true
     qwen.mtpSlots = 512
     qwen.anePrefillRatio = 0.5
+    qwen.contextWindow = 32_768
     let catalog = try ModelLibrary.makeServerCatalog(
       models: [
         installedModel(
@@ -753,11 +784,15 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertEqual(catalog.models[2].defaults.temperature, 0.7)
     XCTAssertEqual(catalog.models[2].defaults.topP, 0.8)
     XCTAssertEqual(catalog.models[2].defaults.topK, 20)
+    XCTAssertEqual(catalog.models[0].defaults.contextWindow, 1_048_576)
+    XCTAssertEqual(catalog.models[2].defaults.contextWindow, 32_768)
     XCTAssertEqual(catalog.availableModels[0].requestName, "work-model")
 
     let object = try XCTUnwrap(
       JSONSerialization.jsonObject(with: catalog.encoded()) as? [String: Any])
     let models = try XCTUnwrap(object["models"] as? [[String: Any]])
+    let defaults = try XCTUnwrap(models[2]["defaults"] as? [String: Any])
+    XCTAssertEqual(defaults["context_window"] as? Int, 32_768)
     let runtime = try XCTUnwrap(models[0]["runtime"] as? [String: Any])
     XCTAssertEqual(
       Set(runtime.keys),

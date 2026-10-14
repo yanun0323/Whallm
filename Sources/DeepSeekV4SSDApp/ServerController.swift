@@ -292,6 +292,8 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var dsparkSlots = 768
   var dsparkConfidenceThreshold = 0.6
   var defaultMaxTokens = 8_192
+  /// Input plus output token limit; nil in settings saved before this option.
+  var contextWindow: Int?
   var defaultTemperature = 0.2
   var defaultTopP = 0.98
   var defaultTopK = 0
@@ -327,6 +329,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.promptCacheEntries = descriptor.defaults.promptCacheEntries
     settings.bf16KVCache = descriptor.defaults.bf16KVCache
     settings.defaultMaxTokens = descriptor.defaults.maxTokens
+    settings.contextWindow = descriptor.maximumContext
     settings.defaultTemperature = descriptor.defaults.temperature
     settings.defaultTopP = descriptor.defaults.topP
     settings.defaultTopK = descriptor.defaults.topK
@@ -385,6 +388,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.approximationEnabled = descriptor.supports("approximation")
       && (settings.approximationEnabled ?? false)
     settings.qwenAdaptiveSampling = settings.qwenAdaptiveSampling ?? true
+    settings.contextWindow = settings.contextWindow ?? descriptor.maximumContext
     settings.recentExpertCache = settings.recentExpertCache ?? true
     settings.layerMajorPrefillThreshold = settings.layerMajorPrefillThreshold ?? 1_024
     settings.anePrefillRatio = settings.anePrefillRatio ?? 0
@@ -542,6 +546,12 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
       (0...248_320).contains(defaultTopK)
     else {
       throw ConfigurationError(L10n.string("Correct the default generation parameters."))
+    }
+    let maximumContext = modelKind.descriptor.maximumContext
+    let window = contextWindow ?? maximumContext
+    guard defaultMaxTokens <= window, window <= maximumContext else {
+      throw ConfigurationError(L10n.string(
+        "Context window must be at least Max tokens and at most %@.", String(maximumContext)))
     }
     if !warmupPromptPath.isEmpty,
       !FileManager.default.isReadableFile(atPath: warmupPromptPath)
@@ -1034,9 +1044,11 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       let topK: Int
       let approximationMode: String?
       let qwenAdaptiveSampling: Bool?
+      var contextWindow: Int? = nil
 
       enum CodingKeys: String, CodingKey {
         case maxTokens = "max_tokens"
+        case contextWindow = "context_window"
         case temperature
         case topP = "top_p"
         case topK = "top_k"

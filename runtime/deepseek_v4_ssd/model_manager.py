@@ -51,6 +51,8 @@ class ModelDefaults:
     top_k: int
     approximation_mode: str = "exact"
     qwen_adaptive_sampling: bool = True
+    # None uses the model's maximum context.
+    context_window: int | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,11 @@ class ModelSpec:
     @property
     def owner(self) -> str:
         return MODEL_OWNERS[self.model_kind]
+
+    @property
+    def context_window(self) -> int:
+        maximum = get_support(self.model_kind).descriptor.maximum_context
+        return min(self.defaults.context_window or maximum, maximum)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -183,6 +190,11 @@ def _parse_model(value: Any, index: int) -> ModelSpec:
     except ValueError as error:
         raise ModelCatalogError(str(error)) from error
     defaults = _parse_defaults(value["defaults"], f"{prefix}.defaults")
+    maximum_context = get_support(model_kind).descriptor.maximum_context
+    if defaults.context_window is not None and defaults.context_window > maximum_context:
+        raise ModelCatalogError(
+            f"{prefix}.defaults.context_window must be between 1 and {maximum_context}"
+        )
     if defaults.approximation_mode != "exact" and not get_support(model_kind).descriptor.supports("approximation"):
         raise ModelCatalogError(f"{prefix}.defaults.approximation_mode is not supported by this model")
     return ModelSpec(
@@ -336,7 +348,7 @@ def validate_runtime_config(config: RuntimeConfig) -> None:
 
 def _parse_defaults(value: Any, prefix: str) -> ModelDefaults:
     required = {"max_tokens", "temperature", "top_p", "top_k"}
-    optional = {"approximation_mode", "qwen_adaptive_sampling"}
+    optional = {"approximation_mode", "qwen_adaptive_sampling", "context_window"}
     if not isinstance(value, dict) or not required <= set(value) <= required | optional:
         raise ModelCatalogError(f"{prefix} has invalid fields")
     approximation = value.get("approximation_mode", "exact")
@@ -345,6 +357,9 @@ def _parse_defaults(value: Any, prefix: str) -> ModelDefaults:
     adaptive = value.get("qwen_adaptive_sampling", True)
     if type(adaptive) is not bool:
         raise ModelCatalogError(f"{prefix}.qwen_adaptive_sampling must be a boolean")
+    context_window = value.get("context_window")
+    if context_window is not None and (type(context_window) is not int or context_window < 1):
+        raise ModelCatalogError(f"{prefix}.context_window must be a positive integer")
     max_tokens = value["max_tokens"]
     temperature = value["temperature"]
     top_p = value["top_p"]
@@ -367,7 +382,9 @@ def _parse_defaults(value: Any, prefix: str) -> ModelDefaults:
         0 <= top_k <= 248_320
     ):
         raise ModelCatalogError(f"{prefix}.top_k must be between 0 and 248320")
-    return ModelDefaults(max_tokens, float(temperature), float(top_p), top_k, approximation, adaptive)
+    return ModelDefaults(
+        max_tokens, float(temperature), float(top_p), top_k, approximation, adaptive, context_window,
+    )
 
 
 def _zero_runtime_metrics() -> dict[str, Any]:
@@ -427,53 +444,19 @@ class ModelManager:
     def models(self) -> list[dict[str, Any]]:
         result = []
         for spec in self._models:
+            support = get_support(spec.model_kind)
             for name in (spec.id, spec.alias):
                 if name is None or (name == spec.id and result and result[-1]["id"] == name):
                     continue
                 result.append(
                     {
                         "id": name,
-                        "object": "model",
-                        "created": 0,
-                        "owned_by": spec.owner,
-                    }
-                )
-        return result
-
-    def codex_models(self) -> list[dict[str, Any]]:
-        result = []
-        for spec in self._models:
-            for name in (spec.id, spec.alias):
-                if name is None or (name == spec.id and result and result[-1]["slug"] == name):
-                    continue
-                result.append(
-                    {
-                        "slug": name,
-                        "display_name": name,
-                        "description": f"Local {spec.owner} model served by Whallm.",
-                        "default_reasoning_level": None,
-                        "supported_reasoning_levels": [],
-                        "shell_type": "unified_exec",
-                        "visibility": "none",
-                        "supported_in_api": True,
-                        "priority": 99,
-                        "availability_nux": None,
-                        "upgrade": None,
-                        "include_apps_usage_instructions": False,
-                        "support_verbosity": False,
-                        "default_verbosity": None,
-                        "apply_patch_tool_type": None,
-                        "truncation_policy": {"mode": "bytes", "limit": 10_000},
-                        "context_window": spec.defaults.max_tokens,
-                        "max_context_window": spec.defaults.max_tokens,
-                        "experimental_supported_tools": [],
-                        "input_modalities": ["text"],
-                        "base_instructions": (
-                            "You are a coding agent running in Codex CLI. Follow the "
-                            "developer and user instructions, use the available tools to "
-                            "inspect and modify the workspace, and continue until the "
-                            "request is complete."
-                        ),
+                        "display_name": support.descriptor.display_name,
+                        "context_window": spec.context_window,
+                        "images": support.descriptor.supports("imageInput"),
+                        "thinking": list(support.thinking_levels),
+                        # Requests without a reasoning effort or thinking mode do not think.
+                        "default_thinking": "none",
                     }
                 )
         return result

@@ -15,6 +15,8 @@ class ModelSupport:
     # True when DSpark requests reuse prompt snapshots of the target cache and
     # draft context without the experimental dspark_prompt_cache option.
     dspark_reuses_prompt_cache = False
+    # Request reasoning efforts that behave differently; see reasoning_settings.
+    thinking_levels = ("none", "low", "high", "max")
 
     def __init__(self, descriptor: ModelDescriptor):
         self.descriptor = descriptor

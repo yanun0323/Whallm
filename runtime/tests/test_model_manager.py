@@ -178,7 +178,34 @@ class ModelCatalogTests(unittest.TestCase):
                 "chat-model",
             ],
         )
-        self.assertEqual(manager.models()[0]["owned_by"], manager.models()[1]["owned_by"])
+        self.assertEqual(manager.models()[0], {
+            "id": "deepseek-v4-flash-0731",
+            "display_name": "DeepSeek-V4-Flash-0731",
+            "context_window": 1_048_576,
+            "images": False,
+            "thinking": ["none", "low", "high", "max"],
+            "default_thinking": "none",
+        })
+        self.assertEqual(manager.models()[1]["display_name"], "DeepSeek-V4-Flash-0731")
+        self.assertEqual(manager.models()[3], {
+            "id": "chat-model",
+            "display_name": "Qwen3.8-Flash-Next",
+            "context_window": 262_144,
+            "images": True,
+            "thinking": ["none", "low", "medium", "xhigh"],
+            "default_thinking": "none",
+        })
+
+    def test_context_window_is_listed_and_bounded_by_the_model(self):
+        model = raw_model("qwen3.8-flash-next")
+        model["defaults"]["context_window"] = 32_768
+        (parsed,) = parse_model_catalog({"version": 1, "models": [model]})
+        self.assertEqual(parsed.defaults.context_window, 32_768)
+        self.assertEqual(ModelManager([parsed]).models()[0]["context_window"], 32_768)
+        for value in (0, True, "8192", 262_145):
+            model["defaults"]["context_window"] = value
+            with self.assertRaises(ModelCatalogError):
+                parse_model_catalog({"version": 1, "models": [model]})
 
     def test_empty_and_self_aliases_do_not_add_duplicate_models(self):
         empty = spec("deepseek-v4", "  ")

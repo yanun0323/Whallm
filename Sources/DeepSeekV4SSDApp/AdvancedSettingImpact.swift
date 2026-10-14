@@ -53,6 +53,8 @@ enum AdvancedSettingImpact {
       "Speed up attention search, but limiting candidates may affect output."
     case "Reduce decoder prefill work":
       "Shorten prefill and reduce temporary memory; full-model validation is still limited."
+    case "Context window":
+      "Allow longer conversations, but long prompts use more time and memory. Longer prompts are rejected, and answers are shortened to fit. Maximum: %@ tokens."
     case "Max tokens":
       "Allow longer answers, but generation may take more time and memory."
     case "Temperature", "Top P":

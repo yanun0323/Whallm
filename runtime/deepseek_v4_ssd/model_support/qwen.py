@@ -16,6 +16,7 @@ from .base import ModelSupport
 
 class QwenSupport(ModelSupport):
     expert_layout = GateUpMXFP4Layout()
+    thinking_levels = ("none", "low", "medium", "xhigh")
 
     def manifest_contract(self, raw):
         return _qwen_contract(raw, self.descriptor)

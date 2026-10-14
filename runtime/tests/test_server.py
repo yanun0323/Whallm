@@ -11,7 +11,9 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest.mock import patch
 
-from deepseek_v4_ssd.generation import GenerationOptions, GeneratedPiece, THINK_START
+from deepseek_v4_ssd.generation import (
+    ContextWindowExceeded, GenerationOptions, GeneratedPiece, THINK_START,
+)
 from deepseek_v4_ssd.model import RuntimeConfig
 from deepseek_v4_ssd.model_manager import (
     ModelDefaults,
@@ -962,24 +964,33 @@ class ServerTests(unittest.TestCase):
         status, _, body = self.request("/v1/models?client_version=0.152.1")
         self.assertEqual(status, 200)
         payload = json.loads(body)
+        self.assertEqual(set(payload), {"data"})
         models = payload["data"]
         self.assertEqual(
             [model["id"] for model in models],
             ["deepseek-v4-flash-0731", "work-model"],
         )
-        self.assertEqual(models[0]["owned_by"], models[1]["owned_by"])
-
-        codex_models = payload["models"]
         self.assertEqual(
-            [model["slug"] for model in codex_models],
-            ["deepseek-v4-flash-0731", "work-model"],
+            set(models[0]),
+            {"id", "display_name", "context_window", "images", "thinking", "default_thinking"},
         )
-        self.assertEqual(codex_models[0]["shell_type"], "unified_exec")
-        self.assertEqual(codex_models[0]["visibility"], "none")
-        self.assertTrue(codex_models[0]["supported_in_api"])
-        self.assertEqual(codex_models[0]["context_window"], 272_000)
-        self.assertEqual(codex_models[0]["input_modalities"], ["text"])
-        self.assertTrue(codex_models[0]["base_instructions"])
+        self.assertEqual(models[0]["context_window"], 1_048_576)
+        self.assertEqual(models[0]["default_thinking"], "none")
+
+    def test_prompt_beyond_context_window_returns_400(self):
+        def full(prompt, options):
+            raise ContextWindowExceeded("The prompt has 9 tokens. The context window allows 8 tokens.")
+            yield
+
+        body = {"model": "work-model", "messages": [{"role": "user", "content": "Hi"}]}
+        with patch.object(self.runtime, "stream", full):
+            status, _, raw = self.request("/v1/chat/completions", method="POST", body=body)
+            self.assertEqual(status, 400)
+            self.assertEqual(json.loads(raw)["error"]["code"], "context_length_exceeded")
+
+            status, _, raw = self.request("/v1/chat/completions", method="POST", body={**body, "stream": True})
+            self.assertEqual(status, 200)
+            self.assertIn("context_length_exceeded", raw.decode())
 
     def test_status_requires_bearer_key(self):
         status, _, body = self.request("/api/status", authenticated=False)

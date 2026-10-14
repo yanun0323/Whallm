@@ -441,7 +441,8 @@ final class ModelLibrary: ObservableObject {
           topK: settings.defaultTopK,
           approximationMode: settings.approximationEnabled == true && !settings.dsparkEnabled && settings.mtpEnabled != true
             ? "learned-route-drop-lowest-1" : "exact",
-          qwenAdaptiveSampling: settings.qwenAdaptiveSampling ?? true
+          qwenAdaptiveSampling: settings.qwenAdaptiveSampling ?? true,
+          contextWindow: settings.contextWindow ?? modelKind.descriptor.maximumContext
         ),
         warmupPromptPath: settings.warmupPromptPath.isEmpty
           ? nil : settings.warmupPromptPath

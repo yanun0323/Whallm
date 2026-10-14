@@ -27,6 +27,7 @@ class ModelDescriptor:
     defaults: Mapping[str, int | float | bool]
     automatic_memory_gib: int
     prefill_threshold: int | None
+    maximum_context: int
 
     def supports(self, feature: str) -> bool:
         return feature in self.features
@@ -44,18 +45,19 @@ def read_catalog(path: Path) -> tuple[ModelDescriptor, ...]:
             "kind", "displayName", "kindLabel", "assistantName", "apiModelID", "owner",
             "checkpointModelID", "checkpointRevision", "manifestVersion", "directoryName",
             "requiredPaths", "features", "editableSettings", "defaults",
-            "automaticMemoryGiB", "prefillThreshold",
+            "maximumContext", "automaticMemoryGiB", "prefillThreshold",
         }
         if not isinstance(item, dict) or set(item) != required:
             raise ValueError("model package descriptor has invalid fields")
         for key in required - {
             "manifestVersion", "requiredPaths", "features", "editableSettings", "defaults",
-            "automaticMemoryGiB", "prefillThreshold",
+            "maximumContext", "automaticMemoryGiB", "prefillThreshold",
         }:
             if not isinstance(item[key], str) or not item[key]:
                 raise ValueError(f"model package {key} must be a non-empty string")
         if (type(item["manifestVersion"]) is not int or item["manifestVersion"] < 1
-                or type(item["automaticMemoryGiB"]) is not int or item["automaticMemoryGiB"] < 0):
+                or type(item["automaticMemoryGiB"]) is not int or item["automaticMemoryGiB"] < 0
+                or type(item["maximumContext"]) is not int or item["maximumContext"] < 1):
             raise ValueError("invalid model package limits")
         threshold = item["prefillThreshold"]
         if threshold is not None and (type(threshold) is not int or threshold < 1):
@@ -89,7 +91,7 @@ def read_catalog(path: Path) -> tuple[ModelDescriptor, ...]:
             item["kind"], item["displayName"], item["apiModelID"], item["owner"],
             item["checkpointModelID"], item["checkpointRevision"], item["manifestVersion"],
             frozenset(item["features"]), MappingProxyType(item["defaults"]),
-            item["automaticMemoryGiB"], threshold,
+            item["automaticMemoryGiB"], threshold, item["maximumContext"],
         ))
     for field in ("kind", "api_model_id"):
         values = [getattr(item, field) for item in result]

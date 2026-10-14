@@ -78,6 +78,8 @@ def contract(raw):
 
 class MiMoSupport(ModelSupport):
     expert_layout = FusedMXFP4Layout()
+    # The MiMo template switches thinking on or off and ignores the effort.
+    thinking_levels = ("none", "low")
 
     def manifest_contract(self, raw):
         return contract(raw)

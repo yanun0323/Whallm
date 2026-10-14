@@ -1150,7 +1150,8 @@ private struct ServerView: View {
       )
     }.count
     height += CGFloat(visibleDownloadReasonCount) * 32
-    return min(height, 320)
+    // Show every row; the page's own ScrollView scrolls, not a short inner list.
+    return height
   }
 
   private var selectedModelKind: Binding<String> {
@@ -1241,8 +1242,9 @@ private struct ServerView: View {
     modelKind(withAPIModelID: server.performance.loadedModel)
   }
 
+  /// Newest first: ModelPackages.json lists kinds in the order they were added.
   private var selectableModelKinds: [ModelKind] {
-    ModelLibrary.supportedModelKinds.filter { $0 != loadedModelKind }
+    ModelLibrary.supportedModelKinds.reversed().filter { $0 != loadedModelKind }
   }
 
   private func isModelLoaded(_ modelKind: ModelKind) -> Bool {
@@ -1744,6 +1746,12 @@ struct ModelAdvancedView: View {
           .padding(.top, 12)
         VStack(spacing: 0) {
           integerField(
+            "Context window",
+            hint: "Longest input plus output for each request.",
+            value: contextWindow
+          )
+          Divider()
+          integerField(
             "Max tokens",
             hint: "Default token limit for each request.",
             value: $settings.defaultMaxTokens
@@ -2118,6 +2126,9 @@ struct ModelAdvancedView: View {
     if label == "Prompt cache entries" {
       return L10n.string(key, language: language, Int64(modelKind.descriptor.defaults.promptCacheEntries))
     }
+    if label == "Context window" {
+      return L10n.string(key, language: language, String(modelKind.descriptor.maximumContext))
+    }
     let recommendedSlots: Int? = switch label {
     case "Expert cache GiB": modelKind.descriptor.defaults.slots
     case "MTP expert cache GiB": ExpertCacheControl.mtp.legacySlots(in: .defaults(for: modelKind))
@@ -2301,6 +2312,11 @@ struct ModelAdvancedView: View {
 
   private var prefetchReadWorkers: Binding<Int> {
     Binding(get: { settings.prefetchReadWorkers ?? 2 }, set: { settings.prefetchReadWorkers = $0 })
+  }
+
+  private var contextWindow: Binding<Int> {
+    Binding(get: { settings.contextWindow ?? modelKind.descriptor.maximumContext },
+            set: { settings.contextWindow = $0 })
   }
 
   private var moePrefillStepSize: Binding<Int> {

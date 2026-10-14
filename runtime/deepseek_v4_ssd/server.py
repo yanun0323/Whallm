@@ -30,6 +30,7 @@ from .generation import (
     APPROXIMATION_MODES,
     EXACT_APPROXIMATION_MODE,
     LEARNED_ROUTE_DROP_LOWEST_1,
+    ContextWindowExceeded,
     GenerationOptions,
     GeneratedPiece,
     THINK_END,
@@ -179,10 +180,15 @@ class OpenAIServer(ThreadingHTTPServer):
     def track(self, pieces: Iterator[GeneratedPiece]) -> Iterator[GeneratedPiece]:
         self.metrics.start()
         try:
-            for piece in pieces:
-                check_cancelled()
-                self.metrics.record(piece.generation_tokens)
-                yield piece
+            try:
+                for piece in pieces:
+                    check_cancelled()
+                    self.metrics.record(piece.generation_tokens)
+                    yield piece
+            except ContextWindowExceeded as error:
+                raise APIError(
+                    str(error), param="messages", code="context_length_exceeded",
+                ) from error
         finally:
             try:
                 close = getattr(pieces, "close", None)
@@ -496,14 +502,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                 "remote_urls": False, "upload_path": "/api/assets"}})
         elif path == "/v1/models":
             self._authorize()
-            self._json(
-                200,
-                {
-                    "object": "list",
-                    "data": self.app.model_manager.models(),
-                    "models": self.app.model_manager.codex_models(),
-                },
-            )
+            self._json(200, {"data": self.app.model_manager.models()})
         else:
             raise APIError("Route not found.", status=404, code="not_found")
 
@@ -2069,6 +2068,7 @@ def _options(
         repetition_penalty=sampling_defaults["repetition_penalty"],
         approximation_mode=approximation_mode,
         seed=seed,
+        context_window=getattr(defaults, "context_window", None),
     )
 
 

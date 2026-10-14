@@ -39,7 +39,9 @@ from deepseek_v4_ssd.dspark import (
 )
 from deepseek_v4_ssd.fp8_cache import CorrectPoolingCache, MXFP8PoolingCache
 from deepseek_v4_ssd.generation import (
+    ContextWindowExceeded,
     GenerationOptions,
+    fit_context_window,
     ModelRuntime,
     RuntimeMetrics,
     _PromptCacheEntry,
@@ -80,6 +82,23 @@ from deepseek_v4_ssd.model import (
 )
 
 _mlx_lm_generate = importlib.import_module("mlx_lm.generate")
+
+
+class ContextWindowTests(unittest.TestCase):
+    def test_output_is_shortened_to_the_space_left(self):
+        options = GenerationOptions(max_tokens=100, context_window=1_000)
+        self.assertEqual(fit_context_window(950, options, 262_144).max_tokens, 50)
+        self.assertEqual(fit_context_window(10, options, 262_144).max_tokens, 100)
+
+    def test_model_maximum_applies_when_unset_or_larger(self):
+        for window in (None, 2_000_000):
+            options = GenerationOptions(max_tokens=100, context_window=window)
+            self.assertEqual(fit_context_window(262_100, options, 262_144).max_tokens, 44)
+
+    def test_prompt_that_fills_the_window_is_rejected(self):
+        options = GenerationOptions(max_tokens=100, context_window=1_000)
+        with self.assertRaises(ContextWindowExceeded):
+            fit_context_window(1_000, options, 262_144)
 
 
 class PromptCacheEvaluationTests(unittest.TestCase):

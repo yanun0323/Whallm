@@ -205,8 +205,10 @@ class ThroughputTests(unittest.TestCase):
 
     def test_direct_trial_pins_sampling_without_mutating_options_or_settings(self):
         options = GenerationOptions(max_tokens=128, temperature=1.7, seed=7,
-            top_p=0.9, top_k=10, min_p=0.05, presence_penalty=0.4, repetition_penalty=1.1)
+            top_p=0.9, top_k=10, min_p=0.05, presence_penalty=0.4, repetition_penalty=1.1,
+            context_window=512)
         result = run_trial(self.runtime, options, 1024, iter, lambda _: None)
+        self.assertIsNone(self.runtime.options.context_window)
         self.assertEqual(options.temperature, 1.7)
         self.assertEqual(options.seed, 7)
         self.assertEqual(self.runtime.options.temperature, 0)

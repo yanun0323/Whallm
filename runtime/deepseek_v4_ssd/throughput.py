@@ -36,7 +36,8 @@ def prompt_tokens(runtime, length, benchmark_context="code"):
 def run_trial(runtime, options, context_length, track, progress, benchmark_context="code"):
     # Benchmark controls are fixed even for direct callers. Do not mutate saved
     # model defaults or silently change the remaining sampling parameters.
-    options = replace(options, temperature=TEMPERATURE, seed=SEED)
+    # The App's context window would shorten the fixed workload; only the model limit applies.
+    options = replace(options, temperature=TEMPERATURE, seed=SEED, context_window=None)
     if context_length + options.max_tokens > runtime.installed.maximum_context:
         raise ValueError("Input and generation lengths exceed this model's context limit.")
     tokens, corpus_hash = prompt_tokens(runtime, context_length, benchmark_context)
