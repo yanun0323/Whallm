@@ -14,6 +14,7 @@ final class ModelPackageTests: XCTestCase {
         "0bd4fe22431372cdad1979267d3ab45aa7e6150a"),
       (.swift1_5Qwen3_8FlashNextNative, "ukisai/Swift1.5-Qwen3.8-Flash-Next",
         "0bd4fe22431372cdad1979267d3ab45aa7e6150a"),
+      (.qwen3_8FlashNextNative, QwenContract.modelID, QwenContract.revision),
     ]
     XCTAssertEqual(ModelPackages.descriptors.count, expected.count)
     for (kind, modelID, revision) in expected {
@@ -24,11 +25,15 @@ final class ModelPackageTests: XCTestCase {
       XCTAssertEqual(try JSONDecoder().decode(String.self, from: encoded), kind.rawValue)
       XCTAssertEqual(try JSONDecoder().decode(ModelKind.self, from: encoded), kind)
     }
-    // The native kind reads the Swift1.5 installation and has no download of its own.
+    // Each native kind reads its MLX kind's installation and has no download of its own.
     XCTAssertTrue(ModelKind.swift1_5Qwen3_8FlashNextNative.usesNativeEngine)
     XCTAssertFalse(ModelKind.swift1_5Qwen3_8FlashNextNative.usesQwenEngine)
     XCTAssertEqual(ModelKind.swift1_5Qwen3_8FlashNextNative.installationKind, .swift1_5Qwen3_8FlashNext)
     XCTAssertEqual(ModelKind.swift1_5Qwen3_8FlashNext.sharingKinds, [.swift1_5Qwen3_8FlashNextNative])
+    XCTAssertTrue(ModelKind.qwen3_8FlashNextNative.usesNativeEngine)
+    XCTAssertFalse(ModelKind.qwen3_8FlashNextNative.usesQwenEngine)
+    XCTAssertEqual(ModelKind.qwen3_8FlashNextNative.installationKind, .qwen3_8FlashNext)
+    XCTAssertEqual(ModelKind.qwen3_8FlashNext.sharingKinds, [.qwen3_8FlashNextNative])
     for kind in ModelPackages.descriptors.compactMap({ ModelKind(rawValue: $0.kind) }) where !kind.usesNativeEngine {
       XCTAssertEqual(kind.installationKind, kind)
     }

@@ -37,6 +37,7 @@ public struct ModelKind: RawRepresentable, Codable, Hashable, Sendable {
   public static let mimoV26FlashRL = Self(rawValue: "mimo-v2.6-flash-rl")!
   public static let swift1_5Qwen3_8FlashNext = Self(rawValue: "swift1.5-qwen3.8-flash-next")!
   public static let swift1_5Qwen3_8FlashNextNative = Self(rawValue: "swift1.5-qwen3.8-flash-next-native")!
+  public static let qwen3_8FlashNextNative = Self(rawValue: "qwen3.8-flash-next-native")!
 
   /// Shared MLX inference implementation, not shared model identity or settings.
   public var usesQwenEngine: Bool {

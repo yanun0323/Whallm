@@ -232,6 +232,34 @@
       },
       "automaticMemoryGiB": 48,
       "prefillThreshold": 128
+    },
+    {
+      "kind": "qwen3.8-flash-next-native",
+      "displayName": "Qwen3.8-Flash-Next-Native",
+      "kindLabel": "Qwen3.8 Flash Next Native",
+      "assistantName": "Qwen",
+      "apiModelID": "qwen3.8-flash-next-native",
+      "owner": "Qwen",
+      "checkpointModelID": "Qwen/Qwen3.8-Flash-Next-FP8",
+      "checkpointRevision": "bcd9f01ddc9cff2316eb84281bebcd5b058bddce",
+      "manifestVersion": 2,
+      "directoryName": "qwen3.8-flash-next.dsv4",
+      "requiredPaths": [
+        "common.bin", "ngram.bin", "config.json", "tokenizer/tokenizer.json"
+      ],
+      "features": ["nativeEngine", "promptCache", "mtp", "adaptiveSampling", "imageInput"],
+      "editableSettings": ["sampling"],
+      "defaults": {
+        "slots": 2089,
+        "promptCacheEntries": 2,
+        "bf16KVCache": false,
+        "maxTokens": 8192,
+        "temperature": 0.7,
+        "topP": 0.8,
+        "topK": 20
+      },
+      "automaticMemoryGiB": 48,
+      "prefillThreshold": 128
     }
   ]
 }

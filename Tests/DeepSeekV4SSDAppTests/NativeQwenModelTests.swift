@@ -56,6 +56,35 @@ final class NativeQwenModelTests: XCTestCase {
     XCTAssertFalse(damaged.models[0].isUsable)
   }
 
+  /// Qwen3.8-Flash-Next-Native reads the Qwen3.8 FP8 installation the same way.
+  @MainActor
+  func testQwenNativeKindReadsTheQwenInstallation() throws {
+    let qwenNative = ModelKind.qwen3_8FlashNextNative, qwen = ModelKind.qwen3_8FlashNext
+    XCTAssertEqual(qwenNative.apiModelID, "qwen3.8-flash-next-native")
+    XCTAssertEqual(qwenNative.displayName, "Qwen3.8-Flash-Next-Native")
+    XCTAssertEqual(qwenNative.descriptor.directoryName, qwen.descriptor.directoryName)
+    XCTAssertEqual(qwenNative.installationKind, qwen)
+    XCTAssertEqual(qwen.sharingKinds, [qwenNative])
+    XCTAssertEqual(ExpertMemory.blobBytes(for: qwenNative), ExpertMemory.blobBytes(for: qwen))
+
+    let suite = "NativeQwenModelTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let library = ModelLibrary(defaults: defaults)
+    XCTAssertEqual(library.plannedInstalledBytes(for: qwenNative), library.plannedInstalledBytes(for: qwen))
+
+    let installed = InstalledModelInfo(url: URL(fileURLWithPath: "/fixture/\(qwen.descriptor.directoryName)"),
+      size: 0, quickIssues: [], hasMTP: true, hasDSpark: false, modelKind: qwen,
+      modelID: qwen.descriptor.checkpointModelID)
+    let catalog = try ModelLibrary.makeServerCatalog(models: [installed, installed.sharing(as: qwenNative)],
+      aliases: [:], settings: [qwenNative: .defaults(for: qwenNative)], powerSavingLimitGBps: nil)
+    XCTAssertEqual(catalog.models.map(\.id), [qwen.apiModelID, qwenNative.apiModelID])
+    XCTAssertEqual(catalog.models[1].modelKind, qwenNative.rawValue)
+    XCTAssertEqual(catalog.models[1].path, catalog.models[0].path)
+    XCTAssertTrue(catalog.models[1].runtime.nativeAutomaticExpertCache)
+    XCTAssertFalse(catalog.models[1].runtime.qwenSortedExpertPrefill ?? false)
+  }
+
   @MainActor
   func testDownloadsAndPlanningUseTheSwiftInstallation() {
     let suite = "NativeQwenModelTests.\(UUID().uuidString)"
