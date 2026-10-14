@@ -77,6 +77,14 @@ package:
 ane-bridge:
 	./Scripts/build-ane-bridge.sh
 
+## qwen-native: build the native Qwen engine library (C++ and Metal, no MLX)
+qwen-native:
+	./Scripts/build-qwen-native.sh
+
+## check-qwen-native: check the native Qwen engine against recorded tokens (QWEN_NATIVE_MODEL: Swift1.5 install)
+check-qwen-native:
+	./Native/QwenNative/check.sh "$(or $(QWEN_NATIVE_MODEL),$(HOME)/.dsmodel/swift1.5-qwen3.8-flash-next-mxfp4.dsv4)"
+
 ## test-release: test manual workflow policy and bounded Pages verification
 .PHONY: test-release
 test-release:
@@ -87,7 +95,7 @@ release:
 	./Scripts/release.sh
 
 ## server: start the OpenAI-compatible API server directly
-server: ane-bridge
+server: ane-bridge qwen-native
 	PYTHONPATH=runtime .venv/bin/python -m deepseek_v4_ssd.server \
 		--model "$(MODEL)" --host "$(HOST)" --port "$(PORT)" $(ARGS)
 
