@@ -19,6 +19,7 @@ def support_types():
         "mimo-v2.6-flash-rl": MiMoSupport,
         "swift1.5-qwen3.8-flash-next": QwenSupport,
         "swift1.5-qwen3.8-flash-next-native": NativeQwenSupport,
+        "qwen3.8-flash-next-native": NativeQwenSupport,
     }
 
 

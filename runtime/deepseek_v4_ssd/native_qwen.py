@@ -1,4 +1,4 @@
-"""Swift1.5 Qwen on the native engine (C++ and Metal, no MLX), behind the runtime interface.
+"""Qwen3.8 and Swift1.5 Qwen on the native engine (C++ and Metal, no MLX), behind the runtime interface.
 
 The engine (Native/QwenNative, libWhallmQwenNative.dylib) computes logits; this module
 samples tokens, runs MTP draft rounds, keeps the prompt cache and turns tokens into
