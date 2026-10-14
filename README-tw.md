@@ -14,7 +14,7 @@
 
 Whallm 讓你在 Apple Silicon Mac 上執行大型語言模型。共用的權重放在記憶體裡，每個 token 需要的專家才從 SSD 讀取，所以能跑比記憶體大很多的模型。App 內建聊天視窗，也提供 OpenAI 相容 API。
 
-支援的模型：DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen3.8、Swift1.5 Qwen3.8 Native（預覽版），以及 MiMo（預覽版）。
+支援的模型：DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen3.8、Swift1.5 Qwen3.8 Native（預覽版）、Qwen3.8 Native（預覽版），以及 MiMo（預覽版）。
 
 ## 效能摘要
 
@@ -71,6 +71,12 @@ App 不含模型權重。光是 DeepSeek V4.1 的專家與 Engram 檔案就需�
 - **進階設定**有「自動決定專家快取大小」，預設開啟。開啟時，引擎依模型載入時的可用記憶體決定大小，最多約 20 GiB，並至少為 macOS 和其他 App 保留 7 GiB 或這台 Mac 記憶體的 15%。關閉後可自行設定固定大小。其他設定為生成參數、讀取執行緒、提示詞快取、暖機、MTP 與 8-bit 常駐權重。
 - 支援文字、靜態圖片、MTP，以及記憶體與磁碟提示詞快取，API 端點相同。輸出可能與 MLX 引擎略有不同。
 - 已測試：在 M2 Max 上，兩個測試提示詞的 greedy 輸出與 MLX 引擎相同；透過 API 測試了 Chat、Responses、串流、圖片與取消。在 M5 晶片上，長提示詞會使用 GPU 的 Neural Accelerators，這條路徑尚未量測。
+
+### Qwen3.8-Flash-Next-Native（預覽版）
+
+- API model ID：`qwen3.8-flash-next-native`
+- 用同一個原生引擎執行 Qwen3.8 FP8。它讀取 Qwen3.8 的安裝檔，不需要另外下載；請先安裝 Qwen3.8。設定、Alias 與提示詞快取各自獨立。設定與支援的輸入和 Swift1.5-Qwen3.8-Flash-Next-Native 相同。
+- 已測試：在 M2 Max 上，一個短測試提示詞的 greedy 輸出與 MLX 引擎相同；在較長的提示詞上，前兩名幾乎同分的位置，兩個引擎選了不同的 token。透過 API 測試了 Chat、Responses、串流與圖片。
 
 ### 設定
 

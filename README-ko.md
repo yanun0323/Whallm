@@ -14,7 +14,7 @@
 
 Whallm은 Apple Silicon Mac에서 대규모 언어 모델을 실행합니다. 공통 가중치는 메모리에 두고, 토큰마다 필요한 전문가만 SSD에서 읽습니다. 그래서 메모리보다 훨씬 큰 모델도 실행할 수 있습니다. 채팅 창과 OpenAI 호환 API를 제공합니다.
 
-지원 모델: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8, Swift1.5 Qwen3.8 Native(미리 보기), MiMo(미리 보기).
+지원 모델: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8, Swift1.5 Qwen3.8 Native(미리 보기), Qwen3.8 Native(미리 보기), MiMo(미리 보기).
 
 ## 벤치마크 요약
 
@@ -71,6 +71,12 @@ Whallm은 Apple Silicon Mac에서 대규모 언어 모델을 실행합니다. �
 - **고급 설정**의 "전문가 캐시 크기 자동 결정"은 기본으로 켜져 있습니다. 켜져 있으면 엔진이 모델을 불러올 때 남은 메모리로 크기를 정하며, 최대 약 20 GiB입니다. macOS와 다른 앱을 위해 7 GiB와 이 Mac 메모리의 15% 중 큰 쪽을 남깁니다. 끄면 고정 크기를 지정할 수 있습니다. 나머지 설정은 생성, 읽기 작업자, 프롬프트 캐시, 워밍업, MTP, 8-bit 상주 가중치입니다.
 - 같은 API 엔드포인트로 텍스트, 정지 이미지, MTP, 메모리와 디스크 프롬프트 캐시를 지원합니다. 출력은 MLX 엔진과 조금 다를 수 있습니다.
 - 테스트한 내용: M2 Max에서 테스트 프롬프트 두 개의 greedy 출력이 MLX 엔진과 같았고, API로 Chat, Responses, 스트리밍, 이미지, 취소를 확인했습니다. M5 칩에서는 긴 프롬프트에 GPU의 Neural Accelerators를 쓰지만, 이 경로는 아직 측정하지 않았습니다.
+
+### Qwen3.8-Flash-Next-Native(미리 보기)
+
+- API 모델 ID: `qwen3.8-flash-next-native`
+- 같은 네이티브 엔진으로 Qwen3.8 FP8을 실행합니다. Qwen3.8 설치 파일을 읽으므로 따로 내려받을 필요가 없습니다. 먼저 Qwen3.8을 설치하세요. 설정, Alias, 프롬프트 캐시는 따로 둡니다. 설정과 지원하는 입력은 Swift1.5-Qwen3.8-Flash-Next-Native와 같습니다.
+- 테스트한 내용: M2 Max에서 짧은 테스트 프롬프트의 greedy 출력이 MLX 엔진과 같았습니다. 더 긴 프롬프트에서는 1, 2위가 거의 같은 위치에서 두 엔진이 다른 토큰을 골랐습니다. API로 Chat, Responses, 스트리밍, 이미지를 확인했습니다.
 
 ### 설정
 

@@ -14,7 +14,7 @@
 
 Whallm runs large language models on your Apple Silicon Mac. It keeps the shared weights in memory and reads only the experts each token needs from your SSD, so it can run models much larger than your memory. It comes with a chat window and an OpenAI-compatible API.
 
-Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8, Swift1.5 Qwen3.8 Native (preview) and MiMo (preview).
+Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8, Swift1.5 Qwen3.8 Native (preview), Qwen3.8 Native (preview) and MiMo (preview).
 
 ## Benchmark summary
 
@@ -71,6 +71,12 @@ Added in 1.1.10.
 - **Advanced Settings** has **Size the expert cache automatically**, on by default. The engine then uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn it off to choose a fixed size. The other settings are generation, read workers, Prompt Cache, warmup, MTP and 8-bit resident weights.
 - It supports text, still images, MTP and the memory and disk prompt cache through the same API endpoints. Output can differ slightly from the MLX engine.
 - What's tested: on an M2 Max, greedy output matched the MLX engine on two test prompts, and Chat, Responses, streaming, images and cancellation worked through the API. On M5 chips, long prompts use the GPU Neural Accelerators; that path is not measured yet.
+
+### Qwen3.8-Flash-Next-Native (preview)
+
+- API model ID: `qwen3.8-flash-next-native`
+- Runs Qwen3.8 FP8 on the same native engine. It reads the Qwen3.8 install, so it needs no extra download; install Qwen3.8 first. Its settings, Alias and prompt cache are its own. Settings and supported inputs are the same as Swift1.5-Qwen3.8-Flash-Next-Native.
+- What's tested: on an M2 Max, greedy output matched the MLX engine on a short test prompt. On a longer one, the two engines picked different tokens where the top two were almost tied. Chat, Responses, streaming and images worked through the API.
 
 ### Settings
 
