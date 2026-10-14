@@ -10,6 +10,7 @@ def support_types():
     from .deepseek_v41 import DeepSeekV41Support
     from .qwen import QwenSupport
     from .mimo import MiMoSupport
+    from .native_qwen import NativeQwenSupport
 
     return {
         "deepseek-v4": DeepSeekV4Support,
@@ -17,6 +18,7 @@ def support_types():
         "qwen3.8-flash-next": QwenSupport,
         "mimo-v2.6-flash-rl": MiMoSupport,
         "swift1.5-qwen3.8-flash-next": QwenSupport,
+        "swift1.5-qwen3.8-flash-next-native": NativeQwenSupport,
     }
 
 

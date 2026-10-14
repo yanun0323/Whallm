@@ -11,11 +11,14 @@ from ..manifest import Tensor, _validate_tensors
 from ..media import MediaError
 
 
+def catalog_path() -> Path:
+    bundled = Path(__file__).with_name('QwenVision.json')
+    return bundled if bundled.is_file() else Path(__file__).resolve().parents[3] / 'Sources/DeepSeekRepack/Resources/QwenVision.json'
+
+
 @lru_cache(maxsize=1)
 def catalog():
-    bundled = Path(__file__).with_name('QwenVision.json')
-    path = bundled if bundled.is_file() else Path(__file__).resolve().parents[3] / 'Sources/DeepSeekRepack/Resources/QwenVision.json'
-    data = json.loads(path.read_text())
+    data = json.loads(catalog_path().read_text())
     if data['version'] != 1 or len(data['models']) != 2:
         raise ValueError('Invalid Qwen vision catalog')
     return data

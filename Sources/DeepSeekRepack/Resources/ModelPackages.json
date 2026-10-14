@@ -203,6 +203,35 @@
       },
       "automaticMemoryGiB": 48,
       "prefillThreshold": 128
+    },
+    {
+      "kind": "swift1.5-qwen3.8-flash-next-native",
+      "displayName": "Swift1.5-Qwen3.8-Flash-Next-Native",
+      "kindLabel": "Swift1.5 Qwen3.8 Flash Next Native",
+      "assistantName": "Swift",
+      "apiModelID": "swift1.5-qwen3.8-flash-next-native",
+      "owner": "ukisai",
+      "checkpointModelID": "ukisai/Swift1.5-Qwen3.8-Flash-Next",
+      "checkpointRevision": "0bd4fe22431372cdad1979267d3ab45aa7e6150a",
+      "manifestVersion": 2,
+      "directoryName": "swift1.5-qwen3.8-flash-next-mxfp4.dsv4",
+      "requiredPaths": [
+        "common.bin", "ngram.bin", "config.json", "tokenizer/tokenizer.json",
+        "mtp/common.bin", "mtp/experts/layer_00.bin"
+      ],
+      "features": ["nativeEngine", "promptCache", "mtp", "adaptiveSampling", "imageInput"],
+      "editableSettings": ["sampling"],
+      "defaults": {
+        "slots": 2089,
+        "promptCacheEntries": 2,
+        "bf16KVCache": false,
+        "maxTokens": 8192,
+        "temperature": 0.7,
+        "topP": 0.8,
+        "topK": 20
+      },
+      "automaticMemoryGiB": 48,
+      "prefillThreshold": 128
     }
   ]
 }

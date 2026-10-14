@@ -12,6 +12,8 @@ final class ModelPackageTests: XCTestCase {
       (.mimoV26FlashRL, MiMoContract.modelID, MiMoContract.revision),
       (.swift1_5Qwen3_8FlashNext, "ukisai/Swift1.5-Qwen3.8-Flash-Next",
         "0bd4fe22431372cdad1979267d3ab45aa7e6150a"),
+      (.swift1_5Qwen3_8FlashNextNative, "ukisai/Swift1.5-Qwen3.8-Flash-Next",
+        "0bd4fe22431372cdad1979267d3ab45aa7e6150a"),
     ]
     XCTAssertEqual(ModelPackages.descriptors.count, expected.count)
     for (kind, modelID, revision) in expected {
@@ -21,6 +23,14 @@ final class ModelPackageTests: XCTestCase {
       let encoded = try JSONEncoder().encode(kind)
       XCTAssertEqual(try JSONDecoder().decode(String.self, from: encoded), kind.rawValue)
       XCTAssertEqual(try JSONDecoder().decode(ModelKind.self, from: encoded), kind)
+    }
+    // The native kind reads the Swift1.5 installation and has no download of its own.
+    XCTAssertTrue(ModelKind.swift1_5Qwen3_8FlashNextNative.usesNativeEngine)
+    XCTAssertFalse(ModelKind.swift1_5Qwen3_8FlashNextNative.usesQwenEngine)
+    XCTAssertEqual(ModelKind.swift1_5Qwen3_8FlashNextNative.installationKind, .swift1_5Qwen3_8FlashNext)
+    XCTAssertEqual(ModelKind.swift1_5Qwen3_8FlashNext.sharingKinds, [.swift1_5Qwen3_8FlashNextNative])
+    for kind in ModelPackages.descriptors.compactMap({ ModelKind(rawValue: $0.kind) }) where !kind.usesNativeEngine {
+      XCTAssertEqual(kind.installationKind, kind)
     }
     XCTAssertNil(ModelKind(rawValue: "unregistered-model"))
     XCTAssertThrowsError(try JSONDecoder().decode(ModelKind.self, from: Data("\"unregistered-model\"".utf8)))

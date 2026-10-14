@@ -209,7 +209,7 @@ def _parse_runtime(value: Any, prefix: str, model_kind: str) -> RuntimeConfig:
             if value.pop("adaptive_expert_prefill_threshold") is not None:
                 raise ModelCatalogError(f"{prefix}.adaptive_expert_prefill_threshold has been removed; remove this setting")
     names = {field.name for field in fields(RuntimeConfig)}
-    required = names - {'qwen_prefill_routed_max_tokens', 'qwen_packed_gdn_prefill', 'qwen_sorted_expert_prefill', 'qwen_prefill_read_experts', 'qwen_prefill_seed_experts', 'qwen_qsa_query_chunk', 'qwen_qsa_dense_within_budget', 'qwen_qsa_skip_complete_gather', 'qwen_qsa_dense_threshold', 'qwen_qsa_masked_prefill', 'qwen_qsa_selected_kernel', 'qwen_8bit_common_tensors', 'qwen_expert_wave_slots', 'qwen_ngram_io', 'qwen_ngram_cache_bytes', 'qwen_phase_memory', 'qwen_pooled_index_cache', 'qwen_ngram_lookup_optimized', 'qwen_compile_tensor_ops', 'qwen_mtp_draft_tokens', 'qwen_mtp_zero_acceptance_limit', 'qwen_mtp_draft_min_probability', 'qwen_mtp_first_draft_min_probability', 'expert_cache_bytes', 'mtp_cache_bytes', 'dspark_cache_bytes', 'separate_prefill_io', 'qwen_quantized_kv', 'qwen_quantized_index', 'v41_ced_prefill', 'v41_packed_kv', 'v41_packed_index', 'deepseek_ane_prefill', 'qwen_grouped_experts', 'expert_eviction_policy', 'v41_layer_major_prefill', 'v41_candidate_index', 'v41_next_layer_prefetch'}
+    required = names - {'qwen_prefill_routed_max_tokens', 'qwen_packed_gdn_prefill', 'qwen_sorted_expert_prefill', 'qwen_prefill_read_experts', 'qwen_prefill_seed_experts', 'qwen_qsa_query_chunk', 'qwen_qsa_dense_within_budget', 'qwen_qsa_skip_complete_gather', 'qwen_qsa_dense_threshold', 'qwen_qsa_masked_prefill', 'qwen_qsa_selected_kernel', 'qwen_8bit_common_tensors', 'qwen_expert_wave_slots', 'qwen_ngram_io', 'qwen_ngram_cache_bytes', 'qwen_phase_memory', 'qwen_pooled_index_cache', 'qwen_ngram_lookup_optimized', 'qwen_compile_tensor_ops', 'qwen_mtp_draft_tokens', 'qwen_mtp_zero_acceptance_limit', 'qwen_mtp_draft_min_probability', 'qwen_mtp_first_draft_min_probability', 'expert_cache_bytes', 'mtp_cache_bytes', 'dspark_cache_bytes', 'separate_prefill_io', 'qwen_quantized_kv', 'qwen_quantized_index', 'v41_ced_prefill', 'v41_packed_kv', 'v41_packed_index', 'deepseek_ane_prefill', 'qwen_grouped_experts', 'expert_eviction_policy', 'v41_layer_major_prefill', 'v41_candidate_index', 'v41_next_layer_prefetch', 'native_automatic_expert_cache'}
     if not isinstance(value, dict) or not required <= set(value) <= names:
         raise ModelCatalogError(f"{prefix} must contain every required RuntimeConfig field")
     try:
@@ -282,6 +282,7 @@ def validate_runtime_config(config: RuntimeConfig) -> None:
         "v41_packed_index",
         "qwen_next_layer_prefetch",
         "staged_expert_streaming",
+        "native_automatic_expert_cache",
     }
     for name in boolean_names:
         if type(getattr(config, name)) is not bool:
@@ -391,6 +392,14 @@ def _zero_runtime_metrics() -> dict[str, Any]:
     return result
 
 
+def open_runtime(spec: ModelSpec):
+    """The runtime for a catalog model: the native engine or the MLX runtime."""
+    if get_support(spec.model_kind).descriptor.supports("nativeEngine"):
+        from .native_qwen import NativeQwenRuntime
+        return NativeQwenRuntime.open(spec.path, spec.runtime, spec.model_kind)
+    return ModelRuntime.open(spec.path, spec.runtime)
+
+
 class ModelManager:
     """Load one catalog model at a time and serialize generation requests."""
 
@@ -404,9 +413,7 @@ class ModelManager:
         self._models: tuple[ModelSpec, ...] = ()
         self._by_name: dict[str, ModelSpec] = {}
         self._set_models(models)
-        self._runtime_loader = runtime_loader or (
-            lambda spec: ModelRuntime.open(spec.path, spec.runtime)
-        )
+        self._runtime_loader = runtime_loader or open_runtime
         self._clear_cache = clear_cache
         self._generation_lock = threading.Lock()
         self._state_lock = threading.Lock()

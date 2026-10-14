@@ -113,6 +113,9 @@ class RuntimeConfig:
     qwen_mtp_zero_acceptance_limit: int = 32
     qwen_mtp_draft_min_probability: float = 0.0
     qwen_mtp_first_draft_min_probability: float = 0.0
+    # Native Qwen engine only: size the expert cache from the free memory at load
+    # (slots and expert_cache_bytes are then ignored).
+    native_automatic_expert_cache: bool = False
 
 
 def _apply_prompt_cache_mode(config: RuntimeConfig, mode: str | None) -> RuntimeConfig:

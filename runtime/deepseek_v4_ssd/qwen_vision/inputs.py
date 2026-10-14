@@ -33,8 +33,11 @@ def generation_model(model, prepared):
     return ImageGenerationModel(model, prepared.positions)
 
 
-def prepare(runtime, request):
-    validate_runtime(runtime)
+def expand_prompt(runtime, request):
+    """Chat prompt tokens with each image as its start token, image tokens and end token.
+
+    Returns the tokens, one ModalSpan per image and the processed images in order.
+    """
     messages, images, markers = [], [], []
     for original in request.messages:
         message = dict(original)
@@ -68,6 +71,12 @@ def prepare(runtime, request):
     tokens.extend(runtime.tokenizer.encode(prompt, add_special_tokens=False))
     if not spans or len(tokens) >= runtime.installed.maximum_context:
         raise MediaError('Expanded image prompt exceeds the model context or has no images.')
+    return tokens, spans, images
+
+
+def prepare(runtime, request):
+    validate_runtime(runtime)
+    tokens, spans, images = expand_prompt(runtime, request)
     # Validate geometry and context before loading any image weights.
     positions = image_positions(len(tokens), spans)
     encoder = None

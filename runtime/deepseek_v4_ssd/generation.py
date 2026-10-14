@@ -1240,7 +1240,60 @@ class RuntimeMetrics:
             }
 
 
-class ModelRuntime:
+class ChatInterface:
+    """Chat encoding and parsing shared by the MLX and native runtimes.
+
+    Requires ``support``, ``installed``, ``tokenizer`` and ``_codec`` attributes.
+    """
+
+    def encode_chat(
+        self,
+        messages: list[dict[str, Any]],
+        thinking_mode: str = "chat",
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: ToolChoice = ToolChoice(),
+        reasoning_effort: str = "low",
+    ) -> str | MediaRequest:
+        if self._codec is None:
+            self._codec = self.support.open_codec(self.installed.root, self.tokenizer)
+        messages = expand_documents(messages, enabled=self.support.descriptor.supports("documentInput"))
+        request = media_request(messages, thinking_mode, tools, tool_choice, reasoning_effort)
+        if request is not None:
+            from .media import ImagePart, AudioPart
+            for message in request.messages:
+                if isinstance(message.get("content"), tuple):
+                    for part in message["content"]:
+                        feature = "audioInput" if isinstance(part, AudioPart) else "imageInput" if isinstance(part, ImagePart) else None
+                        if feature and not self.support.descriptor.supports(feature):
+                            raise MediaError("This model does not support these media inputs.")
+            self.support.validate_media_runtime(self)
+            return self.support.validate_media(request)
+        return self._codec.encode(
+            messages,
+            thinking_mode,
+            tools,
+            tool_choice,
+            reasoning_effort,
+        )
+
+    def parse_chat(self, text: str, thinking_mode: str) -> AssistantTurn:
+        if self._codec is None:
+            self._codec = self.support.open_codec(self.installed.root, self.tokenizer)
+        return self._codec.parse(text, thinking_mode)
+
+    def make_tool_stream_parser(self, thinking_mode: str):
+        return self.support.make_tool_stream_parser(thinking_mode)
+
+    def _encode_prompt(self, prompt: str) -> list[int]:
+        add_special_tokens = self.tokenizer.bos_token is None or not prompt.startswith(
+            self.tokenizer.bos_token
+        )
+        return list(
+            self.tokenizer.encode(prompt, add_special_tokens=add_special_tokens)
+        )
+
+
+class ModelRuntime(ChatInterface):
     """Keep one installed model resident and serialize all generation."""
 
     support = get_support("deepseek-v4")
@@ -1305,44 +1358,6 @@ class ModelRuntime:
     @property
     def model_id(self) -> str:
         return self._model_id
-
-    def encode_chat(
-        self,
-        messages: list[dict[str, Any]],
-        thinking_mode: str = "chat",
-        tools: list[dict[str, Any]] | None = None,
-        tool_choice: ToolChoice = ToolChoice(),
-        reasoning_effort: str = "low",
-    ) -> str | MediaRequest:
-        if self._codec is None:
-            self._codec = self.support.open_codec(self.installed.root, self.tokenizer)
-        messages = expand_documents(messages, enabled=self.support.descriptor.supports("documentInput"))
-        request = media_request(messages, thinking_mode, tools, tool_choice, reasoning_effort)
-        if request is not None:
-            from .media import ImagePart, AudioPart
-            for message in request.messages:
-                if isinstance(message.get("content"), tuple):
-                    for part in message["content"]:
-                        feature = "audioInput" if isinstance(part, AudioPart) else "imageInput" if isinstance(part, ImagePart) else None
-                        if feature and not self.support.descriptor.supports(feature):
-                            raise MediaError("This model does not support these media inputs.")
-            self.support.validate_media_runtime(self)
-            return self.support.validate_media(request)
-        return self._codec.encode(
-            messages,
-            thinking_mode,
-            tools,
-            tool_choice,
-            reasoning_effort,
-        )
-
-    def parse_chat(self, text: str, thinking_mode: str) -> AssistantTurn:
-        if self._codec is None:
-            self._codec = self.support.open_codec(self.installed.root, self.tokenizer)
-        return self._codec.parse(text, thinking_mode)
-
-    def make_tool_stream_parser(self, thinking_mode: str):
-        return self.support.make_tool_stream_parser(thinking_mode)
 
     def stream(
         self,
@@ -2175,14 +2190,6 @@ class ModelRuntime:
     def _expert_metrics(self) -> CacheMetrics:
         snapshot = getattr(self.expert_cache, "metrics_snapshot", None)
         return snapshot() if snapshot is not None else CacheMetrics()
-
-    def _encode_prompt(self, prompt: str) -> list[int]:
-        add_special_tokens = self.tokenizer.bos_token is None or not prompt.startswith(
-            self.tokenizer.bos_token
-        )
-        return list(
-            self.tokenizer.encode(prompt, add_special_tokens=add_special_tokens)
-        )
 
     def _open_prompt_cache_directory(self) -> Path | None:
         if not self._prompt_cache_enabled():
