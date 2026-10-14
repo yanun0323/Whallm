@@ -75,6 +75,7 @@ python_framework=$($python_executable -c 'import pathlib, sys; print(pathlib.Pat
 site_packages=$($python_executable -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
 python_binary=$($python_executable -c 'import os, sys; print(os.path.realpath(sys.executable))')
 ane_bridge=$project_root/.build/native/libWhallmANE.dylib
+qwen_native=$project_root/.build/native/libWhallmQwenNative.dylib
 
 if [[ ! -d $python_framework || ! -d $site_packages ]]; then
   print -u2 "The selected Python environment cannot be bundled."
@@ -95,6 +96,7 @@ fi
 
 swift build "${swift_build_arguments[@]}" --product dsv4-app
 "$project_root/Scripts/build-ane-bridge.sh" "$ane_bridge"
+"$project_root/Scripts/build-qwen-native.sh" "$qwen_native"
 binary_path=$(swift build "${swift_build_arguments[@]}" --show-bin-path)/dsv4-app
 resource_bundle=${binary_path:h}/DeepSeekV4SSD_DeepSeekV4SSDApp.bundle
 sparkle_framework=$project_root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework
@@ -115,6 +117,7 @@ ditto "$project_root/Packaging/Info.plist" "$app_path/Contents/Info.plist"
 ditto "$project_root/Packaging/AppIcon.icns" "$app_path/Contents/Resources/AppIcon.icns"
 ditto "$sparkle_framework" "$app_path/Contents/Frameworks/Sparkle.framework"
 ditto "$ane_bridge" "$app_path/Contents/Frameworks/libWhallmANE.dylib"
+ditto "$qwen_native" "$app_path/Contents/Frameworks/libWhallmQwenNative.dylib"
 ditto "$project_root/Native/ANEBridge/LICENSE" \
   "$app_path/Contents/Resources/ANEBridge-LICENSE"
 ditto "$resource_bundle" "$app_path/Contents/Resources/${resource_bundle:t}"
@@ -257,7 +260,9 @@ codesign --verify --deep --strict "$app_path"
 PYTHONHOME="$app_path/Contents/Frameworks/Python.framework/Versions/Current" \
 PYTHONPATH="$app_path/Contents/Resources/runtime:$app_path/Contents/Resources/python/site-packages" \
 PYTHONDONTWRITEBYTECODE=1 \
-  "$app_path/Contents/MacOS/python3" -c 'import mlx, deepseek_v4_ssd.server'
+  "$app_path/Contents/MacOS/python3" -c 'import mlx, deepseek_v4_ssd.server
+from deepseek_v4_ssd import native_qwen
+native_qwen._library()'
 
 ditto -c -k --sequesterRsrc --keepParent "$app_path" "$zip_path"
 

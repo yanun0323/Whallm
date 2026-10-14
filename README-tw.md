@@ -14,7 +14,7 @@
 
 Whallm 讓你在 Apple Silicon Mac 上執行大型語言模型。共用的權重放在記憶體裡，每個 token 需要的專家才從 SSD 讀取，所以能跑比記憶體大很多的模型。App 內建聊天視窗，也提供 OpenAI 相容 API。
 
-支援的模型：DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen3.8，以及 MiMo（預覽版）。
+支援的模型：DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen3.8、Swift1.5 Qwen3.8 Native（預覽版），以及 MiMo（預覽版）。
 
 ## 效能摘要
 
@@ -63,6 +63,14 @@ App 不含模型權重。光是 DeepSeek V4.1 的專家與 Engram 檔案就需�
 - 來源：`Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4`，版本 `257cb509d72ecc07519be35a8b7558fde3b31b21`
 - 下載容量：**127,714,522,478 bytes**（約 **118.94 GiB**），包含 59 個文字與 MTP 檔案，以及 **897,864,704 bytes** 的圖片權重。不下載稽核檔案。
 - 與 Qwen3.8 FP8 使用同一套推論引擎，但資料夾、設定、Alias 與提示詞快取各自獨立。
+
+### Swift1.5-Qwen3.8-Flash-Next-Native（預覽版）
+
+- API model ID：`swift1.5-qwen3.8-flash-next-native`
+- 用 Whallm 自己的推論引擎執行 Swift1.5。這個引擎以 C++ 和 Metal 撰寫，不使用 MLX。它讀取 Swift1.5 的安裝檔，不需要另外下載；請先安裝 Swift1.5。設定、Alias 與提示詞快取各自獨立。
+- **進階設定**有「自動決定專家快取大小」，預設開啟。開啟時，引擎依模型載入時的可用記憶體決定大小，最多約 20 GiB，並至少為 macOS 和其他 App 保留 7 GiB 或這台 Mac 記憶體的 15%。關閉後可自行設定固定大小。其他設定為生成參數、讀取執行緒、提示詞快取、暖機、MTP 與 8-bit 常駐權重。
+- 支援文字、靜態圖片、MTP，以及記憶體與磁碟提示詞快取，API 端點相同。輸出可能與 MLX 引擎略有不同。
+- 已測試：在 M2 Max 上，兩個測試提示詞的 greedy 輸出與 MLX 引擎相同；透過 API 測試了 Chat、Responses、串流、圖片與取消。在 M5 晶片上，長提示詞會使用 GPU 的 Neural Accelerators，這條路徑尚未量測。
 
 ### 設定
 

@@ -762,7 +762,7 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertEqual(
       Set(runtime.keys),
       [
-        "slots", "expert_cache_bytes", "dspark_cache_bytes", "read_workers", "prefetch_read_workers", "prefill_step_size",
+        "slots", "native_automatic_expert_cache", "expert_cache_bytes", "dspark_cache_bytes", "read_workers", "prefetch_read_workers", "prefill_step_size",
         "fp8_kv_cache", "memory_limit_gib", "layer_major_prefill",
         "layer_major_prefill_threshold",
         "prompt_cache_entries", "prompt_cache_memory_gib", "persistent_prompt_cache",

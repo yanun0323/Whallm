@@ -2,7 +2,8 @@
 
 This project builds a memory-bounded Apple Silicon runtime for
 `DeepSeek-V4-Flash-0731`, `DeepSeek-V4.1-Flash`, `Qwen3.8-Flash-Next`,
-`MiMo-V2.6-Flash-RL`, and `Swift1.5-Qwen3.8-Flash-Next`.
+`MiMo-V2.6-Flash-RL`, and `Swift1.5-Qwen3.8-Flash-Next`, which also runs on the
+native engine as `Swift1.5-Qwen3.8-Flash-Next-Native`.
 
 ## Ubiquitous language
 
@@ -30,6 +31,13 @@ This project builds a memory-bounded Apple Silicon runtime for
 - **model kind**: The stable identity that selects a model support package.
 - **model support package**: The installation rules, model loading, conversation format,
   and state operations needed to support one model kind.
+- **native engine**: The C++ and Metal inference engine in `Native/QwenNative`, built
+  as `libWhallmQwenNative.dylib`. It does not use MLX. The MLX runtime is the other
+  engine.
+- **installation kind**: The model kind whose installed model another model kind
+  reads. A native model kind has no download of its own.
+- **automatic expert cache**: The native engine's expert cache sized at load from the
+  memory free at that moment, at most 8,192 slots.
 
 ## Shared Qwen engine, separate model kinds
 
@@ -69,6 +77,21 @@ PNG/JPEG/WebP inputs retain the shared 8-image, 8-MiB/file, 32-MiB/request,
 documents are not enabled for Qwen. Text-only inference does not load vision
 weights. Short Swift-model image checks are not broad quality or performance
 validation, nor full original-Qwen vision validation.
+
+## Native engine model kind
+
+`swift1.5-qwen3.8-flash-next-native` (API model ID
+`swift1.5-qwen3.8-flash-next-native`) runs the Swift1.5 checkpoint on the native
+engine. Its installation kind is `swift1.5-qwen3.8-flash-next`: the App lists it
+wherever a usable Swift1.5 installed model exists, and downloads, verification and
+repair act on that installation. Settings, Alias and prompt caches are its own;
+native prompt cache files are not compatible with MLX prompt caches.
+
+The Python server keeps one interface for both engines. `NativeQwenRuntime`
+(`runtime/deepseek_v4_ssd/native_qwen.py`) samples tokens, runs MTP rounds and keeps
+the prompt cache; the engine returns logits. The App sends MLX-only runtime options at
+their defaults for this kind, and the runtime rejects any other value. New or reset
+settings use the automatic expert cache, MTP and 8-bit resident weights.
 
 ## Prompt cache compatibility and memory
 

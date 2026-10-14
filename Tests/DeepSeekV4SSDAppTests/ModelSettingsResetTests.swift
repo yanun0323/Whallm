@@ -18,7 +18,7 @@ final class ModelSettingsResetTests: XCTestCase {
       XCTAssertFalse(budgets.isEmpty)
       for budget in budgets {
         // Qwen budgets resolve to exact slot counts instead of the 0.1 GiB grid.
-        if !kind.usesQwenEngine { XCTAssertEqual(budget, ExpertMemory.roundedGiB(budget)) }
+        if !kind.usesQwenEngine && !kind.usesNativeEngine { XCTAssertEqual(budget, ExpertMemory.roundedGiB(budget)) }
         XCTAssertGreaterThan(budget, 0)
       }
       XCTAssertEqual(defaults.packedKVCache, false)

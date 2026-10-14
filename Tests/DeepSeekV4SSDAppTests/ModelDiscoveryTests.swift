@@ -127,7 +127,8 @@ final class ModelDiscoveryTests: XCTestCase {
 
     XCTAssertEqual(
       ModelLibrary.supportedModelKinds,
-      [.deepSeekV4, .deepSeekV41, .qwen3_8FlashNext, .mimoV26FlashRL, .swift1_5Qwen3_8FlashNext]
+      [.deepSeekV4, .deepSeekV41, .qwen3_8FlashNext, .mimoV26FlashRL, .swift1_5Qwen3_8FlashNext,
+       .swift1_5Qwen3_8FlashNextNative]
     )
     XCTAssertNil(library.usableModel(for: .deepSeekV4))
     XCTAssertNil(library.usableModel(for: .deepSeekV41))

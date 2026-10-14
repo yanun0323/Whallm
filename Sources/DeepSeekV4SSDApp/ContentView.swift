@@ -815,7 +815,7 @@ private struct ServerView: View {
   private func modelRow(_ modelKind: ModelKind) -> some View {
     let model = modelLibrary.usableModel(for: modelKind)
     let downloadBlock = modelLibrary.downloadBlock(for: modelKind)
-    let isDownloading = modelLibrary.downloadModelKind == modelKind
+    let isDownloading = modelLibrary.isDownloading(modelKind)
     let downloadReason = visibleDownloadReason(modelKind, block: downloadBlock)
 
     return VStack(alignment: .leading, spacing: 10) {
@@ -1145,7 +1145,7 @@ private struct ServerView: View {
     let visibleDownloadReasonCount = selectableModelKinds.filter {
       shouldShowModelDownloadReason(
         modelIsInstalled: modelLibrary.usableModel(for: $0) != nil,
-        modelIsDownloading: modelLibrary.downloadModelKind == $0,
+        modelIsDownloading: modelLibrary.isDownloading($0),
         hasReason: visibleDownloadReason($0, block: modelLibrary.downloadBlock(for: $0)) != nil
       )
     }.count
@@ -1797,8 +1797,16 @@ struct ModelAdvancedView: View {
         VStack(spacing: 0) {
           ModelSettingsResetRow(settings: $settings, modelKind: modelKind,
             settingsLocked: settingsLocked, language: language)
+          if modelKind.usesNativeEngine {
+            Divider()
+            toggleField(NativeEngineCopy.automaticCache, hint: NativeEngineCopy.automaticCacheHint,
+              value: optionalToggle(\.expertCacheAutomatic, defaultValue: true))
+          }
           Divider()
-          cacheMemoryField(.expert, minimum: modelKind.usesQwenEngine ? 10 : 6)
+          cacheMemoryField(.expert, minimum: modelKind.usesQwenEngine || modelKind.usesNativeEngine ? 10 : 6)
+            .disabled(modelKind.usesNativeEngine && settings.expertCacheAutomatic != false)
+          // The native engine has its own eviction, read-ahead and memory handling.
+          if !modelKind.usesNativeEngine {
           Divider()
           SettingRow(
             "Expert cache eviction",
@@ -1814,6 +1822,7 @@ struct ModelAdvancedView: View {
             .pickerStyle(.menu)
             .frame(width: 240)
           }
+          }
           Divider()
           integerField(
             "Read workers",
@@ -1821,18 +1830,20 @@ struct ModelAdvancedView: View {
               "Number of workers that read expert blobs at the same time. The recommended value is 4.",
             value: $settings.readWorkers
           )
-          Divider()
-          integerField(
-            "Prefetch read workers",
-            hint: "Number of workers that read expert data ahead of time. The default is 2.",
-            value: prefetchReadWorkers
-          )
-          Divider()
-          integerField(
-            "MLX memory guideline GiB",
-            hint: "0 selects the automatic guideline. This does not reserve memory.",
-            value: $settings.memoryLimitGiB
-          )
+          if !modelKind.usesNativeEngine {
+            Divider()
+            integerField(
+              "Prefetch read workers",
+              hint: "Number of workers that read expert data ahead of time. The default is 2.",
+              value: prefetchReadWorkers
+            )
+            Divider()
+            integerField(
+              "MLX memory guideline GiB",
+              hint: "0 selects the automatic guideline. This does not reserve memory.",
+              value: $settings.memoryLimitGiB
+            )
+          }
           // Hidden for Qwen; see ModelAdvancedSettings.applyQwenFixedTuning.
           if showsTuningControls {
             Divider()
@@ -2004,9 +2015,12 @@ struct ModelAdvancedView: View {
               value: mtpEnabled
             )
             .disabled(!mtpAvailable)
-            Divider()
-            cacheMemoryField(.mtp, minimum: 10)
-            .disabled(!mtpEnabled.wrappedValue || !mtpAvailable)
+            // The native engine keeps the draft layer's experts in the expert cache.
+            if !modelKind.usesNativeEngine {
+              Divider()
+              cacheMemoryField(.mtp, minimum: 10)
+              .disabled(!mtpEnabled.wrappedValue || !mtpAvailable)
+            }
             // Hidden for Qwen.
             if showsTuningControls {
               Divider()
@@ -2022,7 +2036,7 @@ struct ModelAdvancedView: View {
               }
             }
           }
-          if modelKind.usesQwenEngine {
+          if modelKind.usesQwenEngine || modelKind.usesNativeEngine {
             Divider()
             toggleField(QwenFlashCopy.commonTensors, hint: QwenFlashCopy.commonTensorsHint,
               value: optionalToggle(\.qwen8BitCommonTensors, defaultValue: true))
@@ -2068,7 +2082,8 @@ struct ModelAdvancedView: View {
 
 
   /// Both Qwen models keep a short list of settings; their other controls use fixed values.
-  private var showsTuningControls: Bool { !modelKind.usesQwenEngine }
+  /// The native engine has none of the MLX tuning controls.
+  private var showsTuningControls: Bool { !modelKind.usesQwenEngine && !modelKind.usesNativeEngine }
 
   private func qwenIntegerChoice(_ label: String, range: ClosedRange<Int>,
                                  key: WritableKeyPath<ModelAdvancedSettings, Int?>) -> some View {

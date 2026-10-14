@@ -30,11 +30,17 @@ struct InstalledModelInfo: Identifiable, Equatable, Sendable {
   let modelKind: ModelKind
   let modelID: String
 
-  var id: String { url.path }
+  var id: String { modelKind.usesNativeEngine ? "\(modelKind.rawValue):\(url.path)" : url.path }
   var name: String { url.deletingPathExtension().lastPathComponent }
   var isUsable: Bool { quickIssues.isEmpty }
   var modelKindLabel: String { modelKind.modelKindLabel }
   var assistantName: String { modelKind.assistantName }
+
+  /// The same installation, used by a kind that reads it (a native kind).
+  func sharing(as kind: ModelKind) -> InstalledModelInfo {
+    InstalledModelInfo(url: url, size: size, quickIssues: quickIssues, hasMTP: hasMTP,
+      hasDSpark: hasDSpark, modelKind: kind, modelID: modelID)
+  }
 }
 
 struct ModelDiscoveryResult: Sendable {
@@ -65,6 +71,10 @@ enum InstalledModelDiscovery {
       } else {
         invalidModelURLs.append(candidate)
       }
+    }
+    // A native kind reads another kind's installation: list it wherever that one is usable.
+    models += models.filter(\.isUsable).flatMap { model in
+      model.modelKind.sharingKinds.map { model.sharing(as: $0) }
     }
     return ModelDiscoveryResult(
       models: models.sorted {
@@ -409,7 +419,8 @@ final class ModelLibrary: ObservableObject {
           qwenQSAMaskedPrefill: modelKind.usesQwenEngine && settings.qwenQSAMaskedPrefill == true,
             qwenPrefillReadExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillReadExperts ?? 1 : 1,
             qwenPrefillSeedExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillSeedExperts ?? 0 : 0,
-          qwen8BitCommonTensors: modelKind.usesQwenEngine && settings.qwen8BitCommonTensors == true,
+          qwen8BitCommonTensors: (modelKind.usesQwenEngine || modelKind.usesNativeEngine)
+            && settings.qwen8BitCommonTensors == true,
           // Fixed on for both Qwen models, like masked QSA Prefill; no setting (2026-10-12).
           qwenQSASelectedKernel: modelKind.usesQwenEngine,
           qwenMTPDraftTokens: modelKind.usesQwenEngine ? settings.effectiveQwenMTPDraftTokens : 2,
@@ -420,7 +431,8 @@ final class ModelLibrary: ObservableObject {
           v41CEDPrefill: modelKind == .deepSeekV41 && settings.cedPrefill == true && settings.layerMajorPrefill && !settings.dsparkEnabled,
           v41NextLayerPrefetch: modelKind == .deepSeekV41 && settings.nextLayerPrefetch == true && settings.layerMajorPrefill && settings.batchedExpertPrefill != false,
           deepseekANEPrefill: !modelKind.usesQwenEngine && settings.deepSeekANEPrefill == true,
-          v41LayerMajorPrefill: modelKind == .deepSeekV41 && settings.layerMajorPrefill
+          v41LayerMajorPrefill: modelKind == .deepSeekV41 && settings.layerMajorPrefill,
+          nativeAutomaticExpertCache: modelKind.usesNativeEngine && settings.expertCacheAutomatic == true
         ),
         defaults: ModelCatalog.Entry.Defaults(
           maxTokens: settings.defaultMaxTokens,
@@ -471,26 +483,36 @@ final class ModelLibrary: ObservableObject {
     defaults.set(name, forKey: aliasPreferenceKey(for: selectedModelKind))
   }
 
+  // A native kind has no installation of its own: planning, downloads and storage
+  // checks below use the kind whose installation it reads.
+
   func plannedInstalledBytes(for modelKind: ModelKind) -> UInt64? {
-    installationBytesByModel[modelKind.rawValue]
+    installationBytesByModel[modelKind.installationKind.rawValue]
   }
 
   func isPlanningInstallation(for modelKind: ModelKind) -> Bool {
-    planningModelKinds.contains(modelKind.rawValue)
+    planningModelKinds.contains(modelKind.installationKind.rawValue)
+  }
+
+  /// Whether this kind's installation is being downloaded.
+  func isDownloading(_ modelKind: ModelKind) -> Bool {
+    downloadModelKind != nil && downloadModelKind == modelKind.installationKind
   }
 
   func hasPartialDownload(for modelKind: ModelKind) -> Bool {
-    FileManager.default.fileExists(atPath: partialDownloadURL(for: modelKind).path)
+    FileManager.default.fileExists(atPath: partialDownloadURL(for: modelKind.installationKind).path)
   }
 
   func requiredStorageBytes(for modelKind: ModelKind) -> UInt64? {
-    plannedInstalledBytes(for: modelKind).map {
+    let modelKind = modelKind.installationKind
+    return plannedInstalledBytes(for: modelKind).map {
       let allocated = partialAllocatedBytesByModel[modelKind.rawValue] ?? 0
       return $0 > allocated ? $0 - allocated : 0
     }
   }
 
   func downloadBlock(for modelKind: ModelKind) -> ModelDownloadBlock? {
+    let modelKind = modelKind.installationKind
     let key = modelKind.rawValue
     guard plannedInstalledBytes(for: modelKind) != nil else {
       return installationPlanErrors[key] == nil
@@ -515,7 +537,7 @@ final class ModelLibrary: ObservableObject {
 
   func canStartDownload(_ modelKind: ModelKind) -> Bool {
     canDownload(modelKind)
-      && !FileManager.default.fileExists(atPath: downloadDestination(for: modelKind).path)
+      && !FileManager.default.fileExists(atPath: downloadDestination(for: modelKind.installationKind).path)
   }
 
   func hasPartialMTPInstallation(for model: InstalledModelInfo) -> Bool {
@@ -616,6 +638,7 @@ final class ModelLibrary: ObservableObject {
   }
 
   func refreshInstallationPlan(for modelKind: ModelKind) async {
+    let modelKind = modelKind.installationKind
     let key = modelKind.rawValue
     guard installationBytesByModel[key] == nil, !planningModelKinds.contains(key) else { return }
     planningModelKinds.insert(key)
@@ -627,7 +650,7 @@ final class ModelLibrary: ObservableObject {
     } catch {
       planningModelKinds.remove(key)
       installationPlanErrors[key] = String(describing: error)
-      if selectedModelKind == modelKind {
+      if selectedModelKind.installationKind == modelKind {
         message = L10n.string(
           "The model installation information could not be loaded. Check the network and try again.\n%@",
           String(describing: error)
@@ -663,6 +686,7 @@ final class ModelLibrary: ObservableObject {
   }
 
   func startDownload(for modelKind: ModelKind, to destination: URL? = nil) {
+    let modelKind = modelKind.installationKind
     guard !isBusy else { return }
     refreshPreflight()
     if let block = downloadBlock(for: modelKind) {

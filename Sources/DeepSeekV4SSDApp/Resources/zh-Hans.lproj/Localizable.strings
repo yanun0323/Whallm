@@ -649,3 +649,5 @@
 "One input-heavy request, measured the way Throughput measures it. The small figure is the ceiling once the Prompt Cache budget is full. 128K is extrapolated; actual usage may vary." = "以输入为主的单次请求，量法与 Throughput 相同。小字是 Prompt Cache 存满上限后的用量。128K 为推算值，实际用量可能不同。";
 "est. %@" = "估 %@";
 "Whallm's estimate for this same request with Prompt Cache off." = "Whallm 对同一请求（Prompt Cache 关闭）的估算。";
+"Size the expert cache automatically" = "自动决定专家缓存大小";
+"Uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size." = "依模型载入时的可用内存决定大小，最多约 20 GiB，并至少为 macOS 和其他 App 保留 7 GiB 或这台 Mac 内存的 15%（取较大者）。关闭后可自行设定固定大小。";

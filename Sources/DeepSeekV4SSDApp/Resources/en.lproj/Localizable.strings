@@ -649,3 +649,5 @@
 "One input-heavy request, measured the way Throughput measures it. The small figure is the ceiling once the Prompt Cache budget is full. 128K is extrapolated; actual usage may vary." = "One input-heavy request, measured the way Throughput measures it. The small figure is the ceiling once the Prompt Cache budget is full. 128K is extrapolated; actual usage may vary.";
 "est. %@" = "est. %@";
 "Whallm's estimate for this same request with Prompt Cache off." = "Whallm's estimate for this same request with Prompt Cache off.";
+"Size the expert cache automatically" = "Size the expert cache automatically";
+"Uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size." = "Uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size.";

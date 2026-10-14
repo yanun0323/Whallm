@@ -14,7 +14,7 @@
 
 Whallm runs large language models on your Apple Silicon Mac. It keeps the shared weights in memory and reads only the experts each token needs from your SSD, so it can run models much larger than your memory. It comes with a chat window and an OpenAI-compatible API.
 
-Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo (preview).
+Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8, Swift1.5 Qwen3.8 Native (preview) and MiMo (preview).
 
 ## Benchmark summary
 
@@ -63,6 +63,14 @@ Added in 1.1.10.
 - Source: `Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4`, revision `257cb509d72ecc07519be35a8b7558fde3b31b21`
 - Download size: **127,714,522,478 bytes** (about **118.94 GiB**). This covers 59 text and MTP files plus **897,864,704 bytes** of image weights. Audit files are not downloaded.
 - It uses the same engine as Qwen3.8 FP8 but keeps its own folder, settings, Alias and prompt cache.
+
+### Swift1.5-Qwen3.8-Flash-Next-Native (preview)
+
+- API model ID: `swift1.5-qwen3.8-flash-next-native`
+- Runs Swift1.5 on Whallm's own engine, written in C++ and Metal without MLX. It reads the Swift1.5 install, so it needs no extra download; install Swift1.5 first. Its settings, Alias and prompt cache are its own.
+- **Advanced Settings** has **Size the expert cache automatically**, on by default. The engine then uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn it off to choose a fixed size. The other settings are generation, read workers, Prompt Cache, warmup, MTP and 8-bit resident weights.
+- It supports text, still images, MTP and the memory and disk prompt cache through the same API endpoints. Output can differ slightly from the MLX engine.
+- What's tested: on an M2 Max, greedy output matched the MLX engine on two test prompts, and Chat, Responses, streaming, images and cancellation worked through the API. On M5 chips, long prompts use the GPU Neural Accelerators; that path is not measured yet.
 
 ### Settings
 

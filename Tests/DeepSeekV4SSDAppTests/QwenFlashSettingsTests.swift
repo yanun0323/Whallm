@@ -110,9 +110,11 @@ final class QwenFlashSettingsTests: XCTestCase {
   func testEightBitResidentWeightsAreOnByDefaultForQwenOnly() throws {
     for kind in ModelLibrary.supportedModelKinds {
       let defaults = ModelAdvancedSettings.defaults(for: kind)
-      XCTAssertEqual(defaults.qwen8BitCommonTensors, kind.usesQwenEngine)
+      // The native engine has 8-bit resident weights too, on by default.
+      let eightBit = kind.usesQwenEngine || kind.usesNativeEngine
+      XCTAssertEqual(defaults.qwen8BitCommonTensors, eightBit)
       XCTAssertEqual(try object(catalog(defaults, kind: kind).models[0].runtime)["qwen_8bit_common_tensors"]
-        as? Bool, kind.usesQwenEngine)
+        as? Bool, eightBit)
     }
     for kind in qwenKinds {
       var saved = ModelAdvancedSettings.defaults(for: kind)
@@ -167,7 +169,7 @@ final class QwenFlashSettingsTests: XCTestCase {
 
   func testRemainingCopyIsLocalizedAndSettingsLockWhileLoaded() {
     for language in [AppLanguage.english, .traditionalChinese, .simplifiedChinese] {
-      for key in QwenFlashCopy.allKeys {
+      for key in QwenFlashCopy.allKeys + NativeEngineCopy.allKeys {
         let value = L10n.string(key, language: language)
         XCTAssertFalse(value.isEmpty)
         if language != .english { XCTAssertNotEqual(value, key) }

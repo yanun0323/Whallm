@@ -236,6 +236,9 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
 
   var slots = 1_152 // Legacy capacity, used until a memory budget is saved.
   var expertCacheGiB: Double?
+  /// Native engine only: size the expert cache from the free memory at load time
+  /// (expertCacheGiB then applies when this is turned off).
+  var expertCacheAutomatic: Bool?
   var mtpCacheGiB: Double?
   var dsparkCacheGiB: Double?
   var estimateInputTokens: Int?
@@ -303,7 +306,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     let blob = ExpertMemory.blobBytes(for: modelKind)
     if blob > 0 {
       // Qwen defaults to 8.5% of its experts; a rounded budget would resolve to other slots.
-      settings.expertCacheGiB = modelKind.usesQwenEngine
+      settings.expertCacheGiB = modelKind.usesQwenEngine || modelKind.usesNativeEngine
         ? ExpertMemory.exactGiB(slots: settings.slots, blobBytes: blob)
         : ExpertMemory.defaultGiB(slots: settings.slots, blobBytes: blob)
       if descriptor.supports("mtp") {
@@ -351,6 +354,14 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
       settings.mtpEnabled = true
       settings.applyQwenFixedTuning()
     }
+    if modelKind.usesNativeEngine {
+      // Chosen 2026-10-14: the cache is sized from the free memory (at most 8,192
+      // slots, about 20 GiB); 8-bit resident weights and MTP on, as for the MLX Qwen models.
+      settings.expertCacheAutomatic = true
+      settings.mtpEnabled = true
+      settings.qwen8BitCommonTensors = true
+      settings.readWorkers = 8
+    }
     return settings
   }
 
@@ -389,7 +400,9 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.mtpEnabled = descriptor.supports("mtp") ? (settings.mtpEnabled ?? false) : false
     settings.mtpSlots = settings.mtpSlots ?? 32
     let qwen = modelKind.usesQwenEngine
-    settings.qwen8BitCommonTensors = qwen ? (settings.qwen8BitCommonTensors ?? true) : false
+    let native = modelKind.usesNativeEngine
+    settings.qwen8BitCommonTensors = qwen || native ? (settings.qwen8BitCommonTensors ?? true) : false
+    settings.expertCacheAutomatic = native ? (settings.expertCacheAutomatic ?? true) : nil
     settings.qwenExpertWaveSlots = qwen ? (settings.qwenExpertWaveSlots ?? 0) : 0
     settings.qwenNgramIO = qwen ? (settings.qwenNgramIO ?? "mmap") : "mmap"
     settings.qwenNgramCacheMiB = qwen ? (settings.qwenNgramCacheMiB ?? 0) : 0
@@ -854,6 +867,7 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       let v41NextLayerPrefetch: Bool
       let deepseekANEPrefill: Bool
       let v41LayerMajorPrefill: Bool
+      var nativeAutomaticExpertCache: Bool = false
 
       enum CodingKeys: String, CodingKey {
         case slots
@@ -922,6 +936,7 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         case v41NextLayerPrefetch = "v41_next_layer_prefetch"
         case deepseekANEPrefill = "deepseek_ane_prefill"
         case v41LayerMajorPrefill = "v41_layer_major_prefill"
+        case nativeAutomaticExpertCache = "native_automatic_expert_cache"
       }
 
       func encode(to encoder: Encoder) throws {
@@ -957,6 +972,7 @@ struct ModelCatalog: Codable, Equatable, Sendable {
         try values.encode(v41NextLayerPrefetch, forKey: .v41NextLayerPrefetch)
         try values.encode(deepseekANEPrefill, forKey: .deepseekANEPrefill)
         try values.encode(v41LayerMajorPrefill, forKey: .v41LayerMajorPrefill)
+        try values.encode(nativeAutomaticExpertCache, forKey: .nativeAutomaticExpertCache)
         try values.encode(readWorkers, forKey: .readWorkers)
         try values.encode(prefetchReadWorkers, forKey: .prefetchReadWorkers)
         try values.encode(prefillStepSize, forKey: .prefillStepSize)

@@ -13,7 +13,7 @@ enum ExpertMemory {
 
   // Pinned installation contracts. A loaded manifest is authoritative.
   static func blobBytes(for kind: ModelKind) -> UInt64 {
-    switch kind {
+    switch kind.installationKind {
     case .deepSeekV4, .mimoV26FlashRL: 13_369_344
     case .deepSeekV41: 18_800_640
     case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 2_611_200
@@ -67,7 +67,7 @@ enum ExpertMemory {
   }
 
   private static func fallbackExpertsPerLayer(_ kind: ModelKind) -> Int {
-    switch kind {
+    switch kind.installationKind {
     case .deepSeekV41: 384
     case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 512
     default: 256
@@ -75,7 +75,7 @@ enum ExpertMemory {
   }
 
   private static func fallbackLayers(_ kind: ModelKind) -> Int {
-    switch kind {
+    switch kind.installationKind {
     case .deepSeekV4: 43
     case .deepSeekV41: 40
     case .mimoV26FlashRL: 47
@@ -156,6 +156,11 @@ struct MemoryPlanningProfile {
     let input = contextTokens ?? s.estimateInputTokens ?? 4_096
     let output = contextTokens == nil ? s.defaultMaxTokens : outputTokens
     let maximum = manifest.maximumContext ?? Int(number("max_position_embeddings", 1_048_576))
+    if kind.usesNativeEngine {
+      guard input > 0, output >= 0, (contextTokens != nil || output > 0), input <= maximum,
+        output <= maximum - input, s.promptCacheMemoryGiB >= 1, s.promptCacheEntries >= 1 else { return nil }
+      return nativeEstimate(s, mtpAvailable: mtpAvailable, input: input, output: output)
+    }
     let ratio = s.anePrefillRatio ?? 0
     guard (kind.usesQwenEngine || [.deepSeekV4, .deepSeekV41].contains(kind)),
       input > 0, output >= 0, (contextTokens != nil || output > 0),
@@ -373,6 +378,86 @@ struct MemoryPlanningProfile {
     let retainedHidden = mtp && layerMajor ? Double(input) * hidden * hc * activationBytes : 0
     let decoding = MemoryStageEstimate(model: residentWeights + expert, conversation: conversation,
       auxiliary: auxiliary + verification, temporary: decodeWork + retainedHidden + checkpoint + reads + ane + allocator + ngramCache)
+    let result = MemoryEstimate(loading: loading, prefill: prefill, decoding: decoding,
+      inputTokens: input, outputTokens: output)
+    return result.total.isFinite ? result : nil
+  }
+
+  /// The native engine's allocations (Native/QwenNative/engine.mm): resident weights,
+  /// the expert cache, attention and recurrent state, two whole-layer expert buffers for
+  /// prompts over 512 tokens, prompt scratch for 1,024-row chunks, and retained prompt
+  /// cache states. With the automatic cache this is the largest size the engine would
+  /// choose on this Mac, not the size it chooses with the memory free at load.
+  private func nativeEstimate(_ s: ModelAdvancedSettings, mtpAvailable: Bool, input: Int, output: Int) -> MemoryEstimate? {
+    let blob = Double(manifest.expertBlobSize)
+    func file(_ name: String) -> Double { Double(manifest.files.first { $0.path == name }?.size ?? 0) }
+    guard blob > 0, file("common.bin") > 0 else { return nil }
+    let eightBit = s.qwen8BitCommonTensors == true
+    // BF16 copies the file to the GPU. 8-bit stores projections with at least 256
+    // outputs (not the routers) as 8 bits plus a scale and bias per 64 (9/16 of BF16),
+    // copies the other matrices, widens vectors to FP32 and leaves the embedding mapped.
+    func resident(_ tensors: [InstalledTensor], fileBytes: Double) -> (bytes: Double, dense: Double) {
+      guard eightBit else { return (fileBytes, 0) }
+      var bytes = 0.0, dense = 0.0
+      for tensor in tensors {
+        let length = Double(tensor.length)
+        if tensor.name.hasSuffix("embed_tokens.weight") { continue }
+        if tensor.shape.count == 2, tensor.shape[0] >= 256, !tensor.name.hasSuffix("mlp.gate.weight") {
+          bytes += length * 9 / 16
+          dense += length
+        } else {
+          bytes += tensor.shape.count == 1 ? length * 2 : length
+        }
+      }
+      return (bytes, dense)
+    }
+    let main = resident(manifest.commonTensors, fileBytes: file("common.bin"))
+    let mtp = s.mtpEnabled == true && mtpAvailable && manifest.mtp != nil
+    let draft = mtp ? resident(manifest.mtp?.commonTensors ?? [], fileBytes: file("mtp/common.bin")) : (bytes: 0.0, dense: 0.0)
+    let weights = main.bytes + draft.bytes
+    let physical = Double(ProcessInfo.processInfo.physicalMemory)
+    let slots: Double
+    if s.expertCacheAutomatic != false {
+      // The engine's ceiling: footprint under 60% of RAM, 1,024 to 8,192 slots.
+      let budget = 0.6 * physical - weights - 6 * ExpertMemory.gib
+      slots = min(8_192, max(1_024, (budget / blob).rounded(.down)))
+    } else {
+      let budget = s.expertCacheGiB ?? ExpertMemory.legacyGiB(slots: s.slots, blobBytes: manifest.expertBlobSize)
+      guard let count = try? ExpertMemory.capacity(gib: budget, blobBytes: manifest.expertBlobSize, minimum: 10) else { return nil }
+      slots = Double(count)
+    }
+    let experts = slots * blob
+    // Attention state per token and layer: BF16-sized keys and values, raw index keys,
+    // pooled index keys; capacity doubles from 4,096 tokens.
+    let tokens = Double(input + output)
+    var capacity = 4_096.0
+    while capacity < tokens { capacity *= 2 }
+    let fullLayers = Double((config["layer_types"] as? [String])?.filter { $0 == "full_attention" }.count ?? 12)
+    let perToken = 2 * number("num_key_value_heads", 2) * number("head_dim", 256) * 2
+      + number("indexer_head_dim", 128) * 2 + number("indexer_head_dim", 128)
+    let attention = (fullLayers + (mtp ? 1 : 0)) * capacity * perToken
+    let linearLayers = Double(manifest.layerCount) - fullLayers
+    let recurrent = linearLayers * 2 * number("linear_num_value_heads", 48)
+      * number("linear_key_head_dim", 128) * number("linear_value_head_dim", 128) * 4
+    let state = attention + recurrent
+    // Prompt cache states hold the attention state of their tokens and one recurrent copy.
+    let stateBytes = (fullLayers + (mtp ? 1 : 0)) * tokens * perToken + recurrent / 2
+    let retained = s.promptCacheMode == .off ? 0
+      : min(Double(s.promptCacheEntries) * 2 * stateBytes, max(stateBytes, Double(s.promptCacheMemoryGiB) * ExpertMemory.gib))
+    let hidden = number("hidden_size", 2_560) * number("hc_count", 4)
+    let rows = min(Double(input), 1_024).rounded(.up)
+    // Scratch per prompt row (reserve() in engine.mm), expert tiles, the call's hidden
+    // rows (up to 16,384 tokens per call) and the attention weights of one chunk.
+    let scratch = rows * 156_789 * 4 + (rows * 10 + 8_192) * 7_040 * 4
+      + min(Double(input) + 1, 16_384) * hidden * 4 + rows * 24 * 2_056 * 4 * 1.5
+    let layerBuffers = input > 512 ? 2 * Double(manifest.expertCount) * blob : 0
+    // 8-bit: long products use a BF16 copy of one layer's projections.
+    let denseLayer = eightBit ? (main.dense + draft.dense) / Double(max(1, manifest.layerCount)) : 0
+    let loading = MemoryStageEstimate(model: weights + experts, conversation: 0, auxiliary: 0, temporary: 0)
+    let prefill = MemoryStageEstimate(model: weights + experts, conversation: state + retained,
+      auxiliary: 0, temporary: scratch + layerBuffers + denseLayer)
+    let decoding = MemoryStageEstimate(model: weights + experts, conversation: state + retained,
+      auxiliary: 0, temporary: layerBuffers + 16 * number("vocab_size", 248_320) * 4)
     let result = MemoryEstimate(loading: loading, prefill: prefill, decoding: decoding,
       inputTokens: input, outputTokens: output)
     return result.total.isFinite ? result : nil

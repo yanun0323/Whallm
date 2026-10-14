@@ -57,3 +57,10 @@ enum QwenFlashCopy {
   static let allKeys = [wavesConflict, invalidWaves, invalidBackend, invalidCache,
     invalidQueryChunk, invalidReadBatch, invalidSeeds, commonTensors, commonTensorsHint]
 }
+
+/// Settings copy for models on the native engine.
+enum NativeEngineCopy {
+  static let automaticCache = "Size the expert cache automatically"
+  static let automaticCacheHint = "Uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size."
+  static let allKeys = [automaticCache, automaticCacheHint]
+}
