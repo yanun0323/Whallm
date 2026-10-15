@@ -50,7 +50,10 @@ struct DeepSeekV4SSDApp: App {
       .frame(minWidth: 640, minHeight: 320)
       .environment(\.locale, selectedLanguage.locale)
       .onAppear { NSApplication.shared.activate() }
-      .onDisappear { server.stop() }
+      .onDisappear {
+        server.stop()
+        server.flushLogFile()
+      }
     }
     .defaultSize(width: 1_440, height: 900)
     .windowStyle(.hiddenTitleBar)

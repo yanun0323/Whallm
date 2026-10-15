@@ -258,7 +258,7 @@ The API streams text and supports tool calls through:
 
 See the [MiMo contract and limits](docs/mimo-development.md).
 
-**Privacy**: models run on your Mac. Whallm uses the network only for downloads, updates and API connections. Clients you connect may send data elsewhere. **Debug** logs can contain full prompts and tool results.
+**Privacy**: models run on your Mac. Whallm uses the network only for downloads, updates and API connections. Clients you connect may send data elsewhere. **Debug** records settings and cache details, not full prompts, tool results, images or API keys. Optional file logging saves to `~/.whallm/server.log` (10 MB maximum; oldest content is removed first). Logs can still contain local paths and network addresses; review them before sharing.
 
 ## Validation and limits
 

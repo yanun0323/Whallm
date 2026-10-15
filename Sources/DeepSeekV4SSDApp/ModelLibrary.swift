@@ -210,6 +210,8 @@ struct ModelOperationProgress: Equatable {
 
 @MainActor
 final class ModelLibrary: ObservableObject {
+  weak var logServer: ServerController?
+
   static let supportedModelKinds: [ModelKind] = ModelPackages.descriptors.compactMap {
     ModelKind(rawValue: $0.kind)
   }
@@ -828,6 +830,10 @@ final class ModelLibrary: ObservableObject {
     to destination: URL,
     modelKind: ModelKind
   ) async {
+    let eventID = UUID().uuidString
+    let started = ContinuousClock.now
+    logServer?.recordEvent(.info, "Model download started", requestID: eventID)
+    defer { logServer?.recordEvent(.info, "Model download finished elapsed=\(started.duration(to: .now))", requestID: eventID) }
     do {
       let package = ModelPackages.package(for: modelKind)
       let phase: ModelOperationPhase = package.installationLabel.map(ModelOperationPhase.installingArtifact) ?? .downloading
@@ -839,6 +845,7 @@ final class ModelLibrary: ObservableObject {
       let issues = needsAudit ? try await audit(destination).issues : []
       verificationModelPath = destination.path
       verificationIssues = issues
+      if !issues.isEmpty { logServer?.recordEvent(.error, "Verification found \(issues.count) invalid files", requestID: eventID) }
       let resultMessage =
         issues.isEmpty
         ? L10n.string("The model is installed and passed complete verification.")
@@ -848,9 +855,12 @@ final class ModelLibrary: ObservableObject {
       defaults.set(false, forKey: Self.activeDownloadPreference)
       await scan()
       message = resultMessage
+      logServer?.recordEvent(.info, "Model download completed", requestID: eventID)
     } catch is CancellationError {
+      logServer?.recordEvent(.info, "Model download cancelled; cleanup complete", requestID: eventID)
       message = L10n.string("The download stopped. The app kept the progress.")
     } catch {
+      logServer?.recordFailure("Model download", error: error, requestID: eventID)
       defaults.set(false, forKey: Self.activeDownloadPreference)
       message = L10n.string(
         "The model could not be downloaded. Check the network and try again.\n%@",
@@ -860,27 +870,40 @@ final class ModelLibrary: ObservableObject {
   }
 
   private func performVerification(_ url: URL) async {
+    let eventID = UUID().uuidString
+    let started = ContinuousClock.now
+    logServer?.recordEvent(.info, "Model verification started", requestID: eventID)
+    defer { logServer?.recordEvent(.info, "Model verification finished elapsed=\(started.duration(to: .now))", requestID: eventID) }
     do {
       let verification = try await audit(url)
       verificationModelPath = url.path
       verificationIssues = verification.issues
+      if !verification.issues.isEmpty { logServer?.recordEvent(.error, "Verification found \(verification.issues.count) invalid files", requestID: eventID) }
       message =
         verification.isValid
         ? L10n.string("The model passed complete verification.")
         : L10n.string("%lld model files need repair.", Int64(verification.issues.count))
+      logServer?.recordEvent(.info, "Model verification completed", requestID: eventID)
     } catch is CancellationError {
+      logServer?.recordEvent(.info, "Model verification cancelled; cleanup complete", requestID: eventID)
       message = L10n.string("Verification stopped.")
     } catch {
+      logServer?.recordFailure("Model verification", error: error, requestID: eventID)
       message = L10n.string("The model could not be verified. %@", String(describing: error))
     }
     finishOperation()
   }
 
   private func performRepair(_ url: URL) async {
+    let eventID = UUID().uuidString
+    let started = ContinuousClock.now
+    logServer?.recordEvent(.info, "Model repair started", requestID: eventID)
+    defer { logServer?.recordEvent(.info, "Model repair finished elapsed=\(started.duration(to: .now))", requestID: eventID) }
     do {
       let verification = try await audit(url)
       verificationModelPath = url.path
       verificationIssues = verification.issues
+      if !verification.issues.isEmpty { logServer?.recordEvent(.error, "Verification found \(verification.issues.count) invalid files", requestID: eventID) }
       guard !verification.isValid else {
         message = L10n.string("The model does not need repair.")
         defaults.set(false, forKey: Self.activeDownloadPreference)
@@ -901,6 +924,7 @@ final class ModelLibrary: ObservableObject {
       try Task.checkCancellation()
       let issues = needsAudit ? try await audit(url).issues : []
       verificationIssues = issues
+      if !issues.isEmpty { logServer?.recordEvent(.error, "Verification found \(issues.count) invalid files", requestID: eventID) }
       let resultMessage =
         issues.isEmpty
         ? L10n.string("The model was repaired and passed complete verification.")
@@ -908,10 +932,13 @@ final class ModelLibrary: ObservableObject {
       defaults.set(false, forKey: Self.activeDownloadPreference)
       await scan()
       message = resultMessage
+      logServer?.recordEvent(.info, "Model repair completed", requestID: eventID)
     } catch is CancellationError {
+      logServer?.recordEvent(.info, "Model repair cancelled; cleanup complete", requestID: eventID)
       await scan()
       message = L10n.string("Repair stopped. The app kept the progress.")
     } catch {
+      logServer?.recordFailure("Model repair", error: error, requestID: eventID)
       defaults.set(false, forKey: Self.activeDownloadPreference)
       message = L10n.string(
         "The model could not be repaired. Check the network and storage.\n%@",
@@ -922,6 +949,10 @@ final class ModelLibrary: ObservableObject {
   }
 
   private func performDSparkInstallation(_ url: URL) async {
+    let eventID = UUID().uuidString
+    let started = ContinuousClock.now
+    logServer?.recordEvent(.info, "DSpark installation started", requestID: eventID)
+    defer { logServer?.recordEvent(.info, "DSpark installation finished elapsed=\(started.duration(to: .now))", requestID: eventID) }
     do {
       let progress: @Sendable (RepackProgress) -> Void = { [weak self] progress in
         Task { @MainActor in self?.updateRepackProgress(progress, phase: .installingDSpark) }
@@ -936,15 +967,19 @@ final class ModelLibrary: ObservableObject {
       let verification = try await audit(url)
       verificationModelPath = url.path
       verificationIssues = verification.issues
+      if !verification.issues.isEmpty { logServer?.recordEvent(.error, "Verification found \(verification.issues.count) invalid files", requestID: eventID) }
       await scan()
       message =
         verification.isValid
         ? L10n.string("DSpark is installed and ready.")
         : L10n.string("DSpark installation did not pass verification.")
+      logServer?.recordEvent(.info, "DSpark installation completed", requestID: eventID)
     } catch is CancellationError {
+      logServer?.recordEvent(.info, "DSpark installation cancelled; cleanup complete", requestID: eventID)
       await scan()
       message = L10n.string("DSpark installation stopped. The app kept the progress.")
     } catch {
+      logServer?.recordFailure("DSpark installation", error: error, requestID: eventID)
       await scan()
       message = L10n.string(
         "DSpark could not be installed. Check the network and storage.\n%@",
@@ -955,6 +990,10 @@ final class ModelLibrary: ObservableObject {
   }
 
   private func performMTPInstallation(_ url: URL) async {
+    let eventID = UUID().uuidString
+    let started = ContinuousClock.now
+    logServer?.recordEvent(.info, "MTP installation started", requestID: eventID)
+    defer { logServer?.recordEvent(.info, "MTP installation finished elapsed=\(started.duration(to: .now))", requestID: eventID) }
     do {
       _ = try await QwenFlashNextCheckpoint().installMTP(at: url) { [weak self] progress in
         Task { @MainActor in
@@ -964,10 +1003,13 @@ final class ModelLibrary: ObservableObject {
       try Task.checkCancellation()
       await scan()
       message = L10n.string("MTP is installed and ready.")
+      logServer?.recordEvent(.info, "MTP installation completed", requestID: eventID)
     } catch is CancellationError {
+      logServer?.recordEvent(.info, "MTP installation cancelled; cleanup complete", requestID: eventID)
       await scan()
       message = L10n.string("MTP installation stopped. The app kept the progress.")
     } catch {
+      logServer?.recordFailure("MTP installation", error: error, requestID: eventID)
       await scan()
       message = L10n.string(
         "MTP could not be installed. Check the network and storage.\n%@",

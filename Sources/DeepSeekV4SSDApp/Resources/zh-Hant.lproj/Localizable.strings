@@ -85,7 +85,7 @@
 "Continue Model Installation" = "繼續安裝模型";
 "Correct the default generation parameters." = "請修正預設生成參數。";
 "Debug" = "偵錯";
-"Applies the next time the server starts. Debug logs the full JSON body of every request and may contain sensitive content." = "下次啟動 server 時生效。偵錯會記錄每個 request 的完整 JSON 內容，其中可能包含敏感資訊。";
+"Applies the next time the server starts. Debug includes settings and cache details, not conversation text, images, or API keys." = "下次啟動伺服器時套用。Debug 包含設定與快取資訊，不記錄對話文字、圖片或 API key。";
 "Correct the failed download checks first." = "請先修正下載前檢查項目。";
 "Could not get a response. %@" = "無法取得回應。%@";
 "Decode Tok/s" = "解碼 Token/秒";
@@ -655,3 +655,7 @@
 "Longest input plus output for each request." = "每次 request 輸入加輸出的最大長度。";
 "Allow longer conversations, but long prompts use more time and memory. Longer prompts are rejected, and answers are shortened to fit. Maximum: %@ tokens." = "調高可容納更長的對話，但長輸入會更久、記憶體用量更多。超過的輸入會被拒絕，回答會縮短到放得下。上限：%@ 個 token。";
 "Context window must be at least Max tokens and at most %@." = "上下文視窗不能小於最大 token 數，也不能超過 %@。";
+
+"Save logs to file" = "將 log 儲存成檔案";
+"Saves new logs to ~/.whallm/server.log immediately. Keeps up to 10 MB, removing the oldest content first. Turning this off keeps the existing file. Debug logs may contain sensitive content." = "立即將新的 log 寫入 ~/.whallm/server.log。最多保留 10 MB，超過時先刪除最舊內容。取消勾選會保留已有檔案。Debug log 可能包含敏感內容。";
+"Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry." = "無法儲存 log：%@。請檢查資料夾權限及剩餘磁碟空間，再取消並重新勾選以重試。";

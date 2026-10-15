@@ -85,7 +85,7 @@
 "Continue Model Installation" = "Continue Model Installation";
 "Correct the default generation parameters." = "Correct the default generation parameters.";
 "Debug" = "Debug";
-"Applies the next time the server starts. Debug logs the full JSON body of every request and may contain sensitive content." = "Applies the next time the server starts. Debug logs the full JSON body of every request and may contain sensitive content.";
+"Applies the next time the server starts. Debug includes settings and cache details, not conversation text, images, or API keys." = "Applies the next time the server starts. Debug includes settings and cache details, not conversation text, images, or API keys.";
 "Correct the failed download checks first." = "Correct the failed download checks first.";
 "Could not get a response. %@" = "Could not get a response. %@";
 "Decode Tok/s" = "Decode Tok/s";
@@ -655,3 +655,7 @@
 "Longest input plus output for each request." = "Longest input plus output for each request.";
 "Allow longer conversations, but long prompts use more time and memory. Longer prompts are rejected, and answers are shortened to fit. Maximum: %@ tokens." = "Allow longer conversations, but long prompts use more time and memory. Longer prompts are rejected, and answers are shortened to fit. Maximum: %@ tokens.";
 "Context window must be at least Max tokens and at most %@." = "Context window must be at least Max tokens and at most %@.";
+
+"Save logs to file" = "Save logs to file";
+"Saves new logs to ~/.whallm/server.log immediately. Keeps up to 10 MB, removing the oldest content first. Turning this off keeps the existing file. Debug logs may contain sensitive content." = "Saves new logs to ~/.whallm/server.log immediately. Keeps up to 10 MB, removing the oldest content first. Turning this off keeps the existing file. Debug logs may contain sensitive content.";
+"Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry." = "Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry.";

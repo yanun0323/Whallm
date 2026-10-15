@@ -679,6 +679,7 @@ struct ServerConfiguration: Codable, Equatable {
   var host: String
   var port: Int
   var logLevel: ServerLogLevel
+  var saveLogsToFile = false
   var apiKey: String
   var powerSavingLimitGBps: Double?
 
@@ -790,6 +791,7 @@ extension ServerConfiguration {
     case host
     case port
     case logLevel
+    case saveLogsToFile
     case apiKey
     case powerSavingLimitGBps
   }
@@ -803,6 +805,7 @@ extension ServerConfiguration {
     host = try values.decode(String.self, forKey: .host)
     port = try values.decode(Int.self, forKey: .port)
     logLevel = try values.decodeIfPresent(ServerLogLevel.self, forKey: .logLevel) ?? .info
+    saveLogsToFile = try values.decodeIfPresent(Bool.self, forKey: .saveLogsToFile) ?? false
     apiKey = try values.decode(String.self, forKey: .apiKey)
     powerSavingLimitGBps = try values.decodeIfPresent(
       Double.self, forKey: .powerSavingLimitGBps)
@@ -1257,6 +1260,72 @@ final class ServerController: ObservableObject {
 
   @Published private(set) var state: State = .stopped
   @Published private(set) var log = ""
+  @Published private(set) var logFileError: String?
+  private let logFile: ServerLogFile
+  let logFileQueue = DispatchQueue(label: "Whallm.server-log", qos: .utility)
+  private var logFileSession: UUID?
+  private var savesLogsToFile = false
+
+  init(logFileURL: URL = ServerLogFile.defaultURL) {
+    logFile = ServerLogFile(url: logFileURL)
+  }
+
+  var eventLogLevel: ServerLogLevel = .info
+  private var statusLogFailed = false
+  private var outputBuffer = Data()
+
+  func recordEvent(_ level: ServerLogLevel, _ message: String, requestID: String = "-") {
+    let ranks: [ServerLogLevel: Int] = [.debug: 0, .info: 1, .error: 2]
+    guard ranks[level, default: 0] >= ranks[eventLogLevel, default: 0] else { return }
+    let timestamp = Date().ISO8601Format(.init(includingFractionalSeconds: true))
+    let safe = message.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
+    appendLog("\(timestamp) [\(level.rawValue.uppercased())] request=\(requestID) \(safe)\n")
+  }
+
+  func recordFailure(_ operation: String, error: Error, requestID: String = "-") {
+    let value = error as NSError
+    // NSError descriptions can contain request bodies or credential-bearing URLs.
+    recordEvent(.error, "\(operation) failed domain=\(value.domain) code=\(value.code)", requestID: requestID)
+  }
+
+  func recordStatusFailure(_ reason: String) {
+    guard !statusLogFailed else { return }
+    statusLogFailed = true
+    recordEvent(.error, "Status polling failed: \(reason); suppressing repeats until recovery")
+  }
+
+  func setLogFileEnabled(_ enabled: Bool) {
+    guard enabled != savesLogsToFile else { return }
+    savesLogsToFile = enabled
+    logFileSession = enabled ? UUID() : nil
+    logFileError = nil
+    // Validate access and trim an existing oversized file as soon as enabled.
+    if enabled { writeLogFile("") }
+  }
+
+  func flushLogFile() {
+    logFileQueue.sync {}
+  }
+
+  private func writeLogFile(_ text: String) {
+    guard let session = logFileSession else { return }
+    let file = logFile
+    logFileQueue.async { [weak self] in
+      do {
+        try file.append(text)
+      } catch {
+        let detail = error.localizedDescription
+        Task { @MainActor [weak self] in
+          guard let self, self.logFileSession == session else { return }
+          self.logFileSession = nil
+          let message = L10n.string(
+            "Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry.", detail)
+          self.logFileError = message
+          self.recordEvent(.error, "Log file write failed; check folder permissions and disk space")
+        }
+      }
+    }
+  }
   @Published private(set) var performance = LivePerformance()
   @Published private(set) var performanceHistory = PerformanceHistory()
   @Published private(set) var catalogModels: [CatalogModel] = []
@@ -1302,6 +1371,9 @@ final class ServerController: ObservableObject {
 
   func start(_ configuration: ServerConfiguration, catalog: ModelCatalog) {
     guard !isActive else { return }
+    eventLogLevel = configuration.logLevel
+    setLogFileEnabled(configuration.saveLogsToFile)
+    statusLogFailed = false
     do {
       try configuration.validate()
       let temporaryModelCatalog = try TemporaryModelCatalog(catalog: catalog)
@@ -1338,6 +1410,8 @@ final class ServerController: ObservableObject {
       }
 
       log = ""
+      outputBuffer.removeAll()
+      recordEvent(.info, "Server starting")
       modelActionError = nil
       state = .starting
       try process.run()
@@ -1351,7 +1425,7 @@ final class ServerController: ObservableObject {
       temporaryModelCatalog = nil
       catalogModels = []
       state = .failed(error.localizedDescription)
-      appendLog(L10n.string("Error: %@", error.localizedDescription) + "\n")
+      recordFailure("Server startup", error: error)
     }
   }
 
@@ -1365,6 +1439,7 @@ final class ServerController: ObservableObject {
       return
     }
     state = .stopping
+    recordEvent(.info, "Server stop requested")
     process.interrupt()
   }
 
@@ -1405,6 +1480,7 @@ final class ServerController: ObservableObject {
       } catch {
         guard !Task.isCancelled, revision == self.memoryResetRevision else { return }
         self.memoryResetPending = false
+        self.recordFailure("Memory statistics reset", error: error)
         self.memoryResetFailed = true
         self.performance.memoryResetFailed = true
       }
@@ -1430,6 +1506,7 @@ final class ServerController: ObservableObject {
       await changeLoadedModel(
         .load(modelID), path: "api/models/load", configuration: configuration)
     } catch {
+      recordFailure("Model operation", error: error)
       modelActionError = error.localizedDescription
     }
   }
@@ -1472,6 +1549,7 @@ final class ServerController: ObservableObject {
       if let configuration { updateCatalogModel(configuration) }
       await refreshPerformance()
     } catch {
+      recordFailure("Model operation", error: error)
       modelActionError = error.localizedDescription
     }
   }
@@ -1489,6 +1567,7 @@ final class ServerController: ObservableObject {
         modelConfigurationErrors.removeValue(forKey: configuration.id)
         modelActionError = nil
       } catch {
+        recordFailure("Model configuration sync", error: error)
         modelConfigurationErrors[configuration.id] = error.localizedDescription
         if case .running = state {
           modelActionError = error.localizedDescription
@@ -1545,16 +1624,37 @@ final class ServerController: ObservableObject {
       while !Task.isCancelled {
         let data = handle.availableData
         guard !data.isEmpty else { break }
-        let text = String(decoding: data, as: UTF8.self)
-        await self?.received(text)
+        await self?.received(data)
       }
     }
   }
 
-  private func received(_ text: String) {
-    appendLog(text)
-    if case .starting = state, log.contains("Ready:") {
-      state = .running
+  func received(_ data: Data) {
+    outputBuffer.append(data)
+    while let newline = outputBuffer.firstIndex(of: 0x0A) {
+      let line = String(decoding: outputBuffer.prefix(upTo: newline), as: UTF8.self)
+      outputBuffer.removeSubrange(...newline)
+      receiveLine(line)
+    }
+    // Bound output without newlines (e.g. a native dependency's diagnostic).
+    if outputBuffer.count > 40_000 {
+      receiveLine(String(decoding: outputBuffer, as: UTF8.self))
+      outputBuffer.removeAll()
+    }
+  }
+
+  private func receiveLine(_ line: String) {
+    if line == "WHALLM_SERVER_READY" {
+      if case .starting = state { state = .running }
+      return
+    }
+    if case .starting = state, line.contains("Ready:") { state = .running }
+    if line.contains(" [DEBUG] request=") || line.contains(" [INFO] request=")
+        || line.contains(" [ERROR] request=") {
+      appendLog(line + "\n")
+    } else if !line.isEmpty {
+      // Unexpected stderr (e.g. loader failures) must remain visible at Error.
+      recordEvent(.error, "Server output: " + line)
     }
   }
 
@@ -1593,9 +1693,14 @@ final class ServerController: ObservableObject {
       guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
         performance.snapshot.memoryUsage = .nan
         performance.appMemory = nil
+        recordStatusFailure("HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
         return
       }
       let status = try ServerStatus.decode(data)
+      if statusLogFailed {
+        recordEvent(.info, "Status polling recovered")
+        statusLogFailed = false
+      }
       // A response started before/during Clear must not restore the old peak.
       let memory = canAcceptMemory && !memoryResetPending && memoryRevision == memoryResetRevision
         ? status.appMemory : performance.appMemory
@@ -1648,6 +1753,7 @@ final class ServerController: ObservableObject {
       performance = live
       recordPerformanceSample(live)
     } catch {
+      recordStatusFailure("domain=\((error as NSError).domain) code=\((error as NSError).code)")
       performance.snapshot.memoryUsage = .nan
       performance.appMemory = nil
       return
@@ -1686,7 +1792,8 @@ final class ServerController: ObservableObject {
     return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
   }
 
-  private func appendLog(_ text: String) {
+  func appendLog(_ text: String) {
+    writeLogFile(text)
     log += text
     if log.count > 40_000 {
       log.removeFirst(log.count - 40_000)
@@ -1694,6 +1801,11 @@ final class ServerController: ObservableObject {
   }
 
   private func didTerminate(status: Int32) {
+    if !outputBuffer.isEmpty {
+      receiveLine(String(decoding: outputBuffer, as: UTF8.self))
+      outputBuffer.removeAll()
+    }
+    recordEvent(status == 0 || state == .stopping ? .info : .error, "Server stopped exit_code=\(status)")
     cancelModelConfigurationSync()
     outputTask?.cancel()
     outputTask = nil
@@ -1722,7 +1834,7 @@ final class ServerController: ObservableObject {
     } else {
       let message = L10n.string("The server stopped with exit code %d.", status)
       state = .failed(message)
-      appendLog("\n\(message)\n")
+      recordEvent(.error, message)
     }
   }
 }

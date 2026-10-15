@@ -59,10 +59,15 @@ struct ContentView: View {
       throughputSession.cancel()
     }
     .task {
+      modelLibrary.logServer = server
+      chatSession.logServer = server
+      throughputSession.logServer = server
       if !didLoadConfiguration {
         let loaded = ServerConfiguration.localDefault
         persistedAPIKey = loaded.apiKey
         configuration = loaded
+        server.eventLogLevel = loaded.logLevel
+        server.setLogFileEnabled(loaded.saveLogsToFile)
         didLoadConfiguration = true
       }
       await modelLibrary.scan()
@@ -73,6 +78,8 @@ struct ContentView: View {
     .onChange(of: modelLibrary.selectedModelKind) { activateSelectedModel() }
     .onChange(of: configuration) {
       configuration.save()
+      server.eventLogLevel = configuration.logLevel
+      server.setLogFileEnabled(configuration.saveLogsToFile)
     }
     .onChange(of: configuration.apiKey) {
       guard didLoadConfiguration, configuration.apiKey != persistedAPIKey else { return }
@@ -2417,7 +2424,7 @@ func powerSavingLegendFrame(index: Int, count: Int, totalWidth: CGFloat) -> CGRe
   return CGRect(x: minX, y: 0, width: width, height: 0)
 }
 
-private struct LogsView: View {
+struct LogsView: View {
   @ObservedObject var server: ServerController
   @Binding var configuration: ServerConfiguration
   let language: AppLanguage
@@ -2427,7 +2434,7 @@ private struct LogsView: View {
       SettingRow(
         "Log level",
         hint:
-          "Applies the next time the server starts. Debug logs the full JSON body of every request and may contain sensitive content.",
+          "Applies the next time the server starts. Debug includes settings and cache details, not conversation text, images, or API keys.",
         language: language
       ) {
         Picker(
@@ -2443,6 +2450,24 @@ private struct LogsView: View {
         .frame(width: 240, alignment: .trailing)
       }
       .disabled(server.isActive)
+
+      VStack(alignment: .leading, spacing: 6) {
+        Toggle(L10n.string("Save logs to file", language: language),
+               isOn: $configuration.saveLogsToFile)
+          .toggleStyle(.checkbox)
+        Text(L10n.string(
+          "Saves new logs to ~/.whallm/server.log immediately. Keeps up to 10 MB, removing the oldest content first. Turning this off keeps the existing file. Debug logs may contain sensitive content.",
+          language: language))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        if let error = server.logFileError {
+          Label(error, systemImage: "exclamationmark.triangle")
+            .font(.caption)
+            .textSelection(.enabled)
+            .accessibilityAddTraits(.updatesFrequently)
+        }
+      }
 
       SectionHeader(title: L10n.string("Server log", language: language))
       ScrollView {
@@ -3098,6 +3123,8 @@ func resolvedChatModelName(savedName: String, models: [CatalogModel]) -> String?
 
 @MainActor
 final class ChatSession: ObservableObject {
+  weak var logServer: ServerController?
+
   typealias Stream = (
     _ messages: [ChatMessage],
     _ baseURL: URL,
@@ -3163,6 +3190,7 @@ final class ChatSession: ObservableObject {
     let fileCount = Set(requestMessages.flatMap(\.attachments).map(\.id)).count
     requestStage = fileCount == 0 ? .preparing : .uploading(completed: 0, total: fileCount)
     let assistantID = UUID()
+    logServer?.recordEvent(.info, "Chat request started", requestID: assistantID.uuidString)
     messages.append(
       // Store the stable identity locally, even when the request uses an Alias.
       ChatMessage(id: assistantID, role: "assistant", content: "", modelName: modelID ?? model))
@@ -3191,6 +3219,7 @@ final class ChatSession: ObservableObject {
       } catch {
         flushPendingDeltas(for: assistantID)
         if Task.isCancelled {
+          logServer?.recordEvent(.info, "Chat cancellation completed", requestID: assistantID.uuidString)
           removeEmptyAssistantMessage(id: assistantID)
           return
         }
@@ -3201,6 +3230,7 @@ final class ChatSession: ObservableObject {
         {
           messages.remove(at: index)
         }
+        logServer?.recordFailure("Chat request", error: error, requestID: assistantID.uuidString)
         errorMessage = L10n.string(
           "Could not get a response. %@", language: language, error.localizedDescription)
       }
@@ -3209,6 +3239,7 @@ final class ChatSession: ObservableObject {
   }
 
   func stopGenerating() {
+    if generationTask != nil { logServer?.recordEvent(.info, "Chat cancellation requested") }
     generationTask?.cancel()
   }
 

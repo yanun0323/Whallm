@@ -234,6 +234,8 @@ enum ThroughputClient {
 
 @MainActor
 final class ThroughputSession: ObservableObject {
+  weak var logServer: ServerController?
+
   #if WHALLM_LOCAL_BUILD
   static let dryRunAvailable = true
   #else
@@ -362,8 +364,10 @@ final class ThroughputSession: ObservableObject {
         }
       } catch {
         if Task.isCancelled {
+          logServer?.recordEvent(.info, "Throughput cancellation received; unloading model")
           finalPhase = "Benchmark cancelled"
         } else {
+          logServer?.recordFailure("Throughput", error: error)
           self.error = error.localizedDescription
           finalPhase = "Benchmark failed"
         }
@@ -376,12 +380,14 @@ final class ThroughputSession: ObservableObject {
         do {
           try await cleanup.value
         } catch {
+          logServer?.recordFailure("Throughput model unload", error: error)
           let message = L10n.string("Could not unload the benchmark model: %@", error.localizedDescription)
           self.error = [self.error, message].compactMap { $0 }.joined(separator: "\n")
           finalPhase = "Benchmark failed"
         }
         isUnloading = false
       }
+      logServer?.recordEvent(.info, "Throughput cleanup completed")
       phase = finalPhase
     }
   }
@@ -392,6 +398,7 @@ final class ThroughputSession: ObservableObject {
   }
 
   func reportFailure(_ error: Error) {
+    logServer?.recordFailure("Throughput", error: error)
     self.error = error.localizedDescription
     phase = "Benchmark failed"
   }
