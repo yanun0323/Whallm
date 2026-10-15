@@ -24,8 +24,8 @@ from deepseek_v4_ssd.model_manager import open_runtime, parse_model_catalog
 from deepseek_v4_ssd.model_support import get_support
 from deepseek_v4_ssd.native_qwen import NativeQwenRuntime, Sampler
 
-NATIVE = "swift1.5-qwen3.8-flash-next-native"
-QWEN_NATIVE = "qwen3.8-flash-next-native"
+NATIVE = "swift1.5-qwen3.8-flash-next"
+QWEN_NATIVE = "qwen3.8-flash-next"
 
 
 def mlx_distribution(logits, history, options):
@@ -226,7 +226,7 @@ class RuntimeTest(unittest.TestCase):
 class CatalogTest(unittest.TestCase):
     def raw(self, **runtime):
         return {"version": 1, "models": [{
-            "id": NATIVE, "alias": None, "path": "/tmp/swift", "model_kind": NATIVE,
+            "id": "swift1.5-qwen3.8-flash-next-mxfp4", "alias": None, "path": "/tmp/swift", "model_kind": NATIVE,
             "runtime": {**asdict(RuntimeConfig(mtp_enabled=True, qwen_8bit_common_tensors=True,
                                                native_automatic_expert_cache=True)), **runtime},
             "defaults": {"max_tokens": 8192, "temperature": 0.7, "top_p": 0.8, "top_k": 20},
@@ -241,7 +241,7 @@ class CatalogTest(unittest.TestCase):
 
     def test_qwen_native_kind_opens_the_native_runtime(self):
         raw = self.raw()
-        raw["models"][0].update(id=QWEN_NATIVE, model_kind=QWEN_NATIVE, path="/tmp/qwen")
+        raw["models"][0].update(id="qwen3.8-flash-next-fp8", model_kind=QWEN_NATIVE, path="/tmp/qwen")
         spec = parse_model_catalog(raw)[0]
         self.assertIsInstance(get_support(QWEN_NATIVE), type(get_support(NATIVE)))
         with mock.patch.object(NativeQwenRuntime, "open", return_value="native") as opened:
@@ -250,6 +250,27 @@ class CatalogTest(unittest.TestCase):
         with self.assertRaises(Exception):
             raw["models"][0]["runtime"]["qwen_sorted_expert_prefill"] = True
             parse_model_catalog(raw)
+
+    def test_removed_preview_ids_are_not_registered(self):
+        from deepseek_v4_ssd.model_support.catalog import DESCRIPTORS
+        self.assertEqual(len(DESCRIPTORS), 5)
+        for kind in (NATIVE, QWEN_NATIVE):
+            with self.assertRaises(ValueError):
+                get_support(kind + "-native")
+            raw = self.raw()
+            raw["models"][0].update(id=kind + "-native", model_kind=kind + "-native")
+            with self.assertRaises(ValueError):
+                parse_model_catalog(raw)
+
+    def test_direct_runtime_open_uses_native_for_both_existing_kinds(self):
+        from deepseek_v4_ssd.generation import ModelRuntime
+        for kind in (NATIVE, QWEN_NATIVE):
+            installed = SimpleNamespace(model_kind=kind)
+            config = RuntimeConfig()
+            with mock.patch("deepseek_v4_ssd.generation.InstalledModel.open", return_value=installed), \
+                 mock.patch("deepseek_v4_ssd.native_qwen.NativeQwenRuntime", return_value="native") as opened:
+                self.assertEqual(ModelRuntime.open("/fixture", config), "native")
+                opened.assert_called_once_with(installed, config, kind)
 
     def test_native_kind_rejects_mlx_only_options(self):
         for name, value in (("qwen_sorted_expert_prefill", True), ("qwen_qsa_selected_kernel", True),

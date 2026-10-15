@@ -292,7 +292,7 @@ class ModelRuntimeTests(unittest.TestCase):
         self.assertTrue(
             _uses_layer_major_prefill(configured, is_qwen=False, token_count=2_048)
         )
-        self.assertTrue(
+        self.assertFalse(
             _uses_layer_major_prefill(configured, is_qwen=True, token_count=128)
         )
 

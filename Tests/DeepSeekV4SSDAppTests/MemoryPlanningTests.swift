@@ -56,49 +56,39 @@ final class MemoryPlanningTests: XCTestCase {
     XCTAssertEqual(legacy.slots, 900)
   }
 
-  func testEstimateRespondsToMTPContextCompressionAndCacheBudget() throws {
+  func testNativeEstimateTracksContextCacheAndMTPCapacity() throws {
     let p = try profile()
     var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    s.mtpEnabled = false // the formula, not the shipped default, is under test
-    func estimate(_ settings: ModelAdvancedSettings, available: Bool = true) throws -> MemoryEstimate {
-      try XCTUnwrap(p.estimate(settings, mtpAvailable: available, dsparkAvailable: false))
+    s.expertCacheAutomatic = false
+    s.expertCacheGiB = 4
+    s.qwen8BitCommonTensors = false
+    s.mtpEnabled = false
+    s.promptCacheMode = .off
+    func estimate(_ tokens: Int = 4_096) throws -> MemoryEstimate {
+      try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: tokens))
     }
-    let baseline = try estimate(s)
-    let fixedContext = try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false,
-      contextTokens: 262_144))
-    XCTAssertEqual(fixedContext.inputTokens + fixedContext.outputTokens, 262_144)
-    XCTAssertGreaterThan(fixedContext.total, baseline.total)
-    var changedLength = s
-    changedLength.defaultMaxTokens = 4_096
-    changedLength.estimateInputTokens = 16_384
-    XCTAssertEqual(p.estimate(changedLength, mtpAvailable: true, dsparkAvailable: false,
-      contextTokens: 262_144)?.total, fixedContext.total)
+    let baseline = try estimate()
+    XCTAssertGreaterThan(try estimate(32_768).conversation, baseline.conversation)
     XCTAssertNil(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 262_145))
     s.mtpEnabled = true
-    let mtp = try estimate(s)
-    // MTP disables ordinary Prompt Cache retention, so the final total need not
-    // always increase. Its own weights/state and verification allocations must.
-    XCTAssertGreaterThan(mtp.decoding.auxiliary, baseline.decoding.auxiliary)
-    XCTAssertGreaterThan(mtp.auxiliary, 0)
-    XCTAssertEqual(try estimate(s, available: false).total, baseline.total)
+    XCTAssertGreaterThan(try estimate().model, baseline.model)
     s.mtpEnabled = false
-    s.estimateInputTokens = 32_768
-    let long = try estimate(s)
-    XCTAssertGreaterThan(long.conversation, baseline.conversation)
+    s.expertCacheGiB = 8
+    XCTAssertEqual(try estimate().model - baseline.model, 4 * ExpertMemory.gib, accuracy: 3_000_000)
+    s.expertCacheGiB = 4
+    s.promptCacheMode = .memory
+    XCTAssertGreaterThan(try estimate().conversation, baseline.conversation)
+    let cached = try estimate()
+    s.promptCacheMode = .disk
+    XCTAssertEqual(try estimate().total, cached.total)
+    // Removed MLX controls must not change the native memory estimate.
     s.packedKVCache = true
     s.packedIndexCache = true
-    XCTAssertLessThan(try estimate(s).conversation, long.conversation)
-    s.expertCacheGiB = 16
-    XCTAssertGreaterThan(try estimate(s).model, baseline.model)
-    s.promptCacheMode = .off
-    let off = try estimate(s)
-    s.promptCacheMode = .memory
-    XCTAssertEqual(try estimate(s).conversation - off.conversation,
-      min(3 * Double(s.promptCacheEntries) * off.conversation,
-        max(off.conversation, 8 * ExpertMemory.gib)), accuracy: 1)
-    s.estimateInputTokens = 262_144
-    XCTAssertNil(p.estimate(s, mtpAvailable: true, dsparkAvailable: false))
-    s.estimateInputTokens = 4_096
+    s.qwenSortedExpertPrefill = true
+    s.qwenExpertWaveSlots = 32
+    s.qwenNgramIO = "pread"
+    s.qwenNgramCacheMiB = 64
+    XCTAssertEqual(try estimate().total, cached.total)
     s.expertCacheGiB = -1
     XCTAssertNil(p.estimate(s, mtpAvailable: true, dsparkAvailable: false))
   }
@@ -153,8 +143,8 @@ final class MemoryPlanningTests: XCTestCase {
   }
 
   func testPeakUsesLargestPhaseAndDoesNotStackDecodeSlotsOnBatchedPrefill() throws {
-    for kind in [ModelKind.qwen3_8FlashNext, .deepSeekV4, .deepSeekV41] {
-      let p = try kind == .qwen3_8FlashNext ? profile() : deepSeekProfile(kind)
+    for kind in [ModelKind.deepSeekV4, .deepSeekV41] {
+      let p = try deepSeekProfile(kind)
       var s = ModelAdvancedSettings.defaults(for: kind)
       s.layerMajorPrefill = true
       s.batchedExpertPrefill = true
@@ -204,31 +194,10 @@ final class MemoryPlanningTests: XCTestCase {
     XCTAssertGreaterThan(longer.total, request.total)
   }
 
-  func testPromptCacheCountsGroupedSnapshotsAndMTPDraftState() throws {
-    let p = try profile()
-    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    s.mtpEnabled = false // the formula, not the shipped default, is under test
-    s.promptCacheMode = .off
-    let off = try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 1_024))
-    s.promptCacheMode = .memory
-    s.promptCacheEntries = 1
-    let one = try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 1_024))
-    XCTAssertEqual(one.decoding.conversation, off.decoding.conversation * 4, accuracy: 1)
-    s.promptCacheMemoryGiB = 16
-    XCTAssertEqual(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 1_024)?.total, one.total)
-    s.mtpEnabled = true
-    let mtp = try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false, contextTokens: 1_024))
-    // MTP retains a prompt-end and a final state, each with its draft attention.
-    let draftState = 1_024.0 * (2 * 2 * 256 * 2 + 2 * 128 * 2)
-    XCTAssertEqual(mtp.decoding.conversation,
-      off.decoding.conversation + 2 * (off.decoding.conversation + draftState), accuracy: 1)
-    XCTAssertGreaterThan(mtp.decoding.auxiliary, mtp.prefill.auxiliary)
-    XCTAssertEqual(mtp.decoding.auxiliary - mtp.prefill.auxiliary, off.decoding.conversation, accuracy: 1)
-  }
 
   func testGroupedPromptCacheBudgetAndInFlightSnapshots() throws {
-    for kind in [ModelKind.deepSeekV4, .deepSeekV41, .qwen3_8FlashNext] {
-      let p = try kind == .qwen3_8FlashNext ? profile() : deepSeekProfile(kind)
+    for kind in [ModelKind.deepSeekV4, .deepSeekV41] {
+      let p = try deepSeekProfile(kind)
       for layerMajor in [false, true] {
         var s = ModelAdvancedSettings.defaults(for: kind)
         s.layerMajorPrefill = layerMajor
@@ -256,16 +225,6 @@ final class MemoryPlanningTests: XCTestCase {
           max(uncached.decoding.conversation, ExpertMemory.gib), accuracy: 1)
       }
     }
-    let p = try profile()
-    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    s.promptCacheMode = .off
-    let off = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 262_144))
-    XCTAssertGreaterThan(off.decoding.conversation, ExpertMemory.gib)
-    s.promptCacheMode = .memory
-    s.promptCacheMemoryGiB = 1
-    let overBudget = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 262_144))
-    // Runtime keeps one newest state even when it exceeds the memory budget.
-    XCTAssertEqual(overBudget.decoding.conversation, 2 * off.decoding.conversation, accuracy: 1)
   }
 
   func testV41CountsCacheOwnersAndNativePackedByteWidths() throws {
@@ -301,20 +260,6 @@ final class MemoryPlanningTests: XCTestCase {
     XCTAssertEqual(equivalent.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 16_384)?.total, packed.total)
   }
 
-  func testFullContextDoesNotReserveFullPromptArraysForChunkedPrefill() throws {
-    let p = try profile()
-    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    s.promptCacheMode = .off
-    s.layerMajorPrefill = false
-    let chunked = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 262_144))
-    s.layerMajorPrefill = true
-    let layered = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 262_144))
-    XCTAssertGreaterThan(layered.prefill.temporary - chunked.prefill.temporary, 10 * ExpertMemory.gib)
-    XCTAssertEqual(layered.decoding.conversation, chunked.decoding.conversation)
-    XCTAssertLessThan(layered.total, 60 * ExpertMemory.gib)
-    s.anePrefillRatio = .nan
-    XCTAssertNil(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 262_144))
-  }
 
   func testDSparkPlansLayerMajorPrefillOnlyForV41() throws {
     for kind in [ModelKind.deepSeekV4, .deepSeekV41] {
@@ -375,19 +320,6 @@ final class MemoryPlanningTests: XCTestCase {
     }
   }
 
-  func testPrefillDominatedPeakDoesNotAddReleasedExpertCache() throws {
-    let p = try profile()
-    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    s.layerMajorPrefill = true
-    s.batchedExpertPrefill = true
-    s.expertCacheGiB = 8
-    let small = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 262_144))
-    s.expertCacheGiB = 16
-    let large = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 262_144))
-    XCTAssertGreaterThan(small.prefill.total, large.decoding.total)
-    XCTAssertEqual(small.total, large.total)
-    XCTAssertGreaterThan(large.decoding.model, small.decoding.model)
-  }
 
   func testV41CandidateStorageUsesEachChunksVisibleHistoryAndInt64Positions() throws {
     let base = try deepSeekProfile(.deepSeekV41)
@@ -575,118 +507,9 @@ final class MemoryPlanningTests: XCTestCase {
       appUpdater: AppUpdater(startingUpdater: false, defaults: defaults)), name: "settings")
   }
 
-  func testQwenFlashEstimateCountsPackedCacheAndDoesNotTreatWaveSizeAsTotalCapacity() throws {
-    let p = try profile()
-    var settings = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    func estimate() throws -> MemoryEstimate {
-      try XCTUnwrap(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
-    }
-    let baseline = try estimate()
-    settings.qwenNgramIO = "pread"
-    settings.qwenNgramCacheMiB = 64
-    let cached = try estimate()
-    XCTAssertEqual(cached.prefill.temporary - baseline.prefill.temporary, 64 * 1_048_576, accuracy: 1)
-    XCTAssertEqual(cached.decoding.temporary - baseline.decoding.temporary, 64 * 1_048_576, accuracy: 1)
-    settings.qwenNgramIO = "mmap"
-    XCTAssertEqual(try estimate().total, baseline.total)
-    settings.qwenExpertWaveSlots = 1
-    let waves = try estimate()
-    settings.qwenExpertWaveSlots = 512
-    XCTAssertEqual(try estimate().model, waves.model)
-    settings.batchedExpertPrefill = false
-    settings.nextLayerPrefetch = false
-    XCTAssertEqual(try estimate().prefill.model, waves.prefill.model)
-    settings.qwenNgramCacheMiB = Int.max
-    XCTAssertNil(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
-  }
 
-  func testQwenSortedPrefillCountsExpertWorkForMergedChunks() throws {
-    let p = try profile()
-    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    s.mtpEnabled = false
-    func temporary(_ tokens: Int) throws -> Double {
-      try XCTUnwrap(p.requestEstimate(s, mtpAvailable: false, dsparkAvailable: false,
-        contextTokens: tokens)).prefill.temporary
-    }
-    let merged = (try temporary(16_384), try temporary(1_024))
-    s.qwenSortedExpertPrefill = false
-    let perChunk = (try temporary(16_384), try temporary(1_024))
-    // One expert call covers 4,096 tokens instead of one 1,024-token chunk:
-    // 10 experts x (2,560 + 2 x 640) BF16 values plus FP32 mixing per token.
-    XCTAssertEqual(merged.0 - perChunk.0, 3_072 * (10 * 3_840 * 2 + 2_560 * 4 * 4 * 2), accuracy: 1)
-    XCTAssertEqual(merged.1, perChunk.1)
-  }
 
-  func testStreamingStagingAndSeedEstimatesAreSeparateFromDecodeCapacity() throws {
-    let p = try profile()
-    var settings = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    settings.expertCacheGiB = 8
-    settings.readWorkers = 2
-    settings.layerMajorPrefill = true
-    settings.batchedExpertPrefill = true
-    settings.qwenExpertWaveSlots = 0
-    func estimate() throws -> MemoryEstimate {
-      try XCTUnwrap(p.estimate(settings, mtpAvailable: false, dsparkAvailable: false))
-    }
-    let baseline = try estimate()
-    settings.qwenPrefillReadExperts = 4
-    settings.qwenPrefillSeedExperts = 32
-    let active = try estimate()
-    let scratch = 2_611_200.0 * 3 * 2
-    let seeds = 2_611_200.0 * 32 * 48
-    XCTAssertEqual(active.prefill.temporary - baseline.prefill.temporary, scratch, accuracy: 1)
-    XCTAssertEqual(active.decoding.temporary - baseline.decoding.temporary, scratch, accuracy: 1)
-    XCTAssertEqual(active.prefill.model - baseline.prefill.model, seeds, accuracy: 1)
-    XCTAssertEqual(active.decoding.model, baseline.decoding.model)
-    settings.layerMajorPrefill = false
-    let inactive = try estimate()
-    settings.qwenPrefillReadExperts = 1
-    settings.qwenPrefillSeedExperts = 0
-    XCTAssertEqual(try estimate().total, inactive.total)
-  }
 
-  func test8BitResidentWeightsShrinkLoadedWeightsButNotLoading() throws {
-    // BF16 sizes; only the first three follow the runtime's repacking rule.
-    let shapes: [(String, [Int])] = [
-      ("lm_head.weight", [248_320, 2_560]),
-      ("model.language_model.layers.0.self_attn.q_proj.weight", [12_288, 2_560]),
-      ("model.language_model.layers.0.mlp.shared_expert.up_proj.weight", [640, 2_560]),
-      ("model.language_model.embed_tokens.weight", [248_320, 2_560]),
-      ("model.language_model.layers.0.mlp.gate.weight", [512, 2_560]),
-      ("model.language_model.layers.0.linear_attn.in_proj_a.weight", [48, 2_560]),
-      ("model.language_model.layers.0.linear_attn.conv1d.weight", [10_240, 1, 4])]
-    func tensors(_ list: [(String, [Int])]) throws -> [InstalledTensor] {
-      try JSONDecoder().decode([InstalledTensor].self, from: JSONSerialization.data(withJSONObject:
-        list.map { ["name": $0.0, "dtype": "BF16", "shape": $0.1, "offset": 0, "length": $0.1.reduce(2, *)] }))
-    }
-    let draft = [("mtp.layers.0.self_attn.o_proj.weight", [2_560, 6_144]), ("mtp.layers.0.mlp.gate.weight", [512, 2_560])]
-    let p = try profile(common: tensors(shapes), mtp: tensors(draft))
-    var s = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    s.mtpEnabled = false
-    func estimate(_ on: Bool) throws -> MemoryEstimate {
-      s.qwen8BitCommonTensors = on
-      return try XCTUnwrap(p.estimate(s, mtpAvailable: true, dsparkAvailable: false))
-    }
-    let lmHead = 248_320.0 * 2_560 * 2, qProj = 12_288.0 * 2_560 * 2, up = 640.0 * 2_560 * 2
-    let saved = (lmHead + qProj + up) * 15 / 32
-    var off = try estimate(false), on = try estimate(true)
-    XCTAssertEqual(off.decoding.model - on.decoding.model, saved, accuracy: 1)
-    XCTAssertEqual(off.prefill.model - on.prefill.model, saved, accuracy: 1)
-    XCTAssertEqual(on.loading.total, off.loading.total) // Repacking starts from the loaded BF16 weights.
-    // Layer-major prefill restores one projection at a time and never a whole-step lm_head.
-    XCTAssertEqual(on.prefill.temporary - off.prefill.temporary, qProj, accuracy: 1)
-    XCTAssertEqual(on.decoding.temporary, off.decoding.temporary)
-    XCTAssertLessThan(on.total, off.total)
-    s.layerMajorPrefill = false
-    off = try estimate(false); on = try estimate(true)
-    XCTAssertEqual(on.prefill.temporary - off.prefill.temporary, lmHead, accuracy: 1)
-    s.layerMajorPrefill = true
-    s.mtpEnabled = true
-    let oProj = 2_560.0 * 6_144 * 2
-    off = try estimate(false); on = try estimate(true)
-    XCTAssertEqual(off.decoding.auxiliary - on.decoding.auxiliary, oProj * 15 / 32, accuracy: 1)
-    XCTAssertEqual(on.loading.total, off.loading.total)
-  }
 
   private func profile(common: [InstalledTensor] = [], mtp: [InstalledTensor] = []) throws -> MemoryPlanningProfile {
     let file: (String, UInt64) throws -> InstalledFile = { name, size in

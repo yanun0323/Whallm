@@ -96,17 +96,17 @@ final class SwiftQwenModelTests: XCTestCase {
     XCTAssertEqual(added.alias, "Swift")
     XCTAssertEqual(original.alias, "Original")
     XCTAssertEqual(added.runtime.readWorkers, 9)
-    XCTAssertEqual(original.runtime.readWorkers, 16)
+    XCTAssertEqual(original.runtime.readWorkers, 8)
     // Swift fixes its hidden tuning (2026-10-09), so these saved choices do not apply.
     XCTAssertEqual(added.runtime.qwenNgramIO, "mmap")
     XCTAssertEqual(original.runtime.qwenNgramIO, "mmap")
     XCTAssertFalse(added.runtime.qwenQuantizedKV)
     XCTAssertFalse(added.runtime.qwenQuantizedIndex)
-    XCTAssertTrue(added.runtime.qwenPooledIndexCache)
-    XCTAssertTrue(added.runtime.qwenNgramLookupOptimized)
-    XCTAssertTrue(added.runtime.qwenCompileTensorOps)
-    XCTAssertTrue(added.runtime.qwenPhaseMemory)
-    XCTAssertTrue(added.runtime.qwenNextLayerPrefetch)
+    XCTAssertFalse(added.runtime.qwenPooledIndexCache)
+    XCTAssertFalse(added.runtime.qwenNgramLookupOptimized)
+    XCTAssertFalse(added.runtime.qwenCompileTensorOps)
+    XCTAssertFalse(added.runtime.qwenPhaseMemory)
+    XCTAssertFalse(added.runtime.qwenNextLayerPrefetch)
     XCTAssertTrue(added.runtime.mtpEnabled)
     XCTAssertEqual(added.runtime.qwenMTPDraftTokens, 2)
     XCTAssertEqual(added.runtime.qwenMTPZeroAcceptanceLimit, 32)
@@ -115,7 +115,7 @@ final class SwiftQwenModelTests: XCTestCase {
     XCTAssertEqual(modelKind(withAPIModelID: swift.apiModelID), swift)
     XCTAssertEqual(ExpertMemory.blobBytes(for: swift), ExpertMemory.blobBytes(for: fp8))
     custom.qwenExpertWaveSlots = 513
-    XCTAssertThrowsError(try custom.validate(for: swift))
+    XCTAssertNoThrow(try custom.normalized(for: swift).validate(for: swift))
   }
 
   func testPublishedManifestDiscoveryAndMemoryPlanningUseSwiftIdentity() throws {
@@ -192,24 +192,21 @@ final class SwiftQwenModelTests: XCTestCase {
     XCTAssertEqual(loaded.defaultTemperature, 0.3)
     XCTAssertEqual(loaded.recentExpertCache, false)
 
-    // Hidden controls use the fixed values whatever was saved.
-    var fixed = loaded
-    fixed.applyQwenFixedTuning()
-    XCTAssertEqual(loaded, fixed)
-    XCTAssertEqual(loaded.prefillStepSize, 1_024)
-    XCTAssertTrue(loaded.layerMajorPrefill)
+    // MLX-only switches are disabled; unused numeric preferences stay saved.
+    XCTAssertEqual(loaded.prefillStepSize, 256)
+    XCTAssertFalse(loaded.layerMajorPrefill)
     XCTAssertEqual(loaded.packedKVCache, false)
     XCTAssertEqual(loaded.packedIndexCache, false)
-    XCTAssertEqual(loaded.qwenSortedExpertPrefill, true)
-    XCTAssertEqual(loaded.qwenQSAMaskedPrefill, true)
+    XCTAssertEqual(loaded.qwenSortedExpertPrefill, false)
+    XCTAssertEqual(loaded.qwenQSAMaskedPrefill, false)
     XCTAssertEqual(loaded.qwenQSAQueryChunk, 16)
     XCTAssertEqual(loaded.qwenExpertWaveSlots, 0)
     XCTAssertEqual(loaded.qwenNgramIO, "mmap")
     XCTAssertEqual(loaded.qwenPackedGDNPrefill, false)
-    XCTAssertEqual(loaded.qwenMTPPolicy, true)
+    XCTAssertEqual(loaded.qwenMTPPolicy, false)
     XCTAssertEqual(loaded.effectiveQwenMTPDraftTokens, 2)
     XCTAssertEqual(loaded.effectiveQwenMTPZeroAcceptanceLimit, 32)
-    XCTAssertEqual(loaded.qwenPhaseMemory, true)
+    XCTAssertEqual(loaded.qwenPhaseMemory, false)
     XCTAssertNoThrow(try loaded.validate(for: swift))
 
     let defaults = ModelAdvancedSettings.defaults(for: swift)
@@ -220,9 +217,9 @@ final class SwiftQwenModelTests: XCTestCase {
     let runtime = try XCTUnwrap(ModelLibrary.makeServerCatalog(models: [model], aliases: [:],
       settings: [swift: saved], powerSavingLimitGBps: nil).models.first).runtime
     XCTAssertFalse(runtime.mtpEnabled, "no MTP files")
-    XCTAssertEqual(runtime.prefillStepSize, 1_024)
+    XCTAssertEqual(runtime.prefillStepSize, 256)
     XCTAssertEqual(runtime.qwenQSAQueryChunk, 16)
-    XCTAssertEqual(runtime.qwenSortedExpertPrefill, true)
+    XCTAssertEqual(runtime.qwenSortedExpertPrefill, false)
     XCTAssertEqual(runtime.readWorkers, 9)
 
     // Qwen FP8 shows the same short list and uses the same fixed values.
@@ -233,22 +230,21 @@ final class SwiftQwenModelTests: XCTestCase {
       from: JSONEncoder().encode(fp8Saved)).normalized(for: fp8)
     XCTAssertEqual(fp8Loaded, loaded)
     XCTAssertEqual(ModelAdvancedSettings.defaults(for: fp8).mtpEnabled, true)
-    var fp8Defaults = ModelAdvancedSettings.defaults(for: fp8)
-    fp8Defaults.applyQwenFixedTuning()
+    let fp8Defaults = ModelAdvancedSettings.defaults(for: fp8)
     XCTAssertEqual(fp8Defaults, ModelAdvancedSettings.defaults(for: fp8))
   }
 
   @MainActor
-  func testLowerMLXCommandBufferLimitsApplyOnlyToQwenOnlyCatalogs() throws {
+  func testNativeCatalogsDoNotOverrideMLXCommandBufferLimits() throws {
     @MainActor func defaults(_ kinds: [ModelKind]) throws -> [String: String] {
       try ModelLibrary.makeServerCatalog(models: kinds.map(installed), aliases: [:], settings: [:],
         powerSavingLimitGBps: nil).runtimeEnvironmentDefaults
     }
-    let lowered = ["MLX_MAX_OPS_PER_BUFFER": "10", "MLX_MAX_MB_PER_BUFFER": "10"]
+    let lowered: [String: String] = [:]
     XCTAssertEqual(try defaults([.swift1_5Qwen3_8FlashNext]), lowered)
     XCTAssertEqual(try defaults([.qwen3_8FlashNext]), lowered)
     XCTAssertEqual(try defaults([.qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext]), lowered)
-    // One process serves the whole catalog, so any other model keeps MLX's own limits.
+    // Mixed catalogs also keep MLX's own limits.
     XCTAssertEqual(try defaults([.swift1_5Qwen3_8FlashNext, .deepSeekV4]), [:])
     XCTAssertEqual(try defaults([.deepSeekV41]), [:])
     XCTAssertEqual(try defaults([.mimoV26FlashRL, .qwen3_8FlashNext]), [:])

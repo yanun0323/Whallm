@@ -79,31 +79,17 @@ class SwiftQwenTests(unittest.TestCase):
             self.assertEqual(installed.model_id, BY_KIND[SWIFT].checkpoint_model_id)
             self.assertIs(self.support.expert_layout, get_support(FP8).expert_layout)
 
-    def test_reuses_loader_with_own_installed_weights_config_and_mtp(self):
-        self.assertIsInstance(self.support, QwenSupport)
+    def test_existing_kind_uses_native_and_rejects_the_mlx_loader(self):
+        from deepseek_v4_ssd.model_support.native_qwen import NativeQwenSupport
+        self.assertIsInstance(self.support, NativeQwenSupport)
         self.assertIsNot(self.support, get_support(FP8))
-        installed = object()
-        config = RuntimeConfig(mtp_enabled=True, qwen_ngram_io="pread", qwen_qsa_masked_prefill=True)
-        raw_config, weights, limiter = {}, {}, object()
-        model, experts, mtp, mtp_experts = SimpleNamespace(), object(), object(), object()
-        with patch("deepseek_v4_ssd.qwen4_exp.load", return_value=(model, experts)) as load, \
-             patch("deepseek_v4_ssd.model._load_qwen_mtp", return_value=(mtp, mtp_experts)) as load_mtp:
-            model.args = object()
-            self.assertEqual(self.support.load(installed, config, raw_config, weights, limiter), (model, experts))
-            load.assert_called_once_with(installed, config, raw_config, weights, limiter)
-            load_mtp.assert_called_once_with(installed, model.args, config, limiter)
-            self.assertIs(model.mtp, mtp)
-            self.assertIs(model.mtp_expert_cache, mtp_experts)
+        with self.assertRaisesRegex(ValueError, "NativeQwenRuntime"):
+            self.support.load(None, RuntimeConfig(), {}, {}, None)
 
     def test_qwen_options_and_sampling_remain_independently_configurable(self):
-        config = RuntimeConfig(qwen_ngram_io="pread", qwen_qsa_masked_prefill=True,
-                               qwen_quantized_kv=True, qwen_quantized_index=True,
-                               qwen_prefill_read_experts=4, mtp_enabled=True)
+        config = RuntimeConfig(mtp_enabled=True, qwen_8bit_common_tensors=True)
         self.support.validate_config(config)
-        with self.assertRaises(ValueError):
-            get_support("deepseek-v4").validate_config(config)
-        self.assertTrue(self.support.uses_layer_major_prefill(config, 128))
-        self.assertFalse(self.support.uses_layer_major_prefill(config, 127))
+        self.assertFalse(self.support.uses_layer_major_prefill(config, 128))
         with self.assertRaises(ValueError):
             self.support.validate_config(replace(config, dspark_enabled=True))
         models = []
@@ -115,7 +101,7 @@ class SwiftQwenTests(unittest.TestCase):
         original, swift = parse_model_catalog(dict(version=1, models=models))
         self.assertNotEqual(original.id, swift.id)
         self.assertEqual(original.runtime.qwen_ngram_io, "mmap")
-        self.assertEqual(swift.runtime.qwen_ngram_io, "pread")
+        self.assertTrue(swift.runtime.qwen_8bit_common_tensors)
         self.assertEqual(self.support.sampling_defaults(swift.defaults, "chat")["temperature"], 0.4)
         self.assertEqual(get_support(FP8).sampling_defaults(original.defaults, "chat")["temperature"], 0.7)
 

@@ -12,9 +12,6 @@ final class ModelPackageTests: XCTestCase {
       (.mimoV26FlashRL, MiMoContract.modelID, MiMoContract.revision),
       (.swift1_5Qwen3_8FlashNext, "ukisai/Swift1.5-Qwen3.8-Flash-Next",
         "0bd4fe22431372cdad1979267d3ab45aa7e6150a"),
-      (.swift1_5Qwen3_8FlashNextNative, "ukisai/Swift1.5-Qwen3.8-Flash-Next",
-        "0bd4fe22431372cdad1979267d3ab45aa7e6150a"),
-      (.qwen3_8FlashNextNative, QwenContract.modelID, QwenContract.revision),
     ]
     XCTAssertEqual(ModelPackages.descriptors.count, expected.count)
     for (kind, modelID, revision) in expected {
@@ -25,17 +22,11 @@ final class ModelPackageTests: XCTestCase {
       XCTAssertEqual(try JSONDecoder().decode(String.self, from: encoded), kind.rawValue)
       XCTAssertEqual(try JSONDecoder().decode(ModelKind.self, from: encoded), kind)
     }
-    // Each native kind reads its MLX kind's installation and has no download of its own.
-    XCTAssertTrue(ModelKind.swift1_5Qwen3_8FlashNextNative.usesNativeEngine)
-    XCTAssertFalse(ModelKind.swift1_5Qwen3_8FlashNextNative.usesQwenEngine)
-    XCTAssertEqual(ModelKind.swift1_5Qwen3_8FlashNextNative.installationKind, .swift1_5Qwen3_8FlashNext)
-    XCTAssertEqual(ModelKind.swift1_5Qwen3_8FlashNext.sharingKinds, [.swift1_5Qwen3_8FlashNextNative])
-    XCTAssertTrue(ModelKind.qwen3_8FlashNextNative.usesNativeEngine)
-    XCTAssertFalse(ModelKind.qwen3_8FlashNextNative.usesQwenEngine)
-    XCTAssertEqual(ModelKind.qwen3_8FlashNextNative.installationKind, .qwen3_8FlashNext)
-    XCTAssertEqual(ModelKind.qwen3_8FlashNext.sharingKinds, [.qwen3_8FlashNextNative])
-    for kind in ModelPackages.descriptors.compactMap({ ModelKind(rawValue: $0.kind) }) where !kind.usesNativeEngine {
-      XCTAssertEqual(kind.installationKind, kind)
+    for kind in [ModelKind.qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext] {
+      XCTAssertTrue(kind.usesNativeEngine)
+      XCTAssertFalse(kind.usesQwenEngine)
+      XCTAssertTrue(kind.isQwen)
+      XCTAssertNil(ModelKind(rawValue: kind.rawValue + "-native"))
     }
     XCTAssertNil(ModelKind(rawValue: "unregistered-model"))
     XCTAssertThrowsError(try JSONDecoder().decode(ModelKind.self, from: Data("\"unregistered-model\"".utf8)))

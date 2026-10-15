@@ -1,7 +1,7 @@
 """Qwen3.8 and Swift1.5 Qwen through the native engine (C++ and Metal, no MLX).
 
-Each native kind shares the installation, chat format and sampling of its MLX Qwen
-kind; NativeQwenRuntime runs it. Settings of the MLX engine must keep
+The existing model kinds keep their installation, chat format and sampling;
+NativeQwenRuntime runs them. Settings of the MLX engine must keep
 their defaults here, except 8-bit resident weights, which the native engine also has.
 """
 from __future__ import annotations

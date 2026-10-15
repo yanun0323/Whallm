@@ -96,10 +96,6 @@ public enum ModelPackages {
     "qwen3.8-flash-next": QwenPackage(),
     "mimo-v2.6-flash-rl": MiMoPackage(),
     "swift1.5-qwen3.8-flash-next": SwiftQwenPackage(),
-    // Reads the Swift1.5 installation; ModelLibrary downloads it as that kind.
-    "swift1.5-qwen3.8-flash-next-native": SwiftQwenPackage(),
-    // Reads the Qwen3.8 FP8 installation; ModelLibrary downloads it as that kind.
-    "qwen3.8-flash-next-native": QwenPackage(),
   ]
 
   static func companions(for kind: ModelKind) -> [CompanionFile] {

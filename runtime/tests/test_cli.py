@@ -18,9 +18,8 @@ from deepseek_v4_ssd.cli import (
 class CLITests(unittest.TestCase):
     def test_qwen_grouping_default_and_explicit_override_reach_runtime(self):
         for is_qwen, flags, expected in (
-            (True, [], True), (False, [], False),
+            (True, [], False), (False, [], False),
             (True, ["--no-qwen-grouped-experts"], False),
-            (True, ["--qwen-grouped-experts"], True),
         ):
             with self.subTest(is_qwen=is_qwen, flags=flags):
                 installed = SimpleNamespace(is_qwen=is_qwen, has_mtp=False)

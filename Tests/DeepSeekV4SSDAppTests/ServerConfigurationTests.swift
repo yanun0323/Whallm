@@ -22,7 +22,7 @@ final class ServerConfigurationTests: XCTestCase {
         let runtime = try XCTUnwrap(catalog.models.first).runtime
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(runtime)) as? [String: Any])
         // Qwen hides these controls and keeps them on (2026-10-09).
-        let effective = enabled || kind.usesQwenEngine
+        let effective = enabled && !kind.usesNativeEngine
         for key in ["layer_major_prefill", "ready_expert_decode", "batched_expert_prefill"] {
           XCTAssertEqual(json[key] as? Bool, effective, "\(kind): \(key)")
         }
@@ -40,19 +40,19 @@ final class ServerConfigurationTests: XCTestCase {
       models: [installedModel(.qwen3_8FlashNext, hasMTP: true)],
       aliases: [:], settings: [.qwen3_8FlashNext: settings], powerSavingLimitGBps: nil)
     let runtime = try XCTUnwrap(catalog.models.first).runtime
-    XCTAssertEqual(runtime.readWorkers, 16)
+    XCTAssertEqual(runtime.readWorkers, 8)
     XCTAssertEqual(runtime.expertEvictionPolicy, "lru")
-    XCTAssertTrue(runtime.readyExpertDecode)
-    XCTAssertTrue(runtime.layerMajorPrefill)
-    XCTAssertEqual(runtime.prefillStepSize, 1024)
-    XCTAssertEqual(runtime.memoryLimitGiB, 30)
-    XCTAssertTrue(runtime.batchedExpertPrefill)
-    XCTAssertTrue(runtime.qwenNextLayerPrefetch)
-    XCTAssertTrue(runtime.qwenGroupedExperts)
-    XCTAssertTrue(runtime.qwenPooledIndexCache)
-    XCTAssertTrue(runtime.qwenNgramLookupOptimized)
-    XCTAssertTrue(runtime.qwenCompileTensorOps)
-    XCTAssertTrue(runtime.qwenPhaseMemory)
+    XCTAssertFalse(runtime.readyExpertDecode)
+    XCTAssertFalse(runtime.layerMajorPrefill)
+    XCTAssertEqual(runtime.prefillStepSize, 0)
+    XCTAssertEqual(runtime.memoryLimitGiB, 0)
+    XCTAssertFalse(runtime.batchedExpertPrefill)
+    XCTAssertFalse(runtime.qwenNextLayerPrefetch)
+    XCTAssertFalse(runtime.qwenGroupedExperts)
+    XCTAssertFalse(runtime.qwenPooledIndexCache)
+    XCTAssertFalse(runtime.qwenNgramLookupOptimized)
+    XCTAssertFalse(runtime.qwenCompileTensorOps)
+    XCTAssertFalse(runtime.qwenPhaseMemory)
     XCTAssertFalse(runtime.qwenQuantizedKV)
     XCTAssertFalse(runtime.qwenQuantizedIndex)
     XCTAssertTrue(runtime.mtpEnabled, "Qwen ships MTP on when its files are installed")
@@ -71,7 +71,7 @@ final class ServerConfigurationTests: XCTestCase {
     for kind in [ModelKind.qwen3_8FlashNext, .deepSeekV4, .deepSeekV41] {
       var settings = ModelAdvancedSettings.defaults(for: kind)
       for feature in QwenOptimization.allCases {
-        XCTAssertEqual(settings[keyPath: feature.keyPath] == true, kind == .qwen3_8FlashNext)
+        XCTAssertEqual(settings[keyPath: feature.keyPath] == true, false)
         settings[keyPath: feature.keyPath] = true
       }
       settings.qwenMTPDraftTokens = 3
@@ -79,12 +79,12 @@ final class ServerConfigurationTests: XCTestCase {
       settings.save(for: kind, defaults: isolated.defaults)
       let restored = ModelAdvancedSettings.loadOrDefault(for: kind, defaults: isolated.defaults)
       for feature in QwenOptimization.allCases {
-        XCTAssertEqual(restored[keyPath: feature.keyPath], true)
+        XCTAssertEqual(restored[keyPath: feature.keyPath], !kind.usesNativeEngine)
       }
       let catalog = try ModelLibrary.makeServerCatalog(models: [installedModel(kind, hasMTP: true)],
         aliases: [:], settings: [kind: restored], powerSavingLimitGBps: nil)
       let runtime = try XCTUnwrap(catalog.models.first).runtime
-      let enabled = kind == .qwen3_8FlashNext
+      let enabled = kind.usesQwenEngine
       XCTAssertEqual(runtime.qwenPooledIndexCache, enabled)
       XCTAssertEqual(runtime.qwenNgramLookupOptimized, enabled)
       XCTAssertEqual(runtime.qwenCompileTensorOps, enabled)
@@ -119,10 +119,10 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertEqual(settings.effectiveQwenMTPDraftTokens, 3)
     XCTAssertEqual(settings.effectiveQwenMTPZeroAcceptanceLimit, 4)
     settings.qwenMTPDraftTokens = 6
-    XCTAssertThrowsError(try settings.validate(for: .qwen3_8FlashNext))
+    XCTAssertNoThrow(try settings.normalized(for: .qwen3_8FlashNext).validate(for: .qwen3_8FlashNext))
     settings.qwenMTPDraftTokens = 2
     settings.qwenMTPZeroAcceptanceLimit = 33
-    XCTAssertThrowsError(try settings.validate(for: .qwen3_8FlashNext))
+    XCTAssertNoThrow(try settings.normalized(for: .qwen3_8FlashNext).validate(for: .qwen3_8FlashNext))
   }
 
   func testQwenOptimizationCopyIsLocalized() {
@@ -584,7 +584,7 @@ final class ServerConfigurationTests: XCTestCase {
     let isolated = try isolatedDefaults()
     defer { isolated.defaults.removePersistentDomain(forName: isolated.suite) }
     var settings = ModelAdvancedSettings.defaults(for: .qwen3_8FlashNext)
-    XCTAssertEqual(settings.qwenGroupedExperts, true)
+    XCTAssertEqual(settings.qwenGroupedExperts, false)
     XCTAssertEqual(ModelAdvancedSettings.defaults(for: .deepSeekV4).qwenGroupedExperts, false)
     settings.slots = 5_000
     var old = try XCTUnwrap(
@@ -594,21 +594,21 @@ final class ServerConfigurationTests: XCTestCase {
       try JSONSerialization.data(withJSONObject: old),
       forKey: "modelAdvancedSettings.qwen3.8-flash-next")
     settings = ModelAdvancedSettings.loadOrDefault(for: .qwen3_8FlashNext, defaults: isolated.defaults)
-    XCTAssertEqual(settings.qwenGroupedExperts, true)
+    XCTAssertEqual(settings.qwenGroupedExperts, false)
     XCTAssertEqual(settings.slots, 5_000)
 
     for enabled in [false, true] {
       settings.qwenGroupedExperts = enabled
       settings.save(for: .qwen3_8FlashNext, defaults: isolated.defaults)
       let restored = ModelAdvancedSettings.loadOrDefault(for: .qwen3_8FlashNext, defaults: isolated.defaults)
-      XCTAssertEqual(restored.qwenGroupedExperts, true, "fixed on for Qwen")
+      XCTAssertEqual(restored.qwenGroupedExperts, false, "MLX setting disabled for Native")
       let catalog = try ModelLibrary.makeServerCatalog(
         models: [installedModel(.qwen3_8FlashNext, hasMTP: true)],
         aliases: [:], settings: [.qwen3_8FlashNext: restored], powerSavingLimitGBps: nil)
       let object = try XCTUnwrap(
         try XCTUnwrap(catalog.models.first).jsonObject() as? [String: Any])
       let runtime = try XCTUnwrap(object["runtime"] as? [String: Any])
-      XCTAssertEqual(runtime["qwen_grouped_experts"] as? Bool, true)
+      XCTAssertEqual(runtime["qwen_grouped_experts"] as? Bool, false)
       XCTAssertEqual(runtime["mtp_enabled"] as? Bool, true)
     }
     XCTAssertEqual(settings.normalized(for: .deepSeekV4).qwenGroupedExperts, false)
@@ -841,9 +841,9 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertEqual(models[1]["model_kind"] as? String, "deepseek-v4.1")
     let qwenRuntime = try XCTUnwrap(models[2]["runtime"] as? [String: Any])
     XCTAssertNil(qwenRuntime["qwen_grouped_decode"])
-    XCTAssertEqual(qwenRuntime["ane_prefill"] as? Bool, true)
+    XCTAssertEqual(qwenRuntime["ane_prefill"] as? Bool, false)
     XCTAssertNil(qwenRuntime["qwen_short_block"])
-    XCTAssertEqual(qwenRuntime["qwen_grouped_experts"] as? Bool, true)
+    XCTAssertEqual(qwenRuntime["qwen_grouped_experts"] as? Bool, false)
     XCTAssertEqual(qwenRuntime["ane_prefill_ratio"] as? Double, 0, "fixed for Qwen")
     XCTAssertEqual(models[0]["model_kind"] as? String, "deepseek-v4")
     XCTAssertTrue(models[0]["warmup_prompt_path"] is NSNull)

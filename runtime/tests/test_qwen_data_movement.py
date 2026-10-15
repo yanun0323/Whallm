@@ -23,6 +23,8 @@ from deepseek_v4_ssd.generation import _prompt_cache_contract
 from deepseek_v4_ssd.manifest import InstalledModel, Tensor
 from deepseek_v4_ssd.model import RuntimeConfig, _cache_arrays
 from deepseek_v4_ssd.model_manager import _parse_runtime, validate_runtime_config
+from deepseek_v4_ssd.model_support.qwen import QwenSupport
+from deepseek_v4_ssd.model_support.catalog import BY_KIND
 from deepseek_v4_ssd.model_support import get_support
 from deepseek_v4_ssd.model_support.qwen import _expert_spans, _qwen_layer_major_prefill
 from deepseek_v4_ssd.qwen_flash_config import add_flash_arguments, flash_arguments
@@ -182,7 +184,7 @@ class RoutedPrefillTests(unittest.TestCase):
             with self.subTest(other=other):
                 validate_runtime_config(RuntimeConfig(**other))
         with patch("deepseek_v4_ssd.model_support.qwen._qwen_layer_major_prefill") as prefill:
-            get_support("qwen3.8-flash-next").prefill(None, [1], [], 1, None, RuntimeConfig(qwen_expert_wave_slots=8))
+            QwenSupport(BY_KIND["qwen3.8-flash-next"]).prefill(None, [1], [], 1, None, RuntimeConfig(qwen_expert_wave_slots=8))
         self.assertFalse(prefill.call_args.args[6])
         # The default is accepted by every model; a different value is Qwen-only.
         for kind in ("deepseek-v4", "deepseek-v4.1"):
@@ -190,14 +192,14 @@ class RoutedPrefillTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 get_support(kind).validate_config(RuntimeConfig(qwen_prefill_routed_max_tokens=128))
         config = RuntimeConfig(qwen_prefill_routed_max_tokens=128)
-        get_support("swift1.5-qwen3.8-flash-next").validate_config(config)
+        QwenSupport(BY_KIND["swift1.5-qwen3.8-flash-next"]).validate_config(config)
         parser = argparse.ArgumentParser()
         add_flash_arguments(parser)
         self.assertEqual(flash_arguments(parser.parse_args([]))["qwen_prefill_routed_max_tokens"], 512)
         self.assertEqual(flash_arguments(parser.parse_args(["--qwen-prefill-routed-max-tokens", "0"]))
                          ["qwen_prefill_routed_max_tokens"], 0)
         with patch("deepseek_v4_ssd.model_support.qwen._qwen_layer_major_prefill") as prefill:
-            get_support("qwen3.8-flash-next").prefill(None, [1], [], 1, None, config)
+            QwenSupport(BY_KIND["qwen3.8-flash-next"]).prefill(None, [1], [], 1, None, config)
         self.assertEqual(prefill.call_args.kwargs["routed_max_tokens"], 128)
         # Same output, so cached prompts stay compatible.
         installed = SimpleNamespace(root="/missing", revision="r", model_id="m")
@@ -291,7 +293,7 @@ class MergedExpertPrefillTests(unittest.TestCase):
     def test_qwen_passes_the_moe_step_and_keeps_the_prompt_cache_contract(self):
         config = RuntimeConfig(moe_prefill_step_size=8192)
         with patch("deepseek_v4_ssd.model_support.qwen._qwen_layer_major_prefill") as prefill:
-            get_support("qwen3.8-flash-next").prefill(None, [1], [], 1, None, config)
+            QwenSupport(BY_KIND["qwen3.8-flash-next"]).prefill(None, [1], [], 1, None, config)
         self.assertEqual(prefill.call_args.kwargs["moe_step_size"], 8192)
         # Same output, so cached prompts stay compatible.
         installed = SimpleNamespace(root="/missing", revision="r", model_id="m")

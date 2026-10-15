@@ -105,7 +105,7 @@ final class ModelSettingsResetTests: XCTestCase {
       XCTAssertEqual(saved.batchedExpertPrefill, kind.descriptor.supports("batchedExpertPrefill"))
       XCTAssertEqual(saved.expertCacheGiB, 8.25)
       // Both Qwen models hide these controls and fix their values (2026-10-09).
-      let fixed = kind.usesQwenEngine
+      let fixed = kind.usesQwenEngine || kind.usesNativeEngine
       XCTAssertEqual(saved.anePrefillRatio, fixed ? 0 : 0.5)
       XCTAssertEqual(saved.packedKVCache, !fixed)
       XCTAssertEqual(saved.packedIndexCache, !fixed)

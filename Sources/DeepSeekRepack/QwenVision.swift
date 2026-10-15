@@ -36,7 +36,7 @@ public enum QwenVisionArtifact {
         throw RepackError.invalidPlan("invalid Qwen vision catalog")
       }
       for model in catalog.models {
-        guard let kind = ModelKind(rawValue: model.kind), kind.usesQwenEngine,
+        guard let kind = ModelKind(rawValue: model.kind), kind.isQwen,
           kind.descriptor.checkpointModelID == model.checkpointModelID,
           kind.descriptor.checkpointRevision == model.checkpointRevision,
           model.file.path == "vision/common.bin", model.file.size == installedBytes,
@@ -61,7 +61,7 @@ public enum QwenVisionArtifact {
   }
 
   public static func requiredFiles(for manifest: InstalledManifest) -> [InstalledFile] {
-    guard let kind = manifest.modelKind, kind.usesQwenEngine,
+    guard let kind = manifest.modelKind, kind.isQwen,
       let definition = definition(for: kind),
       manifest.modelID == definition.checkpointModelID,
       manifest.revision == definition.checkpointRevision
@@ -78,7 +78,7 @@ public enum QwenVisionArtifact {
   /// Complete an older installation without moving or rewriting its text files.
   public static func install(at root: URL, progress: RepackProgressHandler? = nil) async throws {
     let manifest = try InstalledModel.loadManifest(at: root)
-    guard let kind = manifest.modelKind, kind.usesQwenEngine else {
+    guard let kind = manifest.modelKind, kind.isQwen else {
       throw RepackError.incompatibleModel("vision installation requires a Qwen model")
     }
     try await install(at: root, definition: definition(for: kind)!, source: source(for: kind), progress: progress)

@@ -22,6 +22,8 @@ from deepseek_v4_ssd.expert_cache import QwenExpertWeights
 from deepseek_v4_ssd.manifest import NGram
 from deepseek_v4_ssd.model import RuntimeConfig
 from deepseek_v4_ssd.model_manager import _parse_runtime, validate_runtime_config
+from deepseek_v4_ssd.model_support.qwen import QwenSupport
+from deepseek_v4_ssd.model_support.catalog import BY_KIND
 from deepseek_v4_ssd.model_support import get_support
 from deepseek_v4_ssd.qwen_flash_config import DEFAULTS
 
@@ -46,13 +48,13 @@ class FlashIntegrationTests(unittest.TestCase):
         for config in (RuntimeConfig(qwen_expert_wave_slots=32),
                        RuntimeConfig(qwen_ngram_io="pread"),
                        RuntimeConfig(qwen_qsa_masked_prefill=True)):
-            get_support("qwen3.8-flash-next").validate_config(config)
+            QwenSupport(BY_KIND["qwen3.8-flash-next"]).validate_config(config)
             for kind in ("deepseek-v4", "deepseek-v4.1"):
                 with self.assertRaises(ValueError):
                     get_support(kind).validate_config(config)
 
     def test_prefill_waves_do_not_allocate_full_layer_buffers(self):
-        support = get_support("qwen3.8-flash-next")
+        support = QwenSupport(BY_KIND["qwen3.8-flash-next"])
         for slots in (0, 32):
             config = RuntimeConfig(qwen_expert_wave_slots=slots)
             with patch("deepseek_v4_ssd.model_support.qwen._qwen_layer_major_prefill") as prefill:

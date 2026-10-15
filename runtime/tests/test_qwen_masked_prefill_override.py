@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from deepseek_v4_ssd.generation import ModelRuntime, _prompt_cache_contract
 from deepseek_v4_ssd.model import RuntimeConfig
-from deepseek_v4_ssd.model_support import qwen
+from deepseek_v4_ssd.model_support import qwen, get_support
 
 
 class MaskedPrefillOverrideTests(unittest.TestCase):
@@ -29,6 +29,8 @@ class MaskedPrefillOverrideTests(unittest.TestCase):
                       or (object(), SimpleNamespace(close=lambda: None))), \
                 patch('deepseek_v4_ssd.generation.AutoTokenizer.from_pretrained',
                       return_value=SimpleNamespace(bos_token=None)), \
+                patch("deepseek_v4_ssd.generation.support_for_installed",
+                      return_value=qwen.QwenSupport(get_support("qwen3.8-flash-next").descriptor)), \
                 redirect_stderr(log):
             for name in ('WHALLM_QWEN_QSA_MASKED_PREFILL_OFF',):
                 if name not in environment:

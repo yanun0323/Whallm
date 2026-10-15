@@ -306,7 +306,7 @@ struct InstalledArtifactDownloader: Sendable {
     state: InstalledArtifactState
   ) async throws {
     let destination = try safeFileURL(root: partial, path: file.path)
-    let actualDownloader = file.path == "vision/common.bin" && expectedKind.usesQwenEngine
+    let actualDownloader = file.path == "vision/common.bin" && expectedKind.isQwen
       ? InstalledArtifactFileDownloader(source: QwenVisionArtifact.source(for: expectedKind, upstream: visionSource))
       : downloader
     let digest = try await actualDownloader.run(file: file, to: destination) {

@@ -27,8 +27,8 @@ final class QwenFlashSettingsTests: XCTestCase {
       XCTAssertEqual(loaded.qwenQSASkipCompleteGather, true)
       XCTAssertEqual(loaded.qwenPrefillReadExperts, 1)
       XCTAssertEqual(loaded.qwenPrefillSeedExperts, 0)
-      XCTAssertEqual(loaded.qwenSortedExpertPrefill, true)
-      XCTAssertEqual(loaded.qwenQSAMaskedPrefill, true)
+      XCTAssertEqual(loaded.qwenSortedExpertPrefill, false)
+      XCTAssertEqual(loaded.qwenQSAMaskedPrefill, false)
       XCTAssertEqual(loaded.qwenPackedGDNPrefill, false)
       XCTAssertNoThrow(try loaded.validate(for: kind))
       var reset = ModelSettingsResetConfirmation()
@@ -145,10 +145,9 @@ final class QwenFlashSettingsTests: XCTestCase {
     }
   }
 
-  /// 2026-10-12: Qwen splits each whole-layer Prefill read into 8 jobs by default.
-  /// Saved worker counts stay; the setting remains visible.
+  /// Native hides the old MLX prefetch setting. Its saved value is harmless.
   @MainActor
-  func testQwenPrefetchReadWorkersDefaultToEightAndSavedCountsStay() throws {
+  func testNativePrefetchDefaultsAreNeutralAndSavedCountsStay() throws {
     for kind in ModelLibrary.supportedModelKinds {
       let defaults = ModelAdvancedSettings.defaults(for: kind)
       XCTAssertEqual(defaults.prefetchReadWorkers, kind.usesQwenEngine ? 8 : 2)
@@ -163,7 +162,7 @@ final class QwenFlashSettingsTests: XCTestCase {
       XCTAssertEqual(loaded.prefetchReadWorkers, 2)
       var reset = ModelSettingsResetConfirmation()
       reset.begin(for: kind, locked: false); reset.advance()
-      XCTAssertEqual(reset.confirm(for: kind, locked: false)?.prefetchReadWorkers, 8)
+      XCTAssertEqual(reset.confirm(for: kind, locked: false)?.prefetchReadWorkers, 2)
     }
   }
 
@@ -204,7 +203,7 @@ final class QwenFlashSettingsTests: XCTestCase {
       XCTAssertEqual(json["qwen_qsa_masked_prefill"] as? Bool, qwen)
       XCTAssertEqual(json["qwen_qsa_selected_kernel"] as? Bool, qwen)
       XCTAssertEqual(json["qwen_packed_gdn_prefill"] as? Bool, false)
-      XCTAssertEqual(json["mtp_enabled"] as? Bool, qwen)
+      XCTAssertEqual(json["mtp_enabled"] as? Bool, kind.usesNativeEngine)
       if let base = ProcessInfo.processInfo.environment["WHALLM_QWEN_UI_ARTIFACTS"] {
         let directory = URL(fileURLWithPath: base).appendingPathComponent("catalogs")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -13,7 +13,7 @@ enum ExpertMemory {
 
   // Pinned installation contracts. A loaded manifest is authoritative.
   static func blobBytes(for kind: ModelKind) -> UInt64 {
-    switch kind.installationKind {
+    switch kind {
     case .deepSeekV4, .mimoV26FlashRL: 13_369_344
     case .deepSeekV41: 18_800_640
     case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 2_611_200
@@ -67,7 +67,7 @@ enum ExpertMemory {
   }
 
   private static func fallbackExpertsPerLayer(_ kind: ModelKind) -> Int {
-    switch kind.installationKind {
+    switch kind {
     case .deepSeekV41: 384
     case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 512
     default: 256
@@ -75,7 +75,7 @@ enum ExpertMemory {
   }
 
   private static func fallbackLayers(_ kind: ModelKind) -> Int {
-    switch kind.installationKind {
+    switch kind {
     case .deepSeekV4: 43
     case .deepSeekV41: 40
     case .mimoV26FlashRL: 47

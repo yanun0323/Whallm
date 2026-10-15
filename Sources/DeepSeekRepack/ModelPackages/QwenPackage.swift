@@ -26,7 +26,7 @@ extension QwenContract {
   static func validate(_ manifest: InstalledManifest, kind: ModelKind = .qwen3_8FlashNext) throws
     -> InstalledManifest
   {
-    guard kind.usesQwenEngine, manifest.formatVersion == 2,
+    guard kind.isQwen, manifest.formatVersion == 2,
       manifest.modelKind == kind,
       manifest.modelID == kind.descriptor.checkpointModelID,
       manifest.revision == kind.descriptor.checkpointRevision,

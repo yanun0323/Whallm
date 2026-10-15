@@ -103,7 +103,8 @@ class CommonTensorTests(unittest.TestCase):
         self.assertEqual(on, off)
 
     def test_loading_packs_the_target_and_mtp_layer_only_when_enabled(self):
-        support = get_support("swift1.5-qwen3.8-flash-next")
+        from deepseek_v4_ssd.model_support.qwen import QwenSupport
+        support = QwenSupport(get_support("swift1.5-qwen3.8-flash-next").descriptor)
         model, experts = SimpleNamespace(args=object()), object()
         mtp, mtp_experts = object(), object()
         packed = []

@@ -52,7 +52,8 @@ class PackedConfigTests(unittest.TestCase):
 
     def test_only_swift_and_no_mtp(self):
         config = RuntimeConfig(qwen_packed_gdn_prefill=True)
-        get_support(SWIFT).validate_config(config)
+        with self.assertRaises(ValueError):
+            get_support(SWIFT).validate_config(config)
         for kind in ('qwen3.8-flash-next', 'deepseek-v4', 'deepseek-v4.1', 'mimo-v2.6-flash-rl'):
             with self.subTest(kind=kind), self.assertRaises(ValueError):
                 get_support(kind).validate_config(config)

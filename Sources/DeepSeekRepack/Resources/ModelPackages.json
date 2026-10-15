@@ -113,17 +113,10 @@
         "tokenizer/tokenizer.json"
       ],
       "features": [
-        "layerMajorPrefill",
+        "nativeEngine",
         "promptCache",
         "mtp",
-        "anePrefill",
-        "groupedExperts",
         "adaptiveSampling",
-        "readyExpertDecode",
-        "batchedExpertPrefill",
-        "packedKVCache",
-        "packedIndexCache",
-        "nextLayerPrefetch",
         "imageInput"
       ],
       "editableSettings": [
@@ -154,14 +147,27 @@
       "manifestVersion": 4,
       "directoryName": "mimo-v2.6-flash-rl.dsv4",
       "requiredPaths": [
-        "common.bin", "config.json", "tokenizer/tokenizer.json", "checkpoint-map.json",
-        "vision/common.bin", "audio/common.bin", "mtp/common.bin",
+        "common.bin",
+        "config.json",
+        "tokenizer/tokenizer.json",
+        "checkpoint-map.json",
+        "vision/common.bin",
+        "audio/common.bin",
+        "mtp/common.bin",
         "checkpoint/audio_tokenizer/model.safetensors",
         "checkpoint/dflash/dflash_draft_model.safetensors",
         "checkpoint/dflash/mask_embedding.pt"
       ],
-      "features": ["readyExpertDecode", "layerMajorPrefill", "imageInput", "documentInput", "audioInput"],
-      "editableSettings": ["sampling"],
+      "features": [
+        "readyExpertDecode",
+        "layerMajorPrefill",
+        "imageInput",
+        "documentInput",
+        "audioInput"
+      ],
+      "editableSettings": [
+        "sampling"
+      ],
       "defaults": {
         "slots": 768,
         "promptCacheEntries": 1,
@@ -187,74 +193,23 @@
       "manifestVersion": 2,
       "directoryName": "swift1.5-qwen3.8-flash-next-mxfp4.dsv4",
       "requiredPaths": [
-        "common.bin", "ngram.bin", "config.json", "tokenizer/tokenizer.json",
-        "mtp/common.bin", "mtp/experts/layer_00.bin"
+        "common.bin",
+        "ngram.bin",
+        "config.json",
+        "tokenizer/tokenizer.json",
+        "mtp/common.bin",
+        "mtp/experts/layer_00.bin"
       ],
       "features": [
-        "layerMajorPrefill", "promptCache", "mtp", "anePrefill", "groupedExperts",
-        "adaptiveSampling", "readyExpertDecode", "batchedExpertPrefill",
-        "packedKVCache", "packedIndexCache", "nextLayerPrefetch", "imageInput"
+        "nativeEngine",
+        "promptCache",
+        "mtp",
+        "adaptiveSampling",
+        "imageInput"
       ],
-      "editableSettings": ["sampling"],
-      "defaults": {
-        "slots": 2089,
-        "promptCacheEntries": 2,
-        "bf16KVCache": false,
-        "maxTokens": 8192,
-        "temperature": 0.7,
-        "topP": 0.8,
-        "topK": 20
-      },
-      "maximumContext": 262144,
-      "automaticMemoryGiB": 48,
-      "prefillThreshold": 128
-    },
-    {
-      "kind": "swift1.5-qwen3.8-flash-next-native",
-      "displayName": "Swift1.5-Qwen3.8-Flash-Next-Native",
-      "kindLabel": "Swift1.5 Qwen3.8 Flash Next Native",
-      "assistantName": "Swift",
-      "apiModelID": "swift1.5-qwen3.8-flash-next-native",
-      "owner": "ukisai",
-      "checkpointModelID": "ukisai/Swift1.5-Qwen3.8-Flash-Next",
-      "checkpointRevision": "0bd4fe22431372cdad1979267d3ab45aa7e6150a",
-      "manifestVersion": 2,
-      "directoryName": "swift1.5-qwen3.8-flash-next-mxfp4.dsv4",
-      "requiredPaths": [
-        "common.bin", "ngram.bin", "config.json", "tokenizer/tokenizer.json",
-        "mtp/common.bin", "mtp/experts/layer_00.bin"
+      "editableSettings": [
+        "sampling"
       ],
-      "features": ["nativeEngine", "promptCache", "mtp", "adaptiveSampling", "imageInput"],
-      "editableSettings": ["sampling"],
-      "defaults": {
-        "slots": 2089,
-        "promptCacheEntries": 2,
-        "bf16KVCache": false,
-        "maxTokens": 8192,
-        "temperature": 0.7,
-        "topP": 0.8,
-        "topK": 20
-      },
-      "maximumContext": 262144,
-      "automaticMemoryGiB": 48,
-      "prefillThreshold": 128
-    },
-    {
-      "kind": "qwen3.8-flash-next-native",
-      "displayName": "Qwen3.8-Flash-Next-Native",
-      "kindLabel": "Qwen3.8 Flash Next Native",
-      "assistantName": "Qwen",
-      "apiModelID": "qwen3.8-flash-next-native",
-      "owner": "Qwen",
-      "checkpointModelID": "Qwen/Qwen3.8-Flash-Next-FP8",
-      "checkpointRevision": "bcd9f01ddc9cff2316eb84281bebcd5b058bddce",
-      "manifestVersion": 2,
-      "directoryName": "qwen3.8-flash-next.dsv4",
-      "requiredPaths": [
-        "common.bin", "ngram.bin", "config.json", "tokenizer/tokenizer.json"
-      ],
-      "features": ["nativeEngine", "promptCache", "mtp", "adaptiveSampling", "imageInput"],
-      "editableSettings": ["sampling"],
       "defaults": {
         "slots": 2089,
         "promptCacheEntries": 2,

@@ -36,35 +36,17 @@ public struct ModelKind: RawRepresentable, Codable, Hashable, Sendable {
   public static let qwen3_8FlashNext = Self(rawValue: "qwen3.8-flash-next")!
   public static let mimoV26FlashRL = Self(rawValue: "mimo-v2.6-flash-rl")!
   public static let swift1_5Qwen3_8FlashNext = Self(rawValue: "swift1.5-qwen3.8-flash-next")!
-  public static let swift1_5Qwen3_8FlashNextNative = Self(rawValue: "swift1.5-qwen3.8-flash-next-native")!
-  public static let qwen3_8FlashNextNative = Self(rawValue: "qwen3.8-flash-next-native")!
-
-  /// Shared MLX inference implementation, not shared model identity or settings.
-  public var usesQwenEngine: Bool {
+  /// Checkpoint family, independent of the inference engine.
+  public var isQwen: Bool {
     self == .qwen3_8FlashNext || self == .swift1_5Qwen3_8FlashNext
   }
 
-  /// Runs on the native engine (C++ and Metal, no MLX) instead of the MLX runtime.
+  /// MLX-only settings must not be sent to the native engine.
+  public var usesQwenEngine: Bool { isQwen && !usesNativeEngine }
+
+  /// Runs on the native engine (C++ and Metal, no MLX).
   public var usesNativeEngine: Bool { descriptor.supports("nativeEngine") }
 
-  /// The kind whose installation this kind reads. A native kind has no download of
-  /// its own: it reads the installation of the MLX kind with the same directory and
-  /// checkpoint. Every other kind reads its own.
-  public var installationKind: ModelKind {
-    guard usesNativeEngine else { return self }
-    let own = descriptor
-    return ModelPackages.descriptors.lazy
-      .filter { !$0.features.contains("nativeEngine") && $0.directoryName == own.directoryName
-        && $0.checkpointModelID == own.checkpointModelID && $0.checkpointRevision == own.checkpointRevision }
-      .compactMap { ModelKind(rawValue: $0.kind) }
-      .first ?? self
-  }
-
-  /// Native kinds that read this kind's installation.
-  public var sharingKinds: [ModelKind] {
-    ModelPackages.descriptors.compactMap { ModelKind(rawValue: $0.kind) }
-      .filter { $0 != self && $0.installationKind == self }
-  }
 }
 
 enum ModelContract {

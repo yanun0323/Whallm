@@ -88,7 +88,8 @@ class SelectedKernelTests(unittest.TestCase):
         config = RuntimeConfig(qwen_qsa_selected_kernel=True)
         validate_runtime_config(config)
         for kind in ("qwen3.8-flash-next", "swift1.5-qwen3.8-flash-next"):
-            get_support(kind).validate_config(config)
+            with self.assertRaises(ValueError):
+                get_support(kind).validate_config(config)
         for kind in ("deepseek-v4", "deepseek-v4.1"):
             with self.assertRaises(ValueError):
                 get_support(kind).validate_config(config)

@@ -1375,7 +1375,11 @@ class ModelRuntime(ChatInterface):
         model_path: str,
         config: RuntimeConfig = RuntimeConfig(),
     ) -> ModelRuntime:
-        return cls(InstalledModel.open(model_path), config)
+        installed = InstalledModel.open(model_path)
+        if support_for_installed(installed).descriptor.supports("nativeEngine"):
+            from .native_qwen import NativeQwenRuntime
+            return NativeQwenRuntime(installed, config, installed.model_kind)
+        return cls(installed, config)
 
     @property
     def model_id(self) -> str:

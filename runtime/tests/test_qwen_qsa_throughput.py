@@ -116,7 +116,8 @@ class QSAThroughputTests(unittest.TestCase):
         from deepseek_v4_ssd.model_support import get_support
         for kind in ('deepseek-v4','deepseek-v4.1'):
             with self.assertRaises(ValueError): get_support(kind).validate_config(RuntimeConfig(qwen_qsa_query_chunk=32))
-        get_support('qwen3.8-flash-next').validate_config(RuntimeConfig(qwen_qsa_query_chunk=32))
+        with self.assertRaises(ValueError):
+            get_support('qwen3.8-flash-next').validate_config(RuntimeConfig(qwen_qsa_query_chunk=32))
 
     def test_removed_qsa_and_overlap_fields(self):
         from dataclasses import asdict

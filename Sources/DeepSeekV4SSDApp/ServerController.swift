@@ -412,7 +412,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.qwenNgramCacheMiB = qwen ? (settings.qwenNgramCacheMiB ?? 0) : 0
     settings.qwenQSAQueryChunk = qwen ? (settings.qwenQSAQueryChunk ?? 16) : 16
     settings.qwenQSASkipCompleteGather = qwen ? (settings.qwenQSASkipCompleteGather ?? true) : true
-    settings.qwenPackedGDNPrefill = modelKind == .swift1_5Qwen3_8FlashNext
+    settings.qwenPackedGDNPrefill = qwen && modelKind == .swift1_5Qwen3_8FlashNext
       ? (settings.qwenPackedGDNPrefill ?? false) : false
     settings.qwenSortedExpertPrefill = qwen ? (settings.qwenSortedExpertPrefill ?? false) : false
     settings.qwenQSAMaskedPrefill = qwen ? (settings.qwenQSAMaskedPrefill ?? false) : false
@@ -421,6 +421,15 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.dsparkEnabled = descriptor.supports("dspark") && settings.dsparkEnabled
     if modelKind.usesQwenEngine {
       settings.applyQwenFixedTuning()
+    }
+    if native {
+      settings.anePrefillRatio = 0
+      settings.deepSeekANEPrefill = false
+      settings.packedKVCache = false
+      settings.packedIndexCache = false
+      for feature in QwenOptimization.allCases { settings[keyPath: feature.keyPath] = false }
+      settings.qwenMTPDraftTokens = 2
+      settings.qwenMTPZeroAcceptanceLimit = 32
     }
     return settings
   }

@@ -103,7 +103,7 @@ class ModelCatalogTests(unittest.TestCase):
                 self.assertFalse(hasattr(parsed.runtime, "qwen_grouped_decode"))
                 self.assertEqual(
                     parsed.runtime.qwen_grouped_experts,
-                    kind == "qwen3.8-flash-next",
+                    False,
                 )
 
     def test_grouped_experts_remains_optional_for_existing_catalogs(self):
@@ -112,7 +112,7 @@ class ModelCatalogTests(unittest.TestCase):
             model["runtime"].pop("qwen_grouped_experts")
             model["runtime"]["slots"] = 4096 if kind == "qwen3.8-flash-next" else 1152
             parsed = parse_model_catalog({"version": 1, "models": [model]})[0]
-            self.assertEqual(parsed.runtime.qwen_grouped_experts, kind == "qwen3.8-flash-next")
+            self.assertEqual(parsed.runtime.qwen_grouped_experts, False)
             self.assertEqual(parsed.runtime.slots, model["runtime"]["slots"])
             self.assertFalse(parsed.runtime.mtp_enabled)
 

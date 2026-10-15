@@ -3,9 +3,8 @@ import Foundation
 import XCTest
 @testable import DeepSeekV4SSDApp
 
-/// The native-engine model kind: its own API ID and settings, the Swift1.5 installation.
+/// Existing Qwen identities now use the native engine without duplicate entries.
 final class NativeQwenModelTests: XCTestCase {
-  private let native = ModelKind.swift1_5Qwen3_8FlashNextNative
   private let swift = ModelKind.swift1_5Qwen3_8FlashNext
 
   /// A Swift1.5 installation with every file at its manifest size (sparse, no data).
@@ -29,23 +28,22 @@ final class NativeQwenModelTests: XCTestCase {
     return model
   }
 
-  func testIdentityAndSharedInstallation() {
-    XCTAssertEqual(native.apiModelID, "swift1.5-qwen3.8-flash-next-native")
-    XCTAssertEqual(native.displayName, "Swift1.5-Qwen3.8-Flash-Next-Native")
-    XCTAssertEqual(native.descriptor.directoryName, swift.descriptor.directoryName)
-    XCTAssertEqual(native.installationKind, swift)
-    XCTAssertEqual(ExpertMemory.blobBytes(for: native), ExpertMemory.blobBytes(for: swift))
-    XCTAssertEqual(ExpertMemory.totalExperts(for: .expert, kind: native, manifest: nil), 24_576)
+  func testIdentityAndUnchangedInstallation() {
+    XCTAssertEqual(swift.apiModelID, "swift1.5-qwen3.8-flash-next-mxfp4")
+    XCTAssertEqual(swift.displayName, "Swift1.5-Qwen3.8-Flash-Next")
+    XCTAssertEqual(swift.descriptor.directoryName, "swift1.5-qwen3.8-flash-next-mxfp4.dsv4")
+    XCTAssertEqual(ExpertMemory.blobBytes(for: swift), 2_611_200)
+    XCTAssertEqual(ExpertMemory.totalExperts(for: .expert, kind: swift, manifest: nil), 24_576)
   }
 
-  func testDiscoveryListsTheNativeKindWhereSwiftIsUsable() throws {
+  func testDiscoveryListsEachInstallationOnlyOnce() throws {
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let model = try makeSwiftInstallation(in: root)
     let result = InstalledModelDiscovery.find(in: root)
-    XCTAssertEqual(Set(result.models.map(\.modelKind)), [swift, native])
+    XCTAssertEqual(Set(result.models.map(\.modelKind)), [swift])
     XCTAssertTrue(result.models.allSatisfy { $0.isUsable && $0.url == model.standardizedFileURL.resolvingSymlinksInPath() })
-    XCTAssertEqual(Set(result.models.map(\.id)).count, 2)
+    XCTAssertEqual(Set(result.models.map(\.id)).count, 1)
 
     // A damaged Swift installation is listed for repair as Swift only.
     let damagedRoot = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -56,62 +54,22 @@ final class NativeQwenModelTests: XCTestCase {
     XCTAssertFalse(damaged.models[0].isUsable)
   }
 
-  /// Qwen3.8-Flash-Next-Native reads the Qwen3.8 FP8 installation the same way.
-  @MainActor
-  func testQwenNativeKindReadsTheQwenInstallation() throws {
-    let qwenNative = ModelKind.qwen3_8FlashNextNative, qwen = ModelKind.qwen3_8FlashNext
-    XCTAssertEqual(qwenNative.apiModelID, "qwen3.8-flash-next-native")
-    XCTAssertEqual(qwenNative.displayName, "Qwen3.8-Flash-Next-Native")
-    XCTAssertEqual(qwenNative.descriptor.directoryName, qwen.descriptor.directoryName)
-    XCTAssertEqual(qwenNative.installationKind, qwen)
-    XCTAssertEqual(qwen.sharingKinds, [qwenNative])
-    XCTAssertEqual(ExpertMemory.blobBytes(for: qwenNative), ExpertMemory.blobBytes(for: qwen))
-
-    let suite = "NativeQwenModelTests.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
-    defer { defaults.removePersistentDomain(forName: suite) }
-    let library = ModelLibrary(defaults: defaults)
-    XCTAssertEqual(library.plannedInstalledBytes(for: qwenNative), library.plannedInstalledBytes(for: qwen))
-
-    let installed = InstalledModelInfo(url: URL(fileURLWithPath: "/fixture/\(qwen.descriptor.directoryName)"),
-      size: 0, quickIssues: [], hasMTP: true, hasDSpark: false, modelKind: qwen,
-      modelID: qwen.descriptor.checkpointModelID)
-    let catalog = try ModelLibrary.makeServerCatalog(models: [installed, installed.sharing(as: qwenNative)],
-      aliases: [:], settings: [qwenNative: .defaults(for: qwenNative)], powerSavingLimitGBps: nil)
-    XCTAssertEqual(catalog.models.map(\.id), [qwen.apiModelID, qwenNative.apiModelID])
-    XCTAssertEqual(catalog.models[1].modelKind, qwenNative.rawValue)
-    XCTAssertEqual(catalog.models[1].path, catalog.models[0].path)
-    XCTAssertTrue(catalog.models[1].runtime.nativeAutomaticExpertCache)
-    XCTAssertFalse(catalog.models[1].runtime.qwenSortedExpertPrefill ?? false)
-  }
-
-  @MainActor
-  func testDownloadsAndPlanningUseTheSwiftInstallation() {
-    let suite = "NativeQwenModelTests.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
-    defer { defaults.removePersistentDomain(forName: suite) }
-    let library = ModelLibrary(defaults: defaults)
-    XCTAssertEqual(library.plannedInstalledBytes(for: native), library.plannedInstalledBytes(for: swift))
-    XCTAssertEqual(library.requiredStorageBytes(for: native), library.requiredStorageBytes(for: swift))
-    XCTAssertFalse(library.isDownloading(native))
-  }
-
   func testDefaultsUseAutomaticCacheMTPAndEightBitWeights() throws {
-    let defaults = ModelAdvancedSettings.defaults(for: native)
+    let defaults = ModelAdvancedSettings.defaults(for: swift)
     XCTAssertEqual(defaults.expertCacheAutomatic, true)
     XCTAssertEqual(defaults.mtpEnabled, true)
     XCTAssertEqual(defaults.qwen8BitCommonTensors, true)
     XCTAssertEqual(defaults.readWorkers, 8)
     XCTAssertEqual(defaults.promptCacheMode, .memory)
-    XCTAssertNoThrow(try defaults.validate(for: native))
+    XCTAssertNoThrow(try defaults.validate(for: swift))
     // A saved fixed size stays; settings of other kinds never carry the flag.
     var fixed = defaults
     fixed.expertCacheAutomatic = false
-    XCTAssertEqual(fixed.normalized(for: native).expertCacheAutomatic, false)
+    XCTAssertEqual(fixed.normalized(for: swift).expertCacheAutomatic, false)
     var missing = defaults
     missing.expertCacheAutomatic = nil
-    XCTAssertEqual(missing.normalized(for: native).expertCacheAutomatic, true)
-    XCTAssertNil(ModelAdvancedSettings.defaults(for: swift).normalized(for: swift).expertCacheAutomatic)
+    XCTAssertEqual(missing.normalized(for: swift).expertCacheAutomatic, true)
+    XCTAssertNil(ModelAdvancedSettings.defaults(for: .deepSeekV4).normalized(for: .deepSeekV4).expertCacheAutomatic)
   }
 
   @MainActor
@@ -119,13 +77,13 @@ final class NativeQwenModelTests: XCTestCase {
     let installed = InstalledModelInfo(url: URL(fileURLWithPath: "/fixture/\(swift.descriptor.directoryName)"),
       size: 0, quickIssues: [], hasMTP: true, hasDSpark: false, modelKind: swift,
       modelID: swift.descriptor.checkpointModelID)
-    var settings = ModelAdvancedSettings.defaults(for: native)
-    let catalog = try ModelLibrary.makeServerCatalog(models: [installed, installed.sharing(as: native)],
-      aliases: [:], settings: [native: settings], powerSavingLimitGBps: nil)
-    XCTAssertEqual(catalog.models.map(\.id), [swift.apiModelID, native.apiModelID])
-    let entry = catalog.models[1]
-    XCTAssertEqual(entry.modelKind, native.rawValue)
-    XCTAssertEqual(entry.path, catalog.models[0].path)
+    var settings = ModelAdvancedSettings.defaults(for: swift)
+    let catalog = try ModelLibrary.makeServerCatalog(models: [installed],
+      aliases: [:], settings: [swift: settings], powerSavingLimitGBps: nil)
+    XCTAssertEqual(catalog.models.map(\.id), [swift.apiModelID])
+    let entry = catalog.models[0]
+    XCTAssertEqual(entry.modelKind, swift.rawValue)
+    XCTAssertEqual(entry.path, installed.url.path)
     XCTAssertTrue(entry.runtime.nativeAutomaticExpertCache)
     XCTAssertTrue(entry.runtime.mtpEnabled)
     XCTAssertEqual(entry.runtime.qwen8BitCommonTensors, true)
@@ -139,10 +97,50 @@ final class NativeQwenModelTests: XCTestCase {
 
     settings.expertCacheAutomatic = false
     settings.expertCacheGiB = 8
-    let fixed = try ModelLibrary.makeServerCatalog(models: [installed.sharing(as: native)],
-      aliases: [:], settings: [native: settings], powerSavingLimitGBps: nil)
+    let fixed = try ModelLibrary.makeServerCatalog(models: [installed],
+      aliases: [:], settings: [swift: settings], powerSavingLimitGBps: nil)
     XCTAssertFalse(fixed.models[0].runtime.nativeAutomaticExpertCache)
     XCTAssertEqual(fixed.models[0].runtime.expertCacheBytes, 8 * 1_073_741_824)
+  }
+
+  @MainActor
+  func testExistingSettingsAndAliasesSurviveTheEngineChange() throws {
+    let suite = "NativeMigration.\(UUID().uuidString)"
+    let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { store.removePersistentDomain(forName: suite) }
+    let library = ModelLibrary(defaults: store)
+    for kind in [ModelKind.qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext] {
+      try library.saveAlias("alias-" + kind.rawValue, for: kind)
+      var old = ModelAdvancedSettings.defaults(for: kind)
+      old.expertCacheAutomatic = nil
+      old.readWorkers = 7
+      old.defaultTemperature = 0.4
+      old.mtpEnabled = false
+      old.qwen8BitCommonTensors = false
+      old.promptCacheMode = .disk
+      old.applyQwenFixedTuning() // Values written by the previous MLX App.
+      let data = try JSONEncoder().encode(old)
+      store.set(data, forKey: "modelAdvancedSettings.\(kind.rawValue)")
+      let loaded = ModelAdvancedSettings.loadOrDefault(for: kind, defaults: store)
+      XCTAssertEqual(loaded.readWorkers, 7)
+      XCTAssertEqual(loaded.defaultTemperature, 0.4)
+      XCTAssertEqual(loaded.mtpEnabled, false)
+      XCTAssertEqual(loaded.qwen8BitCommonTensors, false)
+      XCTAssertEqual(loaded.promptCacheMode, .disk)
+      XCTAssertEqual(loaded.expertCacheAutomatic, true)
+      XCTAssertEqual(library.alias(for: kind), "alias-" + kind.rawValue)
+      let model = InstalledModelInfo(url: URL(fileURLWithPath: "/fixture/" + kind.descriptor.directoryName),
+        size: 0, quickIssues: [], hasMTP: true, hasDSpark: false, modelKind: kind,
+        modelID: kind.descriptor.checkpointModelID)
+      let catalog = try ModelLibrary.makeServerCatalog(models: [model], aliases: library.aliases,
+        settings: [kind: loaded], powerSavingLimitGBps: nil)
+      let entry = try XCTUnwrap(catalog.models.first)
+      XCTAssertEqual(entry.id, kind.apiModelID)
+      XCTAssertEqual(entry.alias, "alias-" + kind.rawValue)
+      XCTAssertFalse(entry.runtime.qwenSortedExpertPrefill ?? true)
+      XCTAssertFalse(entry.runtime.qwenQSASelectedKernel ?? true)
+      XCTAssertFalse(entry.runtime.deepseekANEPrefill)
+    }
   }
 
   func testMemoryEstimateFollowsTheCacheChoice() throws {
@@ -153,8 +151,8 @@ final class NativeQwenModelTests: XCTestCase {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     try data.write(to: directory.appending(path: "manifest.json"))
-    let profile = MemoryPlanningProfile(kind: native, manifest: try InstalledModel.loadManifest(at: directory), config: [:])
-    var settings = ModelAdvancedSettings.defaults(for: native)
+    let profile = MemoryPlanningProfile(kind: swift, manifest: try InstalledModel.loadManifest(at: directory), config: [:])
+    var settings = ModelAdvancedSettings.defaults(for: swift)
     settings.expertCacheAutomatic = false
     settings.expertCacheGiB = 2
     let small = try XCTUnwrap(profile.requestEstimate(settings, mtpAvailable: true, dsparkAvailable: false,
@@ -168,6 +166,6 @@ final class NativeQwenModelTests: XCTestCase {
     let bf16 = try XCTUnwrap(profile.requestEstimate(settings, mtpAvailable: true, dsparkAvailable: false,
       contextTokens: 4_096, outputTokens: 128))
     XCTAssertGreaterThan(bf16.model, large.model)
-    XCTAssertNotNil(profile.estimate(.defaults(for: native), mtpAvailable: true, dsparkAvailable: false))
+    XCTAssertNotNil(profile.estimate(.defaults(for: swift), mtpAvailable: true, dsparkAvailable: false))
   }
 }
