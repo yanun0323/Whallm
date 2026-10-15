@@ -1,9 +1,62 @@
 # Benchmark
 
-The Qwen measurements below used the previous MLX engine. They are historical results, not measurements of the current Native engine.
+User-provided v1.1.13 Swift1.5 Native measurements are listed first. Qwen results from v1.1.12 and earlier used the previous MLX engine and remain historical reference observations. The datasets are not controlled comparisons between engines or versions.
 
-Recorded measurements for Swift1.5 and Qwen3.8 on v1.1.12 with 8-bit resident weights, both Qwen models on v1.1.11, Swift1.5 on v1.1.10, the Qwen MTP draft-context change (2026-09-29), the V4.1 prefill change, v1.1.7, v1.1.4,
-and v1.1.0. No new full-model performance measurements are claimed for v1.1.8. Measurement conditions and evidence gaps are stated below; these are not controlled speed comparisons of v1.1.10.
+## v1.1.13: Swift1.5 · Native engine
+
+All rows below have a 512-token output limit and report 512 output tokens. Automatic cache sizing used 8,192 slots on these machines; fixed sizing used 2,089. Automatic sizing can choose a different size on another Mac or when less memory is free. The source does not record the prompt type, MTP or 8-bit settings, temperature, seed, cache state, complete hardware/software environment, source commit, raw runs or output token hashes. These are reference observations, not a controlled comparison with earlier versions.
+
+**TTFT** is time to first token; **TPOT** is time per output token. **Prefill** and **Decode** are input and output tokens per second. **Total** is elapsed time; **Throughput** counts input plus output tokens per second. **Peak memory** is the reported process-memory peak, not Peak MLX or total Mac memory. The App samples physical footprint about every 10 ms; brief peaks may be missed. The source does not specify whether the measurement includes the App or only a standalone inference process.
+
+### Separate 16K input / 512 output tables
+
+The source’s quick summary and 16K tables show different peak-memory values; this table uses the more precise values from the 16K tables. Older Qwen and DeepSeek results remain below, with their original versions. These values differ from the 16K entries in the full length sweep; neither set is averaged or substituted for the other.
+
+| Chip | Cache mode | Slots | Input / Output | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | Total | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| M2 Max | Auto | 8192 | 16K / 512 | 57.2s | 52ms | 286.4 | 19.4 | 1m24s | 31.71 |
+| M2 Max | Fixed | 2089 | 16K / 512 | 56.6s | 60ms | 289.6 | 16.5 | 1m27s | 16.99 |
+| M5 Pro | Auto | 8192 | 16K / 512 | 31.4s | 39ms | 521.1 | 25.6 | 51.4s | 31.11 |
+| M5 Pro | Fixed | 2089 | 16K / 512 | 30.6s | 46ms | 536.0 | 21.7 | 54.1s | 16.25 |
+
+### M2 Max · Auto · Full length sweep
+
+| Model | Slots | Output limit | Input / Output | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | Total | Throughput (tok/s) | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Swift1.5 | 8192 | 512 | 4096 / 512 | 13.6s | 48ms | 302.0 | 20.9 | 38s | 121.1 | 29.94 |
+| Swift1.5 | 8192 | 512 | 8192 / 512 | 27.4s | 48ms | 298.8 | 20.8 | 52s | 167.5 | 30.39 |
+| Swift1.5 | 8192 | 512 | 16384 / 512 | 56.8s | 51ms | 288.6 | 19.5 | 1m23s | 203.6 | 31.27 |
+| Swift1.5 | 8192 | 512 | 32768 / 512 | 2m3s | 55ms | 266.1 | 18.3 | 2m31s | 220.2 | 32.30 |
+| Swift1.5 | 8192 | 512 | 65536 / 512 | 4m45s | 60ms | 230.3 | 16.8 | 5m15s | 209.7 | 34.45 |
+
+### M2 Max · Fixed · Full length sweep
+
+| Model | Slots | Output limit | Input / Output | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | Total | Throughput (tok/s) | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Swift1.5 | 2089 | 512 | 4096 / 512 | 13.7s | 57ms | 299.3 | 17.5 | 42.8s | 107.6 | 15.17 |
+| Swift1.5 | 2089 | 512 | 8192 / 512 | 27.3s | 57ms | 300.0 | 17.5 | 56.5s | 154.0 | 15.63 |
+| Swift1.5 | 2089 | 512 | 16384 / 512 | 56.5s | 60ms | 290.2 | 16.6 | 1m27s | 193.6 | 16.50 |
+| Swift1.5 | 2089 | 512 | 32768 / 512 | 2m2s | 62ms | 269.0 | 16.2 | 2m33s | 217.0 | 17.61 |
+
+### M5 Pro · Auto · Full length sweep
+
+| Model | Slots | Output limit | Input / Output | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | Total | Throughput (tok/s) | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Swift1.5 | 8192 | 512 | 1024 / 512 | 5.2s | 35ms | 197.6 | 28.6 | 23s | 66.7 | 29.44 |
+| Swift1.5 | 8192 | 512 | 4096 / 512 | 8.4s | 38ms | 489.6 | 26.6 | 27.6s | 166.9 | 29.84 |
+| Swift1.5 | 8192 | 512 | 8192 / 512 | 15.9s | 37ms | 515.9 | 26.9 | 34.9s | 249.6 | 30.23 |
+| Swift1.5 | 8192 | 512 | 16384 / 512 | 31.2s | 39ms | 525.7 | 25.6 | 51.1s | 330.6 | 31.06 |
+| Swift1.5 | 8192 | 512 | 32768 / 512 | 1m5s | 39ms | 505.8 | 25.5 | 1m25s | 392.2 | 32.06 |
+
+### M5 Pro · Fixed · Full length sweep
+
+| Model | Slots | Output limit | Input / Output | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | Total | Throughput (tok/s) | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Swift1.5 | 2089 | 512 | 1024 / 512 | 5.4s | 41ms | 188.9 | 24.3 | 26.5s | 58.1 | 14.60 |
+| Swift1.5 | 2089 | 512 | 4096 / 512 | 8.6s | 48ms | 475.9 | 20.7 | 33.3s | 138.3 | 15.01 |
+| Swift1.5 | 2089 | 512 | 8192 / 512 | 16.4s | 45ms | 499.7 | 22.0 | 39.6s | 219.8 | 15.41 |
+| Swift1.5 | 2089 | 512 | 16384 / 512 | 31.8s | 51ms | 514.7 | 19.5 | 58.1s | 290.8 | 16.22 |
+| Swift1.5 | 2089 | 512 | 32768 / 512 | 1m6s | 50ms | 492.8 | 19.9 | 1m32s | 361.1 | 17.26 |
 
 ## v1.1.12: Qwen models with MTP and 8-bit resident weights (M5 Pro, M2 Max)
 

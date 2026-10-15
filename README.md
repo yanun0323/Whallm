@@ -8,7 +8,7 @@
   <a href="README.md"><img src="https://img.shields.io/badge/English-Click-yellow" alt="English"></a>
   <a href="README-tw.md"><img src="https://img.shields.io/badge/繁體中文-點擊查看-orange" alt="繁體中文"></a>
   <a href="README-cn.md"><img src="https://img.shields.io/badge/简体中文-点击查看-orange" alt="简体中文"></a>
-  <a href="README-ja.md"><img src="https://img.shields.io/badge/日本語-クリック-青" alt="日本語"></a>
+  <a href="README-ja.md"><img src="https://img.shields.io/badge/日本語-クリック-blue" alt="日本語"></a>
   <a href="README-ko.md"><img src="https://img.shields.io/badge/한국어-클릭-yellow" alt="한국어"></a>
 </p>
 
@@ -18,18 +18,17 @@ Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo
 
 ## Benchmark summary
 
-> These Qwen measurements used the previous MLX engine, not the current Native engine.
+User-provided v1.1.13 measurements for **Swift1.5-Qwen3.8-Flash-Next**, using the Native engine. The summary below uses the separate **16K input / 512 output** tables; the full length sweep is listed later. These are different reported values, not averages.
 
-| Model | Chip | Prefill | Decode | Peak memory | Expert cache slots |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 552.5–588.9 tok/s | 18.6–19.8 tok/s | 14 GiB | 2089 |
-| `Swift1.5-Qwen3.8-Flash-Next` | M2 Max | 250.0–270.3 tok/s | 14.7–15.8 tok/s | 14 GiB | 2089 |
-| `Qwen3.8-Flash-Next-FP8` | M2 Max | 253.0–272.7 tok/s | 14.4–17.2 tok/s | 14 GiB | 2089 |
-| `DeepSeek-V4-Flash-0731` | M5 Pro | 53.6–201.0 tok/s | 5.9–7.7 tok/s | 23 GiB | 1152 |
-| `DeepSeek-V4.1-Flash` | M2 Max | 13.9–65.9 tok/s | 1.8–2.2 tok/s | 33 GiB | 1152 |
+| Chip | Cache mode | Slots | Prefill (tok/s) | Decode (tok/s) | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- |
+| M2 Max | Automatic | 8192 | 286.4 | 19.4 | 31.71 |
+| M2 Max | Fixed | 2089 | 289.6 | 16.5 | 16.99 |
+| M5 Pro | Automatic | 8192 | 521.1 | 25.6 | 31.11 |
+| M5 Pro | Fixed | 2089 | 536.0 | 21.7 | 16.25 |
 
-> Measured with the built-in Throughput test. The Swift1.5 rows and the M2 Max Qwen3.8 FP8 row ran on v1.1.12 with MTP and **Use 8-bit resident weights** on and 4,096 to 16,384 input tokens. The output limit was 512 tokens for Swift1.5 and 128 tokens for Qwen3.8 FP8. The DeepSeek models ran on v1.1.7 with 1,024 to 16,384 input tokens. Because the versions and settings differ, don't compare those rows directly.
->
+The source’s quick summary and 16K tables show different peak-memory values; this table uses the more precise values from the 16K tables. Older Qwen and DeepSeek results remain below, with their original versions.
+
 > See the [full benchmark](#benchmarks) for details.
 
 ## Quick start
@@ -41,7 +40,7 @@ Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo
 
 The server listens on `http://127.0.0.1:11434`. A model loads the first time you use it. The server keeps one model loaded and runs one request at a time. If a model you just installed is missing from the Chat list, restart the server.
 
-The [1.1.12 release notes](Packaging/ReleaseNotes/1.1.12.md) list the changes, upgrade steps and known limits.
+The [1.1.13 release notes](Packaging/ReleaseNotes/1.1.13.md) list the changes, upgrade steps and known limits.
 
 ## Requirements
 
@@ -87,7 +86,7 @@ Added in 1.1.10.
 - Limits per request: 8 images, 8 MiB per file, 32 MiB in total, 1,048,576 pixels per image after resizing and 2,048 image tokens.
 - New installs include the image weights. On an older install, select **Model → Verify and Repair**; it downloads only missing or damaged files. A full Qwen3.8 FP8 install is **126,189,355,659 bytes** (about **117.52 GiB**).
 - Video, audio and document input are not available for Qwen.
-- Native validation on M2 Max covered short text, Chat, Responses, streaming and images for both models. Outputs can differ from MLX; broad quality, performance and M5 validation remain incomplete.
+- Native checks on M2 Max covered short text, Chat, Responses, streaming and images for both models. User-provided v1.1.13 Swift1.5 speed measurements on M2 Max and M5 Pro are listed below. Outputs can differ from MLX; these measurements do not establish broad quality or performance validation.
 
 ## Features
 
@@ -101,13 +100,62 @@ Whallm keeps shared weights in memory and reads the chosen experts from SSD. It 
 
 ## Benchmarks
 
+### v1.1.13: Swift1.5 · Native engine
+
+All rows below have a 512-token output limit and report 512 output tokens. Automatic cache sizing used 8,192 slots on these machines; fixed sizing used 2,089. Automatic sizing can choose a different size on another Mac or when less memory is free. The source does not record the prompt type, MTP or 8-bit settings, temperature, seed, cache state, complete hardware/software environment, source commit, raw runs or output token hashes. These are reference observations, not a controlled comparison with earlier versions.
+
+**TTFT** is time to first token; **TPOT** is time per output token. **Prefill** and **Decode** are input and output tokens per second. **Total** is elapsed time; **Throughput** counts input plus output tokens per second. **Peak memory** is the reported process-memory peak, not Peak MLX or total Mac memory. The App samples physical footprint about every 10 ms; brief peaks may be missed. The source does not specify whether the measurement includes the App or only a standalone inference process.
+
+#### M2 Max · Automatic · Full length sweep
+
+| Slots | Input / Output | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | Total | Throughput (tok/s) | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 8192 | 4096 / 512 | 13.6s | 48ms | 302.0 | 20.9 | 38s | 121.1 | 29.94 |
+| 8192 | 8192 / 512 | 27.4s | 48ms | 298.8 | 20.8 | 52s | 167.5 | 30.39 |
+| 8192 | 16384 / 512 | 56.8s | 51ms | 288.6 | 19.5 | 1m23s | 203.6 | 31.27 |
+| 8192 | 32768 / 512 | 2m3s | 55ms | 266.1 | 18.3 | 2m31s | 220.2 | 32.30 |
+| 8192 | 65536 / 512 | 4m45s | 60ms | 230.3 | 16.8 | 5m15s | 209.7 | 34.45 |
+
+#### M2 Max · Fixed · Full length sweep
+
+| Slots | Input / Output | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | Total | Throughput (tok/s) | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2089 | 4096 / 512 | 13.7s | 57ms | 299.3 | 17.5 | 42.8s | 107.6 | 15.17 |
+| 2089 | 8192 / 512 | 27.3s | 57ms | 300.0 | 17.5 | 56.5s | 154.0 | 15.63 |
+| 2089 | 16384 / 512 | 56.5s | 60ms | 290.2 | 16.6 | 1m27s | 193.6 | 16.50 |
+| 2089 | 32768 / 512 | 2m2s | 62ms | 269.0 | 16.2 | 2m33s | 217.0 | 17.61 |
+
+#### M5 Pro · Automatic · Full length sweep
+
+| Slots | Input / Output | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | Total | Throughput (tok/s) | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 8192 | 1024 / 512 | 5.2s | 35ms | 197.6 | 28.6 | 23s | 66.7 | 29.44 |
+| 8192 | 4096 / 512 | 8.4s | 38ms | 489.6 | 26.6 | 27.6s | 166.9 | 29.84 |
+| 8192 | 8192 / 512 | 15.9s | 37ms | 515.9 | 26.9 | 34.9s | 249.6 | 30.23 |
+| 8192 | 16384 / 512 | 31.2s | 39ms | 525.7 | 25.6 | 51.1s | 330.6 | 31.06 |
+| 8192 | 32768 / 512 | 1m5s | 39ms | 505.8 | 25.5 | 1m25s | 392.2 | 32.06 |
+
+#### M5 Pro · Fixed · Full length sweep
+
+| Slots | Input / Output | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | Total | Throughput (tok/s) | Peak memory (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2089 | 1024 / 512 | 5.4s | 41ms | 188.9 | 24.3 | 26.5s | 58.1 | 14.60 |
+| 2089 | 4096 / 512 | 8.6s | 48ms | 475.9 | 20.7 | 33.3s | 138.3 | 15.01 |
+| 2089 | 8192 / 512 | 16.4s | 45ms | 499.7 | 22.0 | 39.6s | 219.8 | 15.41 |
+| 2089 | 16384 / 512 | 31.8s | 51ms | 514.7 | 19.5 | 58.1s | 290.8 | 16.22 |
+| 2089 | 32768 / 512 | 1m6s | 50ms | 492.8 | 19.9 | 1m32s | 361.1 | 17.26 |
+
+### Historical results: v1.1.7–v1.1.12
+
+The following Qwen rows used the previous MLX engine, not the Native engine. Their Peak MLX values are not directly comparable with the process-memory peaks above.
+
 Except for the image table, rows use **Code** input. The output limit is **512 tokens** for the Swift1.5 rows and **128 tokens** for the other rows. For those rows the build revision and cache state were not recorded, so treat these numbers as a reference, not as a controlled comparison between versions or speed-ups.
 
 - **TTFT**: time until the first token appears.
 - **Prefill**: input processing speed. **Decode**: output speed. Both are in tokens per second.
 - **Peak MLX**: the most memory MLX used, in **GiB**. It is not the Mac's total memory use. Older app exports label this value GB, but it is computed in GiB.
 
-### M5 Pro
+#### M5 Pro
 
 | Model | Version | Slots | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -124,7 +172,7 @@ Except for the image table, rows use **Code** input. The output limit is **512 t
 
 The 1.1.11 rows ran with MTP on, temperature 0.0 and seed 42. The 1.1.12 rows ran with MTP and **Use 8-bit resident weights** on, temperature 0.0 and seed 42. Older measurements are kept in [BENCHMARK.md](BENCHMARK.md).
 
-### M5 Pro: Swift1.5 image prompts with MTP
+#### M5 Pro: Swift1.5 image prompts with MTP
 
 Measured on the 1.1.11 source with 160 output tokens, temperature 0, Prompt Cache off and 3,084 expert slots (7.5 GiB). Each number is the median of 3 rounds. Draft acceptance is the share of MTP's guesses that the model kept.
 
@@ -137,7 +185,7 @@ Measured on the 1.1.11 source with 160 output tokens, temperature 0, Prompt Cach
 
 With MTP on, output was 1.38× and 1.43× as fast, and the first token arrived slightly sooner.
 
-### M2 Max
+#### M2 Max
 
 | Model | Version | Slots | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |

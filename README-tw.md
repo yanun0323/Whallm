@@ -8,7 +8,7 @@
   <a href="README.md"><img src="https://img.shields.io/badge/English-Click-yellow" alt="English"></a>
   <a href="README-tw.md"><img src="https://img.shields.io/badge/繁體中文-點擊查看-orange" alt="繁體中文"></a>
   <a href="README-cn.md"><img src="https://img.shields.io/badge/简体中文-点击查看-orange" alt="简体中文"></a>
-  <a href="README-ja.md"><img src="https://img.shields.io/badge/日本語-クリック-青" alt="日本語"></a>
+  <a href="README-ja.md"><img src="https://img.shields.io/badge/日本語-クリック-blue" alt="日本語"></a>
   <a href="README-ko.md"><img src="https://img.shields.io/badge/한국어-클릭-yellow" alt="한국어"></a>
 </p>
 
@@ -18,18 +18,17 @@ Whallm 讓你在 Apple Silicon Mac 上執行大型語言模型。共用的權重
 
 ## 效能摘要
 
-> 這些 Qwen 數據使用先前的 MLX 引擎，不是目前 Native 引擎的測量結果。
+使用者提供的 **Swift1.5-Qwen3.8-Flash-Next** v1.1.13 跑分，使用 Native 引擎。下方摘要採用獨立的 **16K 輸入／512 輸出**表格；完整的不同長度測試列在後面。兩組記錄的數字不同，沒有混算平均。
 
-| 模型 | 晶片 | Prefill | Decode | 峰值記憶體 | 專家快取 Slots |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `Swift1.5-Qwen3.8-Flash-Next` | M5 Pro | 552.5–588.9 tok/s | 18.6–19.8 tok/s | 14 GiB | 2089 |
-| `Swift1.5-Qwen3.8-Flash-Next` | M2 Max | 250.0–270.3 tok/s | 14.7–15.8 tok/s | 14 GiB | 2089 |
-| `Qwen3.8-Flash-Next-FP8` | M2 Max | 253.0–272.7 tok/s | 14.4–17.2 tok/s | 14 GiB | 2089 |
-| `DeepSeek-V4-Flash-0731` | M5 Pro | 53.6–201.0 tok/s | 5.9–7.7 tok/s | 23 GiB | 1152 |
-| `DeepSeek-V4.1-Flash` | M2 Max | 13.9–65.9 tok/s | 1.8–2.2 tok/s | 33 GiB | 1152 |
+| 晶片 | 快取模式 | Slots | Prefill (tok/s) | Decode (tok/s) | 峰值記憶體 (GiB) |
+| --- | --- | --- | --- | --- | --- |
+| M2 Max | 自動 | 8192 | 286.4 | 19.4 | 31.71 |
+| M2 Max | 固定 | 2089 | 289.6 | 16.5 | 16.99 |
+| M5 Pro | 自動 | 8192 | 521.1 | 25.6 | 31.11 |
+| M5 Pro | 固定 | 2089 | 536.0 | 21.7 | 16.25 |
 
-> 以內建 Throughput 測試量測。Swift1.5 的資料列與 M2 Max 的 Qwen3.8 FP8 資料列使用 v1.1.12，開啟 MTP 與 **使用 8-bit 常駐權重**，輸入 4,096 至 16,384 tokens；輸出上限 Swift1.5 是 512 tokens，Qwen3.8 FP8 是 128 tokens。DeepSeek 使用 v1.1.7，輸入 1,024 至 16,384 tokens。版本與設定不同，請勿直接比較這些列。
->
+來源的快速摘要與 16K 表格記載的峰值記憶體不同；此表採用 16K 表格中較精確的數值。舊 Qwen 與 DeepSeek 結果仍列在後面，保留原版本標示。
+
 > 詳細資料見[完整效能測試](#效能測試)。
 
 ## 快速開始
@@ -41,7 +40,7 @@ Whallm 讓你在 Apple Silicon Mac 上執行大型語言模型。共用的權重
 
 伺服器位址是 `http://127.0.0.1:11434`。模型在第一次使用時載入。伺服器同一時間只載入一個模型、處理一個請求。如果剛安裝的模型沒有出現在 Chat 清單中，請重新啟動伺服器。
 
-[1.1.12 版本說明](Packaging/ReleaseNotes/1.1.12.md)列出變更、升級步驟與已知限制。
+[1.1.13 版本說明](Packaging/ReleaseNotes/1.1.13.md)列出變更、升級步驟與已知限制。
 
 ## 使用需求
 
@@ -87,7 +86,7 @@ App 不含模型權重。光是 DeepSeek V4.1 的專家與 Engram 檔案就需�
 - 每次請求的限制：8 張圖片、每個檔案 8 MiB、合計 32 MiB、縮放後每張最多 1,048,576 像素、最多 2,048 個圖片 tokens。
 - 新安裝已包含圖片權重。舊的安裝請按 **Model → Verify and Repair**，只會下載缺少或損壞的檔案。完整的 Qwen3.8 FP8 安裝為 **126,189,355,659 bytes**（約 **117.52 GiB**）。
 - Qwen 不支援影片、音訊與文件輸入。
-- Native 在 M2 Max 的驗證涵蓋兩款模型的短文字、Chat、Responses、串流與圖片。輸出可能與 MLX 不同；尚未完成廣泛品質、效能與 M5 驗證。
+- Native 在 M2 Max 的檢查涵蓋兩款模型的短文字、Chat、Responses、串流與圖片。下方列有使用者提供的 v1.1.13 Swift1.5 在 M2 Max 與 M5 Pro 的跑分。輸出可能與 MLX 不同；這些數據不代表已完成廣泛品質或效能驗證。
 
 ## 功能
 
@@ -101,13 +100,62 @@ Whallm 把共用權重放在記憶體，從 SSD 讀取選中的專家。DeepSeek
 
 ## 效能測試
 
+### v1.1.13：Swift1.5 · Native 引擎
+
+以下各列的輸出上限皆為 512 tokens，記錄的輸出也都是 512 tokens。這兩台機器的自動快取使用 8,192 slots，固定快取使用 2,089 slots；換一台 Mac 或可用記憶體較少時，自動模式可能選擇不同大小。來源未記錄提示詞類型、MTP 與 8-bit 設定、temperature、seed、快取狀態、完整軟硬體環境、原始碼 commit、原始測試檔或輸出 token 雜湊。這些是參考數據，不是與舊版的受控比較。
+
+**TTFT** 是首個 token 等待時間，**TPOT** 是每個輸出 token 的時間。**Prefill** 與 **Decode** 分別是每秒處理輸入與產生輸出的 tokens。**總時間**是整次耗時；**Throughput** 計算每秒輸入加輸出的 tokens。**峰值記憶體**是記錄的程序記憶體峰值，不是 Peak MLX 或整台 Mac 的用量。App 約每 10 ms 取樣實體記憶體用量，可能漏掉短暫峰值；來源未註明是否包含 App，或僅計算獨立推論程序。
+
+#### M2 Max · 自動 · 完整長度測試
+
+| Slots | 輸入 / 輸出 | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | 總時間 | Throughput (tok/s) | 峰值記憶體 (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 8192 | 4096 / 512 | 13.6s | 48ms | 302.0 | 20.9 | 38s | 121.1 | 29.94 |
+| 8192 | 8192 / 512 | 27.4s | 48ms | 298.8 | 20.8 | 52s | 167.5 | 30.39 |
+| 8192 | 16384 / 512 | 56.8s | 51ms | 288.6 | 19.5 | 1m23s | 203.6 | 31.27 |
+| 8192 | 32768 / 512 | 2m3s | 55ms | 266.1 | 18.3 | 2m31s | 220.2 | 32.30 |
+| 8192 | 65536 / 512 | 4m45s | 60ms | 230.3 | 16.8 | 5m15s | 209.7 | 34.45 |
+
+#### M2 Max · 固定 · 完整長度測試
+
+| Slots | 輸入 / 輸出 | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | 總時間 | Throughput (tok/s) | 峰值記憶體 (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2089 | 4096 / 512 | 13.7s | 57ms | 299.3 | 17.5 | 42.8s | 107.6 | 15.17 |
+| 2089 | 8192 / 512 | 27.3s | 57ms | 300.0 | 17.5 | 56.5s | 154.0 | 15.63 |
+| 2089 | 16384 / 512 | 56.5s | 60ms | 290.2 | 16.6 | 1m27s | 193.6 | 16.50 |
+| 2089 | 32768 / 512 | 2m2s | 62ms | 269.0 | 16.2 | 2m33s | 217.0 | 17.61 |
+
+#### M5 Pro · 自動 · 完整長度測試
+
+| Slots | 輸入 / 輸出 | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | 總時間 | Throughput (tok/s) | 峰值記憶體 (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 8192 | 1024 / 512 | 5.2s | 35ms | 197.6 | 28.6 | 23s | 66.7 | 29.44 |
+| 8192 | 4096 / 512 | 8.4s | 38ms | 489.6 | 26.6 | 27.6s | 166.9 | 29.84 |
+| 8192 | 8192 / 512 | 15.9s | 37ms | 515.9 | 26.9 | 34.9s | 249.6 | 30.23 |
+| 8192 | 16384 / 512 | 31.2s | 39ms | 525.7 | 25.6 | 51.1s | 330.6 | 31.06 |
+| 8192 | 32768 / 512 | 1m5s | 39ms | 505.8 | 25.5 | 1m25s | 392.2 | 32.06 |
+
+#### M5 Pro · 固定 · 完整長度測試
+
+| Slots | 輸入 / 輸出 | TTFT | TPOT | Prefill (tok/s) | Decode (tok/s) | 總時間 | Throughput (tok/s) | 峰值記憶體 (GiB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2089 | 1024 / 512 | 5.4s | 41ms | 188.9 | 24.3 | 26.5s | 58.1 | 14.60 |
+| 2089 | 4096 / 512 | 8.6s | 48ms | 475.9 | 20.7 | 33.3s | 138.3 | 15.01 |
+| 2089 | 8192 / 512 | 16.4s | 45ms | 499.7 | 22.0 | 39.6s | 219.8 | 15.41 |
+| 2089 | 16384 / 512 | 31.8s | 51ms | 514.7 | 19.5 | 58.1s | 290.8 | 16.22 |
+| 2089 | 32768 / 512 | 1m6s | 50ms | 492.8 | 19.9 | 1m32s | 361.1 | 17.26 |
+
+### 歷史結果：v1.1.7–v1.1.12
+
+以下 Qwen 資料使用先前的 MLX 引擎，不是 Native 引擎。其 Peak MLX 數值不能直接與上方的程序記憶體峰值比較。
+
 除了圖片表格，其他資料列都使用 **Code** 輸入。Swift1.5 的資料列輸出上限是 **512 tokens**，其餘是 **128 tokens**。這些資料列測試時沒有記錄 build 版本與快取狀態，請把這些數字當作參考，而不是版本之間或加速方式之間的對照比較。
 
 - **TTFT**：等到第一個 token 出現的時間。
 - **Prefill**：處理輸入的速度。**Decode**：產生輸出的速度。兩者單位都是每秒 tokens。
 - **Peak MLX**：MLX 使用記憶體的最高值，單位 **GiB**，不是整台 Mac 的記憶體用量。較舊的 App 匯出把這個值標成 GB，但實際以 GiB 計算。
 
-### M5 Pro
+#### M5 Pro
 
 | 模型 | 版本 | Slots | 輸入 tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -124,7 +172,7 @@ Whallm 把共用權重放在記憶體，從 SSD 讀取選中的專家。DeepSeek
 
 1.1.11 的資料列開啟 MTP，使用 temperature 0.0 與 seed 42。1.1.12 的資料列開啟 MTP 與 **使用 8-bit 常駐權重**，使用 temperature 0.0 與 seed 42。較早的量測保留在 [BENCHMARK.md](BENCHMARK.md)。
 
-### M5 Pro：Swift1.5 圖片提示詞搭配 MTP
+#### M5 Pro：Swift1.5 圖片提示詞搭配 MTP
 
 以 1.1.11 原始碼量測：輸出 160 tokens、temperature 0、關閉 Prompt Cache、專家快取 3,084 slots（7.5 GiB）。每個數字是 3 輪的中位數。草稿接受率是 MTP 猜的字被模型採用的比例。
 
@@ -137,7 +185,7 @@ Whallm 把共用權重放在記憶體，從 SSD 讀取選中的專家。DeepSeek
 
 開啟 MTP 後，輸出速度分別是 1.38 倍與 1.43 倍，第一個 token 也稍早出現。
 
-### M2 Max
+#### M2 Max
 
 | 模型 | 版本 | Slots | 輸入 tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
