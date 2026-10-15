@@ -6,81 +6,51 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Whallm</title>
         <item>
-            <title>1.1.12</title>
-            <pubDate>Sun, 11 Oct 2026 00:32:25 +0800</pubDate>
-            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.12</link>
-            <sparkle:version>1.1.12</sparkle:version>
-            <sparkle:shortVersionString>1.1.12</sparkle:shortVersionString>
+            <title>1.1.13</title>
+            <pubDate>Thu, 15 Oct 2026 18:36:21 +0800</pubDate>
+            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.13</link>
+            <sparkle:version>1.1.13</sparkle:version>
+            <sparkle:shortVersionString>1.1.13</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.12
+            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.13
 
-Changes since v1.1.11.
+Changes since v1.1.12.
 
-## Use less memory with 8-bit resident weights
+## Native engine for both Qwen models
 
-- Both Qwen models have a new setting, **Use 8-bit resident weights**, in **Model → Advanced Settings**. It is off by default.
-- When it is on, the weights that stay in memory, except experts, are kept in 8 bits instead of BF16. This uses less memory and usually speeds up output, most with MTP on.
-- Output can differ slightly from output with the setting off.
-- **Estimated peak memory** now drops when you turn the setting on. For Swift1.5 the estimate is about 3.7 GiB lower.
+- Qwen3.8-Flash-Next and Swift1.5-Qwen3.8-Flash-Next now run on the bundled C++ and Metal engine instead of MLX.
+- Existing model downloads, display names, API model IDs and Aliases stay unchanged. Both models support text, still images, MTP and Prompt Cache.
+- **Size the expert cache automatically** uses the memory available when a model loads, up to 8,192 slots. Turn it off to choose a fixed cache size.
+- New or reset settings enable automatic expert cache sizing, MTP and **Use 8-bit resident weights**. Saved generation, read-worker, MTP and 8-bit choices are retained.
+- Advanced Settings no longer shows MLX-only controls or a separate MTP expert cache size for these models.
 
-## New Qwen defaults
+## Model settings and API
 
-- **Experts in memory** now defaults to 8.5% (2,089 slots, about 5.1 GiB). It was about 12.5% (7.5 GiB).
-- **MTP experts in memory** now defaults to 100% (512 slots, about 1.2 GiB). It was about 8%.
-- Together, the two defaults use about 1.3 GiB less memory than before.
-
-## Less work per token for Qwen
-
-- Output no longer rebuilds each expert's weight views for every token. They are built once and reused.
-- When the main model checks MTP drafts, it no longer copies the whole attention history every round.
-- N-gram lookups ask macOS for all the pages they need at once instead of one at a time.
-- Loading reads large weights with four workers.
-- QSA index keys are stored once instead of twice.
-
-Output tokens are unchanged by these five changes.
-
-## DeepSeek V4.1
-
-- Engram lookups ask macOS for all the pages they need at once, as Qwen N-gram lookups do.
+- **Context window** sets the maximum combined input and output length for each request, within the model's supported limit. Requests that exceed it return `context_length_exceeded`.
+- `GET /v1/models` includes each model's context window and capabilities in its `data` entries.
+- The model list shows newer models first and no longer clips the available rows into a short inner list.
+- Throughput durations use units appropriate to their length.
 
 ## Upgrade notes
 
-- The new defaults apply to new installs and when you reset a model's settings. Your saved settings are kept.
-- Prompt Cache entries saved with **Use 8-bit resident weights** on are kept apart from entries saved with it off.
+- Quit the old App before opening this version. Model weights do not need to be downloaded again.
+- MLX Prompt Cache files are not reused by the Native engine; prompts are processed again as needed. Native output can differ from MLX output.
+- The two temporary `-native` preview model IDs have been removed. If you used them, switch to `qwen3.8-flash-next-fp8` or `swift1.5-qwen3.8-flash-next-mxfp4`.
+- Custom Qwen runtime configurations must leave MLX-only options at their defaults; other values are rejected. The App handles this automatically.
+- Clients reading the former top-level `models` or `object` fields from `GET /v1/models` must use the `data` array instead.
 
-## Benchmarks
+## Validation and limits
 
-Measured with the built-in **Throughput** test on a build from source shortly before this release: Swift1.5, MTP and **Use 8-bit resident weights** on, **Code** input, a 512-token output limit, 2,089 expert slots, temperature 0 and seed 42.
+- 767 Python tests ran with one skipped and no failures; 199 Swift tests ran with four skipped and no failures. All 24 release-script tests passed.
+- Local App and ZIP checks passed for signatures, bundled model files, and startup in English, Simplified Chinese and Traditional Chinese without access to the build folder or Swift localization bundle.
+- Prior Native checks on M2 Max covered short text, Chat, Responses, streaming and images for both models. Broad quality, performance and M5 validation remain incomplete. Earlier MLX benchmarks do not describe this engine.
 
-| Chip | Input tokens | TTFT (ms) | Prefill (tok/s) | Decode (tok/s) | Peak MLX (GiB) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| M5 Pro | 4096 | 6976.5 | 587.1 | 19.4 | 13.13 |
-| M5 Pro | 8192 | 13911.4 | 588.9 | 19.8 | 13.86 |
-| M5 Pro | 16384 | 29654.2 | 552.5 | 18.6 | 14.29 |
-| M2 Max | 4096 | 15151.2 | 270.3 | 15.0 | 13.15 |
-| M2 Max | 8192 | 30693.5 | 266.9 | 15.8 | 13.84 |
-| M2 Max | 16384 | 65538.0 | 250.0 | 14.7 | 14.42 |
+Requires Apple Silicon and macOS 15 or later. Model weights are downloaded separately. Distribution builds exclude local-only debug and Dry run features.
 
-The v1.1.11 run on the same M5 Pro peaked at 16.93 to 18.81 GiB and produced 14.6 to 17.5 tokens per second. That run used a 128-token output limit and did not have 8-bit resident weights, so this is not a controlled comparison.
-
-## Validation
-
-- **719 Python tests passed**; **195 Swift tests ran, with 4 skipped and no failures**.
-- Packaging checks cover signatures, bundled files and startup in English, Simplified Chinese and Traditional Chinese without access to the build folder, for both the App and the unzipped download.
-
-## Known limits
-
-- **Estimated peak memory** was about 2 GiB higher than the measured peak in the runs above. The estimate includes a safety allowance and memory that MLX holds for reuse; the measured number does not.
-- The lower estimate for 8-bit resident weights is calculated from the model's file list. It was compared with measurements only for Swift1.5.
-- There are no measurements for Qwen3.8 FP8 with 8-bit resident weights.
-- The benchmark rows come from one M5 Pro and one M2 Max.
-
-Requires Apple Silicon and macOS 15 or later. Model weights are downloaded separately. This is a distribution build; local-only debug and Dry run features are not included.
-
-[Full changelog](https://github.com/yanun0323/Whallm/compare/v1.1.11...v1.1.12)
+[Full changelog](https://github.com/yanun0323/Whallm/compare/v1.1.12...v1.1.13)
 ]]></description>
-            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.12/Whallm-macOS-arm64.zip" length="201918028" type="application/octet-stream" sparkle:edSignature="VemiMaiuPXdsP7+/Nf1G+9LD2zgGTPhISZ79GOf+Lj6v5qBBlyn2W3m43Fi2/COHWPdok4YdOoJ1/97H7Yx4Dg=="/>
+            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.13/Whallm-macOS-arm64.zip" length="202113332" type="application/octet-stream" sparkle:edSignature="iK1k5l3jW4j136STG1zA4FLxT2dch7cPC0HSNG1ysnJvDzOulUt+2DA79abeewMdNBvwdl+rJ3NoiSA5/vuvDg=="/>
         </item>
         <item>
             <title>1.1.7</title>
@@ -121,6 +91,6 @@ This alpha adds a Throughput benchmark page and updates model defaults. Select *
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: xtM12uxDzRROH/gkzQfsxNRZH7di1cYZcqq+5NHmQTjqQ8axfYU6noLZwrw5O/JjU1TUXvSmZ82M1TdG45TsAA==
-length: 8079
+edSignature: qukoAwWMbdaHSt9YgQWuXIw+W3bXrp0dvqvlESeqVv3cncdyfSSD02BLFMIIOy0XTvxhChK21Lgco137nmrVCw==
+length: 7172
 -->
