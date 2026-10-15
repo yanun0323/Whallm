@@ -1,5 +1,7 @@
 # Benchmark
 
+The Qwen measurements below used the previous MLX engine. They are historical results, not measurements of the current Native engine.
+
 Recorded measurements for Swift1.5 and Qwen3.8 on v1.1.12 with 8-bit resident weights, both Qwen models on v1.1.11, Swift1.5 on v1.1.10, the Qwen MTP draft-context change (2026-09-29), the V4.1 prefill change, v1.1.7, v1.1.4,
 and v1.1.0. No new full-model performance measurements are claimed for v1.1.8. Measurement conditions and evidence gaps are stated below; these are not controlled speed comparisons of v1.1.10.
 

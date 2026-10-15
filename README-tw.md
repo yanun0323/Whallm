@@ -14,9 +14,11 @@
 
 Whallm 讓你在 Apple Silicon Mac 上執行大型語言模型。共用的權重放在記憶體裡，每個 token 需要的專家才從 SSD 讀取，所以能跑比記憶體大很多的模型。App 內建聊天視窗，也提供 OpenAI 相容 API。
 
-支援的模型：DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen3.8、Swift1.5 Qwen3.8 Native（預覽版）、Qwen3.8 Native（預覽版），以及 MiMo（預覽版）。
+支援的模型：DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen3.8，以及 MiMo（預覽版）。
 
 ## 效能摘要
+
+> 這些 Qwen 數據使用先前的 MLX 引擎，不是目前 Native 引擎的測量結果。
 
 | 模型 | 晶片 | Prefill | Decode | 峰值記憶體 | 專家快取 Slots |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -55,6 +57,8 @@ App 不含模型權重。光是 DeepSeek V4.1 的專家與 Engram 檔案就需�
 
 ## Qwen 模型
 
+兩款 Qwen 現在都使用 Native 引擎（C++ 與 Metal，不使用 MLX）。既有下載、模型名稱、API ID 和 Alias 不變。兩個 `-Native` 測試項目已移除，使用這些 ID 的客戶端請改用下方原模型的 ID。MLX 專用設定不再生效，也不會沿用 MLX 提示詞快取。
+
 ### Swift1.5-Qwen3.8-Flash-Next
 
 1.1.10 版新增。
@@ -64,34 +68,26 @@ App 不含模型權重。光是 DeepSeek V4.1 的專家與 Engram 檔案就需�
 - 下載容量：**127,714,522,478 bytes**（約 **118.94 GiB**），包含 59 個文字與 MTP 檔案，以及 **897,864,704 bytes** 的圖片權重。不下載稽核檔案。
 - 與 Qwen3.8 FP8 使用同一套推論引擎，但資料夾、設定、Alias 與提示詞快取各自獨立。
 
-### Swift1.5-Qwen3.8-Flash-Next-Native（預覽版）
+### Qwen3.8-Flash-Next
 
-- API model ID：`swift1.5-qwen3.8-flash-next-native`
-- 用 Whallm 自己的推論引擎執行 Swift1.5。這個引擎以 C++ 和 Metal 撰寫，不使用 MLX。它讀取 Swift1.5 的安裝檔，不需要另外下載；請先安裝 Swift1.5。設定、Alias 與提示詞快取各自獨立。
-- **進階設定**有「自動決定專家快取大小」，預設開啟。開啟時，引擎依模型載入時的可用記憶體決定大小，最多約 20 GiB，並至少為 macOS 和其他 App 保留 7 GiB 或這台 Mac 記憶體的 15%。關閉後可自行設定固定大小。其他設定為生成參數、讀取執行緒、提示詞快取、暖機、MTP 與 8-bit 常駐權重。
-- 支援文字、靜態圖片、MTP，以及記憶體與磁碟提示詞快取，API 端點相同。輸出可能與 MLX 引擎略有不同。
-- 已測試：在 M2 Max 上，兩個測試提示詞的 greedy 輸出與 MLX 引擎相同；透過 API 測試了 Chat、Responses、串流、圖片與取消。在 M5 晶片上，長提示詞會使用 GPU 的 Neural Accelerators，這條路徑尚未量測。
-
-### Qwen3.8-Flash-Next-Native（預覽版）
-
-- API model ID：`qwen3.8-flash-next-native`
-- 用同一個原生引擎執行 Qwen3.8 FP8。它讀取 Qwen3.8 的安裝檔，不需要另外下載；請先安裝 Qwen3.8。設定、Alias 與提示詞快取各自獨立。設定與支援的輸入和 Swift1.5-Qwen3.8-Flash-Next-Native 相同。
-- 已測試：在 M2 Max 上，一個短測試提示詞的 greedy 輸出與 MLX 引擎相同；在較長的提示詞上，前兩名幾乎同分的位置，兩個引擎選了不同的 token。透過 API 測試了 Chat、Responses、串流與圖片。
+- API model ID: `qwen3.8-flash-next-fp8`
+- Qwen3.8 FP8 與 Swift1.5 使用同一個 Native 引擎與設定選項，但安裝、Alias 與提示詞快取各自獨立。
 
 ### 設定
 
-- 兩款 Qwen 的 **Advanced Settings** 相同，只保留 Alias、生成、記憶體、讀取工作數、Prompt Cache、暖機、MTP 與 8-bit 常駐權重。其餘選項都使用固定值。
+- 兩款模型都保留生成參數、專家快取大小、讀取工作數、Prompt Cache、暖機、MTP 與 8-bit 常駐權重。不再顯示 MLX 記憶體指引、預讀工作數、快取淘汰策略與獨立的 MTP 快取大小。
+- **進階設定**有「自動決定專家快取大小」，預設開啟。開啟時，引擎依模型載入時的可用記憶體決定大小，最多約 20 GiB，並至少為 macOS 和其他 App 保留 7 GiB 或這台 Mac 記憶體的 15%。關閉後可自行設定固定大小。其他設定為生成參數、讀取執行緒、提示詞快取、暖機、MTP 與 8-bit 常駐權重。
 - MTP 預設開啟。它通常能加快輸出，但不是每個提示詞都會變快。輸出可能與關閉 MTP 時略有不同。
 - **使用 8-bit 常駐權重** 在新的或恢復預設的設定中預設開啟；已保存的設定維持原本的選擇。開啟後，常駐記憶體的權重（專家除外）改以 8-bit 取代 BF16 儲存，可減少記憶體用量，通常也會加快輸出，開啟 MTP 時最明顯。輸出可能與關閉時略有不同。
 
 ### 圖片
 
 - 兩款 Qwen 都能在 Chat、`/v1/chat/completions` 與 `/v1/responses` 輸入靜態 PNG、JPEG、WebP 圖片。
-- MTP 開或關都能傳送圖片。在完整的 Swift1.5 模型上，開啟 MTP 產生的每個字都是模型自己會選的字，兩張測試圖片的輸出速度約快 1.4 倍。圖片請求不使用提示詞快取。
+- MTP 開或關都能傳送圖片。圖片請求不使用提示詞快取。
 - 每次請求的限制：8 張圖片、每個檔案 8 MiB、合計 32 MiB、縮放後每張最多 1,048,576 像素、最多 2,048 個圖片 tokens。
 - 新安裝已包含圖片權重。舊的安裝請按 **Model → Verify and Repair**，只會下載缺少或損壞的檔案。完整的 Qwen3.8 FP8 安裝為 **126,189,355,659 bytes**（約 **117.52 GiB**）。
 - Qwen 不支援影片、音訊與文件輸入。
-- 已測試：完整的 Swift1.5 模型能辨識紅色與藍色圖片，圖片請求與取消前後的短文字回答保持一致。完整 Qwen3.8 FP8 模型的圖片生成、整體圖片品質與圖片速度尚未測試。
+- Native 在 M2 Max 的驗證涵蓋兩款模型的短文字、Chat、Responses、串流與圖片。輸出可能與 MLX 不同；尚未完成廣泛品質、效能與 M5 驗證。
 
 ## 功能
 

@@ -14,9 +14,11 @@
 
 Whallm runs large language models on your Apple Silicon Mac. It keeps the shared weights in memory and reads only the experts each token needs from your SSD, so it can run models much larger than your memory. It comes with a chat window and an OpenAI-compatible API.
 
-Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8, Swift1.5 Qwen3.8 Native (preview), Qwen3.8 Native (preview) and MiMo (preview).
+Supported models: DeepSeek V4, DeepSeek V4.1, Qwen3.8, Swift1.5 Qwen3.8 and MiMo (preview).
 
 ## Benchmark summary
+
+> These Qwen measurements used the previous MLX engine, not the current Native engine.
 
 | Model | Chip | Prefill | Decode | Peak memory | Expert cache slots |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -55,6 +57,8 @@ Model weights are not included in the app. DeepSeek V4.1 alone needs about **458
 
 ## Qwen models
 
+Both Qwen models now use the Native engine (C++ and Metal, without MLX). Existing downloads, model names, API IDs and Aliases stay unchanged. The two `-Native` preview entries have been removed; clients using those IDs must switch to the original IDs below. MLX-only settings no longer apply, and MLX prompt caches are not reused.
+
 ### Swift1.5-Qwen3.8-Flash-Next
 
 Added in 1.1.10.
@@ -64,34 +68,26 @@ Added in 1.1.10.
 - Download size: **127,714,522,478 bytes** (about **118.94 GiB**). This covers 59 text and MTP files plus **897,864,704 bytes** of image weights. Audit files are not downloaded.
 - It uses the same engine as Qwen3.8 FP8 but keeps its own folder, settings, Alias and prompt cache.
 
-### Swift1.5-Qwen3.8-Flash-Next-Native (preview)
+### Qwen3.8-Flash-Next
 
-- API model ID: `swift1.5-qwen3.8-flash-next-native`
-- Runs Swift1.5 on Whallm's own engine, written in C++ and Metal without MLX. It reads the Swift1.5 install, so it needs no extra download; install Swift1.5 first. Its settings, Alias and prompt cache are its own.
-- **Advanced Settings** has **Size the expert cache automatically**, on by default. The engine then uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn it off to choose a fixed size. The other settings are generation, read workers, Prompt Cache, warmup, MTP and 8-bit resident weights.
-- It supports text, still images, MTP and the memory and disk prompt cache through the same API endpoints. Output can differ slightly from the MLX engine.
-- What's tested: on an M2 Max, greedy output matched the MLX engine on two test prompts, and Chat, Responses, streaming, images and cancellation worked through the API. On M5 chips, long prompts use the GPU Neural Accelerators; that path is not measured yet.
-
-### Qwen3.8-Flash-Next-Native (preview)
-
-- API model ID: `qwen3.8-flash-next-native`
-- Runs Qwen3.8 FP8 on the same native engine. It reads the Qwen3.8 install, so it needs no extra download; install Qwen3.8 first. Its settings, Alias and prompt cache are its own. Settings and supported inputs are the same as Swift1.5-Qwen3.8-Flash-Next-Native.
-- What's tested: on an M2 Max, greedy output matched the MLX engine on a short test prompt. On a longer one, the two engines picked different tokens where the top two were almost tied. Chat, Responses, streaming and images worked through the API.
+- API model ID: `qwen3.8-flash-next-fp8`
+- Qwen3.8 FP8 uses the same Native engine and settings as Swift1.5, with its own installation, Alias and prompt cache.
 
 ### Settings
 
-- Both Qwen models show the same short **Advanced Settings**: Alias, generation, memory, read workers, Prompt Cache, warmup, MTP and 8-bit resident weights. Everything else uses fixed values.
+- Both models expose generation, expert cache size, read workers, Prompt Cache, warmup, MTP and 8-bit resident weights. MLX memory guidelines, prefetch workers, cache eviction and the separate MTP cache size are no longer shown.
+- **Advanced Settings** has **Size the expert cache automatically**, on by default. The engine then uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn it off to choose a fixed size. The other settings are generation, read workers, Prompt Cache, warmup, MTP and 8-bit resident weights.
 - MTP is on by default. It usually speeds up output, but not for every prompt. Output can differ slightly from output with MTP off.
 - **Use 8-bit resident weights** is on by default for new or reset settings; saved settings keep their choice. It keeps the weights that stay in memory, except experts, in 8 bits instead of BF16. This uses less memory and usually speeds up output, most with MTP on. Output can differ slightly from output with the setting off.
 
 ### Images
 
 - Both Qwen models accept still PNG, JPEG and WebP images in Chat, `/v1/chat/completions` and `/v1/responses`.
-- Images work with MTP on or off. On the full Swift1.5 model, every token MTP produced was the one the model itself would pick, and output was about 1.4× faster for two test images. Image requests don't use the prompt cache.
+- Images work with MTP on or off. Image requests do not use the prompt cache.
 - Limits per request: 8 images, 8 MiB per file, 32 MiB in total, 1,048,576 pixels per image after resizing and 2,048 image tokens.
 - New installs include the image weights. On an older install, select **Model → Verify and Repair**; it downloads only missing or damaged files. A full Qwen3.8 FP8 install is **126,189,355,659 bytes** (about **117.52 GiB**).
 - Video, audio and document input are not available for Qwen.
-- What's tested: the full Swift1.5 model recognized red and blue images, and short text answers stayed the same before and after image requests and cancellation. Image generation on the full Qwen3.8 FP8 model, overall image quality and image speed are not tested yet.
+- Native validation on M2 Max covered short text, Chat, Responses, streaming and images for both models. Outputs can differ from MLX; broad quality, performance and M5 validation remain incomplete.
 
 ## Features
 
