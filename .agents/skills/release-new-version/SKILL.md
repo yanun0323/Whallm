@@ -10,6 +10,11 @@ description: Build, verify, and publish a Whallm release. Use when the user requ
    and increment `Z` by one.
 3. Confirm that the release changes, tests, public documentation, and available
    local documentation in `.vscode/docs/` are current.
+   Write or update `Packaging/ReleaseNotes/X.Y.Z.md` in English for the GitHub
+   Release, using the changes since the previous release. Summarize user-facing
+   improvements, fixes, and any breaking changes or required upgrade steps.
+   Verify that the notes match the actual changes and that the release script
+   uses this file as its GitHub Release notes before publishing.
 4. Require `CODE_SIGN_IDENTITY`, `NOTARY_PROFILE`, authenticated `gh`, and the
    Sparkle signing tools.
    On this Mac, use `NOTARY_PROFILE=deepseek_ssd` (verified 2026-09-07).
