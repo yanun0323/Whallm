@@ -45,6 +45,9 @@ _PENALTY_CONTEXT = 20  # as mlx_lm's presence and repetition penalties
 # ---------------------------------------------------------------------- library
 
 
+from .event_log import logger, failure as log_failure
+
+
 class _Options(ctypes.Structure):
     _fields_ = [("slots", ctypes.c_int32), ("read_threads", ctypes.c_int32), ("mtp", ctypes.c_int32),
                 ("eight_bit", ctypes.c_int32), ("vision_catalog", ctypes.c_char_p)]
@@ -267,14 +270,17 @@ def read_state_tokens(path: Path) -> tuple[int, ...] | None:
         with path.open("rb") as file:
             header = file.read(32)
             if len(header) != 32 or header[:8] != b"WQSTATE1":
+                logger.error("prompt cache header invalid; ignoring file")
                 return None
             contract_size, token_count, _ = np.frombuffer(header[8:], dtype="<u8")
             file.seek(32 + int(contract_size))
             data = file.read(int(token_count) * 4)
             if len(data) != int(token_count) * 4:
+                logger.error("prompt cache token data incomplete; ignoring file")
                 return None
             return tuple(np.frombuffer(data, dtype="<i4").tolist())
-    except OSError:
+    except OSError as error:
+        log_failure("prompt cache header read failed", error)
         return None
 
 
@@ -458,7 +464,14 @@ class NativeQwenRuntime(ChatInterface):
         try:
             self.expert_cache = NativeExpertCounters(self.engine, installed.expert_blob_size)
             # Report the cache size the engine chose; Throughput shows it as Slots.
-            self.config = replace(config, slots=int(self.engine.counters().slots))
+            counters = self.engine.counters()
+            self.config = replace(config, slots=int(counters.slots))
+            logger.debug("native settings slots=%d read_workers=%d mtp=%s tensor_ops=%s",
+                         counters.slots, config.read_workers, self.engine.has_mtp, bool(counters.tensor_ops))
+            if not counters.tensor_ops:
+                logger.info("TensorOps unavailable or disabled; using standard Metal kernels")
+            if config.mtp_enabled and not self.engine.has_mtp:
+                logger.info("MTP unavailable; using main model only")
             self.tokenizer = AutoTokenizer.from_pretrained(installed.root / "tokenizer", trust_remote_code=True)
             self._entries: list[_CacheEntry] = []
             self._persist_later: list[NativeState] = []
@@ -667,32 +680,38 @@ class NativeQwenRuntime(ChatInterface):
         """Set the engine to the longest cached prefix of the prompt (leaving at least
         one token to read) and return its length."""
         if not self._cache_enabled():
+            logger.debug("prompt cache source=disabled reused_tokens=0")
             self.engine.reset()
             return 0
         limit = len(tokens) - 1
         current = self.engine.tokens
         best_length = len(current) if 0 < len(current) <= limit and tuple(tokens[:len(current)]) == current else 0
+        source = "current" if best_length else "miss"
         best: _CacheEntry | None = None
         for entry in self._entries:
             length = len(entry.state.tokens)
             if best_length < length <= limit and tuple(tokens[:length]) == entry.state.tokens:
                 best, best_length = entry, length
+                source = "memory"
         disk = self._best_disk_prefix(tokens, best_length)
         if disk is not None:
             started = time.perf_counter()
             try:
                 state = self.engine.load(disk)
-            except (RuntimeError, OSError):
+            except (RuntimeError, OSError) as error:
+                log_failure("prompt cache read failed; recomputing prefix", error)
                 state = None
             self.metrics.record_prompt_cache_snapshot(time.perf_counter() - started)
             if state is not None:
                 best = self._store(state, persist=False)
                 best_length = len(state.tokens)
+                source = "disk"
         if best is not None:
             best.used = time.monotonic()
             self.engine.restore(best.state)
         elif best_length == 0:
             self.engine.reset()
+        logger.debug("prompt cache source=%s reused_tokens=%d", source, best_length)
         return best_length
 
     def _store(self, state: NativeState, *, persist: bool) -> _CacheEntry | None:
@@ -726,7 +745,8 @@ class NativeQwenRuntime(ChatInterface):
                      / f"native-{contract}")
         try:
             directory.mkdir(parents=True, exist_ok=True)
-        except OSError:
+        except OSError as error:
+            log_failure("prompt cache directory unavailable; disk cache disabled", error)
             return None
         return directory
 
@@ -738,7 +758,8 @@ class NativeQwenRuntime(ChatInterface):
             if not path.exists():
                 self.engine.save(state, path)
             path.touch()
-        except (RuntimeError, OSError):
+        except (RuntimeError, OSError) as error:
+            self.metrics.record_prompt_cache_write_error(error)
             return
         self.metrics.record_prompt_cache_write(time.perf_counter() - started)
         files = sorted(self._directory.glob("*.wqstate"), key=lambda p: p.stat().st_mtime, reverse=True)

@@ -8,6 +8,8 @@ import time
 from typing import Any
 import mlx.core as mx
 from mlx_lm.models.base import create_ssm_mask
+from ..event_log import logger
+
 from ..model import _select_moe_step_size, eval_prompt_cache
 from ..cancellation import GenerationCancelled, check_cancelled
 from ..expert_layout import GateUpMXFP4Layout
@@ -219,8 +221,7 @@ def masked_prefill_override(config):
     if not _masked_prefill_off_enabled() or not (getattr(config, "qwen_qsa_masked_prefill", False)
                                                  or getattr(config, "qwen_qsa_selected_kernel", False)):
         return config
-    print("[DEBUG-qwen-qsa-masked-off] masked QSA prefill and the selected-block kernel "
-          "disabled for this runtime", file=sys.stderr, flush=True)
+    logger.debug("masked QSA prefill and selected-block kernel disabled by diagnostic override")
     return replace(config, qwen_qsa_masked_prefill=False, qwen_qsa_selected_kernel=False)
 
 
@@ -276,8 +277,7 @@ def _qwen_layer_major_prefill(
         return None
     sync_enabled = _prefill_sync_enabled()
     if sync_enabled:
-        print("[DEBUG-qwen-prefill-sync] enabled; extra GPU waits; "
-              f"tokens={len(token_ids)} step_size={step_size}", file=sys.stderr, flush=True)
+        logger.debug("prefill sync diagnostic enabled tokens=%d step_size=%d", len(token_ids), step_size)
     core = model.model
     if len(prompt_cache) != len(core.layers):
         raise ValueError("prompt cache does not match the Qwen model layers")
@@ -359,9 +359,7 @@ def _qwen_layer_major_prefill(
             mx.eval(hidden)
             if layer_index + 1 == len(core.layers):
                 if sync_enabled:
-                    print("[DEBUG-qwen-prefill-sync] completed; "
-                          f"layers={len(core.layers)} tokens={len(token_ids)}",
-                          file=sys.stderr, flush=True)
+                    logger.debug("prefill sync diagnostic completed layers=%d tokens=%d", len(core.layers), len(token_ids))
                 return hidden
 
 

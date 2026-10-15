@@ -2038,7 +2038,17 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(output.getvalue(), "")
 
-    def test_debug_log_prints_the_complete_request_json(self):
+    def test_status_failures_are_logged_without_credentials_or_query(self):
+        output = StringIO()
+        with redirect_stderr(output):
+            status, _, _ = self.request("/api/status?token=private-query", authenticated=False)
+        self.assertEqual(status, 401)
+        self.assertIn("[ERROR] request=req-", output.getvalue())
+        self.assertIn("invalid or missing API key", output.getvalue())
+        self.assertNotIn("private-query", output.getvalue())
+        self.assertNotIn("secret", output.getvalue())
+
+    def test_debug_log_omits_request_content(self):
         previous = self.server.log_level
         self.server.log_level = "debug"
         output = StringIO()
@@ -2058,8 +2068,10 @@ class ServerTests(unittest.TestCase):
 
         log = output.getvalue()
         self.assertEqual(status, 200)
-        self.assertIn("[DEBUG] request POST /v1/responses: ", log)
-        self.assertIn(json.dumps(body, ensure_ascii=False, separators=(",", ":")), log)
+        self.assertIn("[DEBUG] request=req-", log)
+        self.assertIn("request method=POST bytes=", log)
+        self.assertNotIn("debug-request-marker", log)
+        self.assertNotIn(json.dumps(body, ensure_ascii=False, separators=(",", ":")), log)
 
     def test_error_log_hides_successful_requests_and_keeps_failures(self):
         previous = self.server.log_level

@@ -22,6 +22,8 @@ from mlx_lm.sample_utils import make_logits_processors, make_sampler
 from mlx_lm.tokenizer_utils import TokenizerWrapper
 from transformers import AutoTokenizer
 
+from .event_log import logger, request_context, failure as log_failure
+
 from .cancellation import GenerationCancelled, check_cancelled
 
 from .dspark import DraftResult, VerificationMetrics, generate_tokens
@@ -462,6 +464,13 @@ class RuntimeMetrics:
         dspark_prompt_cache_source: str = "disabled",
         approximation_mode: str = EXACT_APPROXIMATION_MODE,
     ) -> None:
+        context = request_context.get()
+        if context:
+            context.prompt_tokens = prompt_tokens
+            context.output_tokens = 0
+        logger.debug("generation settings prompt_tokens=%d reused_tokens=%d prefill_step=%d layer_major=%s mtp=%s dspark=%s dspark_cache=%s",
+                     prompt_tokens, reused_tokens, prefill_step_size, layer_major_prefill_enabled,
+                     mtp_enabled, dspark_enabled, dspark_prompt_cache_source)
         with self._lock:
             self._time_to_first_token_seconds = 0.0
             self._decode_seconds = 0.0
@@ -608,6 +617,7 @@ class RuntimeMetrics:
             self._prompt_cache_write_seconds += seconds
 
     def record_prompt_cache_write_error(self, error: Exception) -> None:
+        log_failure("prompt cache write failed", error)
         with self._lock:
             self._prompt_cache_write_errors += 1
             self._prompt_cache_write_error = f"{type(error).__name__}: {error}"
@@ -740,6 +750,7 @@ class RuntimeMetrics:
             )
 
     def record_dspark_fallback(self) -> None:
+        logger.info("DSpark disabled for this request; speculative work costs more than main-model decoding")
         with self._lock:
             self._dspark_fallback = True
 
@@ -761,6 +772,8 @@ class RuntimeMetrics:
             self._mtp_verification_seconds += verification_seconds
             self._mtp_replay_seconds += replay_seconds
             if fallback:
+                if not self._mtp_fallback:
+                    logger.info("MTP disabled for this request; zero-acceptance limit reached")
                 self._mtp_fallback = True
                 self._mtp_fallback_rounds += 1
 
@@ -1971,6 +1984,7 @@ class ModelRuntime(ChatInterface):
         approximation_mode: str = EXACT_APPROXIMATION_MODE,
     ) -> _PromptCacheEntry:
         if not self._prompt_cache_enabled():
+            logger.debug("prompt cache source=disabled reused_tokens=0")
             return _PromptCacheEntry(
                 self.support.new_cache(self.model),
                 [],
@@ -1987,6 +2001,7 @@ class ModelRuntime(ChatInterface):
         ]
         if matches:
             entry = max(matches, key=lambda item: len(item.tokens))
+            logger.debug("prompt cache source=memory reused_tokens=%d", len(entry.tokens))
             return _PromptCacheEntry(
                 self.support.clone_cache(entry.cache),
                 list(entry.tokens),
@@ -2012,9 +2027,11 @@ class ModelRuntime(ChatInterface):
             check_cancelled()
             if loaded is not None:
                 self._record_persistent_prompt_cache_hit(entry)
+                logger.debug("prompt cache source=disk reused_tokens=%d", len(entry.tokens))
                 return loaded
             self._exclude_persistent_prompt_cache(entry.path)
         check_cancelled()
+        logger.debug("prompt cache source=miss reused_tokens=0")
         return _PromptCacheEntry(
             self.support.new_cache(self.model),
             [],
@@ -2233,7 +2250,8 @@ class ModelRuntime(ChatInterface):
         directory = root / model_key / revision / f"format-{manifest_format}"
         try:
             directory.mkdir(parents=True, exist_ok=True)
-        except OSError:
+        except OSError as error:
+            log_failure("prompt cache directory unavailable; disk cache disabled", error)
             return None
         return directory
 
@@ -2453,7 +2471,8 @@ class ModelRuntime(ChatInterface):
                 self.support.restore_cache(cache, state)
             self.support.evaluate_cache(cache)
             return _PromptCacheEntry(cache, list(entry.tokens))
-        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            log_failure("prompt cache read failed; recomputing prefix", error)
             return None
 
     def _restore_mtp_prompt_cache(self, cache, state, tokens, mtp) -> _PromptCacheEntry | None:
@@ -2505,7 +2524,8 @@ class ModelRuntime(ChatInterface):
             if context_arrays:
                 mx.eval(*context_arrays)
             return loaded
-        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            log_failure("prompt cache read failed; recomputing prefix", error)
             return None
 
     def _persist_prompt_cache(self, entry: _PromptCacheEntry) -> None:

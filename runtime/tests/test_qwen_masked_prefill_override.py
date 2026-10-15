@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from deepseek_v4_ssd.event_log import request_scope
 from deepseek_v4_ssd.generation import ModelRuntime, _prompt_cache_contract
 from deepseek_v4_ssd.model import RuntimeConfig
 from deepseek_v4_ssd.model_support import qwen, get_support
@@ -31,7 +32,7 @@ class MaskedPrefillOverrideTests(unittest.TestCase):
                       return_value=SimpleNamespace(bos_token=None)), \
                 patch("deepseek_v4_ssd.generation.support_for_installed",
                       return_value=qwen.QwenSupport(get_support("qwen3.8-flash-next").descriptor)), \
-                redirect_stderr(log):
+                redirect_stderr(log), request_scope("debug"):
             for name in ('WHALLM_QWEN_QSA_MASKED_PREFILL_OFF',):
                 if name not in environment:
                     os.environ.pop(name, None)
@@ -52,7 +53,7 @@ class MaskedPrefillOverrideTests(unittest.TestCase):
         installed = SimpleNamespace(model_id='m', revision='r', format_version=1, model_kind='qwen')
         self.assertEqual(_prompt_cache_contract(installed, runtime.config),
                          _prompt_cache_contract(installed, RuntimeConfig(persistent_prompt_cache=False)))
-        self.assertEqual(log.count('[DEBUG-qwen-qsa-masked-off]'), 1)
+        self.assertEqual(log.count('disabled by diagnostic override'), 1)
 
     def test_default_and_explicit_zero_keep_the_configured_path(self):
         config = RuntimeConfig(qwen_qsa_masked_prefill=True, qwen_qsa_selected_kernel=True,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ctypes
-import logging
 import os
 import sys
 from pathlib import Path
@@ -11,7 +10,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 
-_LOG = logging.getLogger(__name__)
+from .event_log import logger as _LOG
 _ANE_CHANNEL_GRANULARITY = 256
 _ANE_SPATIAL = 1_024
 _QWEN_INPUT_CHANNELS = 2_560
@@ -165,7 +164,7 @@ class ANEPrefillController:
             self.fallbacks += 1
         if self.error is None:
             self.error = str(error)
-            _LOG.warning("ANE Prefill disabled; using original Prefill: %s", self.error)
+            _LOG.info("ANE Prefill disabled; using original Prefill; error=%s", type(error).__name__)
         self.active = False
         for projection in self._projections:
             projection.close()

@@ -343,8 +343,7 @@ class Gpu {
       NSError* error = nil;
       tensor_library_ = [device newLibraryWithSource:[NSString stringWithUTF8String:kWhallmQwenTensorKernels]
                                              options:options error:&error];
-      if (tensor_library_ == nil && force != nullptr)
-        fprintf(stderr, "TensorOps kernels did not compile: %s\n", error.localizedDescription.UTF8String);
+      // The runtime reports unavailable TensorOps through its level-filtered event log.
       return tensor_library_ != nil;
     }
     return false;

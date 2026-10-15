@@ -246,6 +246,58 @@ class ChatLivenessTests(unittest.TestCase):
                     self.assertNotIn('Traceback', body)
                     self.assertNotIn('prefill_step_size=1024', body)
 
+    def test_final_summary_has_usage_id_and_correct_outcome(self):
+        for fail in (False, True):
+            with self.subTest(fail=fail):
+                self.server.log_level = "info"
+                def stream(prompt, options):
+                    yield GeneratedPiece("private output", 1, 5, 1, None if fail else "stop")
+                    if fail:
+                        raise RuntimeError("private exception")
+                self.runtime.stream = stream
+                output = StringIO()
+                with redirect_stderr(output):
+                    response, first = self.start()
+                    self.finish(response)
+                    for _ in range(100):
+                        if "generation failed" in output.getvalue() or "generation completed" in output.getvalue():
+                            break
+                        time.sleep(0.01)
+                text = output.getvalue()
+                self.assertIn("generation failed" if fail else "generation completed", text)
+                self.assertIn("input_tokens=5 output_tokens=1", text)
+                self.assertIn("request=req-" + first["id"].removeprefix("chatcmpl-"), text)
+                self.assertNotIn("private output", text)
+                self.assertNotIn("private exception", text)
+                if fail:
+                    self.assertNotIn("generation completed", text)
+
+    def test_cancel_summary_is_info_after_cleanup(self):
+        self.server.log_level = "info"
+        def stream(prompt, options):
+            try:
+                self.entered.set()
+                _cancellation.get().wait(2)
+                check_cancelled()
+                yield GeneratedPiece("unused", 1, 5, 1, "stop")
+            finally:
+                self.closed.set()
+        self.runtime.stream = stream
+        output = StringIO()
+        with redirect_stderr(output):
+            response, _ = self.start()
+            self.assertTrue(self.entered.wait(1))
+            response.close()
+            self.connection.close()
+            for _ in range(100):
+                if "generation cancelled" in output.getvalue():
+                    break
+                time.sleep(0.01)
+            self.assertTrue(self.closed.is_set())
+        self.assertIn("generation cancelled", output.getvalue())
+        self.assertIn("request cleanup complete", output.getvalue())
+        self.assertNotIn("[ERROR]", output.getvalue())
+
     def test_error_after_partial_output_is_not_reported_as_success(self):
         def stream(prompt, options):
             yield GeneratedPiece('Partial answer', 1, 5, 1, None)

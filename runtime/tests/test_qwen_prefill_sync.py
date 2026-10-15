@@ -15,6 +15,7 @@ import mlx.nn as nn
 import numpy as np
 from mlx_lm.models.cache import CacheList, KVCache
 
+from deepseek_v4_ssd.event_log import request_scope
 from deepseek_v4_ssd.cancellation import GenerationCancelled, cancellation_scope
 from deepseek_v4_ssd.model_support import qwen
 from deepseek_v4_ssd.qwen4_exp import DecoderLayer, ModelArgs
@@ -63,7 +64,7 @@ class PrefillSyncTests(unittest.TestCase):
         self.addCleanup(self.environment.stop)
 
     def run_prefill(self, cache=None, tokens=(11, 22), step=2):
-        with redirect_stderr(self.log):
+        with redirect_stderr(self.log), request_scope("debug"):
             return qwen._qwen_layer_major_prefill(self.model, list(tokens),
                 self.cache if cache is None else cache, step, self.experts)
 
@@ -100,7 +101,7 @@ class PrefillSyncTests(unittest.TestCase):
         np.testing.assert_array_equal(np.asarray(self.cache[0][1].keys),
                                       np.asarray(expected_cache[0][1].keys))
         self.assertEqual(len(self.log.getvalue().splitlines()), 2)
-        self.assertIn('[DEBUG-qwen-prefill-sync] enabled', self.log.getvalue())
+        self.assertIn('prefill sync diagnostic enabled', self.log.getvalue())
         self.assertIn('completed', self.log.getvalue())
 
     def test_eval_and_stream_failures_identify_the_unfinished_stage(self):

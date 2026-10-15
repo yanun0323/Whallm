@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import json
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
@@ -10,7 +11,8 @@ from typing import Any, Callable, Iterator
 
 import mlx.core as mx
 
-from .cancellation import check_cancelled
+from .cancellation import GenerationCancelled, check_cancelled
+from .event_log import logger, request_context, failure as log_failure
 
 from .generation import ModelRuntime, RuntimeMetrics
 from .io_metrics import EXPERT_FILE_CACHE_POLICIES
@@ -437,6 +439,7 @@ class ModelManager:
         self._runtime: Any | None = None
         self._loaded: ModelSpec | None = None
         self._loading: ModelSpec | None = None
+        self._log_model_id = "-"
         self._accumulated_generation_tokens = 0
         self._completed_request_count = 0
         self._empty_runtime_metrics = _zero_runtime_metrics()
@@ -470,6 +473,9 @@ class ModelManager:
             spec = self._by_name.get(name) if isinstance(name, str) else None
             if spec is None:
                 raise ModelNotFound(str(name) if name is not None else "")
+            context = request_context.get()
+            if context:
+                context.model = spec.id
             runtime = self._ensure_loaded(spec, name)
             check_cancelled()
             yield ModelRequest(name, spec.id, runtime, spec.defaults)
@@ -500,7 +506,7 @@ class ModelManager:
             runtime = self._detach_runtime()
             if runtime is not None:
                 try:
-                    runtime.close()
+                    self._close_runtime(runtime)
                 finally:
                     del runtime
                     gc.collect()
@@ -646,7 +652,7 @@ class ModelManager:
             runtime = self._detach_runtime()
             if runtime is not None:
                 try:
-                    runtime.close()
+                    self._close_runtime(runtime)
                 finally:
                     del runtime
                     gc.collect()
@@ -684,6 +690,18 @@ class ModelManager:
             if spec.alias:
                 self._by_name[spec.alias] = spec
 
+    def _close_runtime(self, runtime) -> None:
+        model = self._log_model_id
+        started = time.monotonic()
+        logger.info("model unload started model=%s", model)
+        try:
+            runtime.close()
+        except Exception as error:
+            log_failure("model unload failed", error)
+            raise
+        else:
+            logger.info("model unload completed model=%s seconds=%.3f", model, time.monotonic() - started)
+
     def _ensure_loaded(self, spec: ModelSpec, requested_name: str) -> Any:
         with self._state_lock:
             if self._loaded == spec and self._runtime is not None:
@@ -692,7 +710,7 @@ class ModelManager:
         old_runtime = self._detach_runtime(loading=spec)
         if old_runtime is not None:
             try:
-                old_runtime.close()
+                self._close_runtime(old_runtime)
             except Exception as error:
                 self._finish_loading()
                 raise ModelLoadFailed(requested_name, error) from error
@@ -702,27 +720,38 @@ class ModelManager:
                 self._clear_cache()
 
         runtime = None
+        self._log_model_id = spec.id
+        started = time.monotonic()
+        logger.info("model load started model=%s", spec.id)
+        logger.debug("runtime settings model=%s values=%s", spec.id,
+                     {key: value for key, value in asdict(spec.runtime).items()
+                      if isinstance(value, (bool, int, float))})
         try:
             runtime = self._runtime_loader(spec)
             if spec.warmup_prompt_path:
                 with open(spec.warmup_prompt_path, encoding="utf-8") as file:
                     runtime.warm_prompt(file.read())
         except Exception as error:
+            if not isinstance(error, GenerationCancelled):
+                log_failure("model load failed", error)
             if runtime is not None:
                 try:
-                    runtime.close()
+                    self._close_runtime(runtime)
                 except Exception:
                     pass
                 del runtime
             gc.collect()
             self._clear_cache()
             self._finish_loading()
+            if isinstance(error, GenerationCancelled):
+                raise
             raise ModelLoadFailed(requested_name, error) from error
 
         with self._state_lock:
             self._runtime = runtime
             self._loaded = spec
             self._loading = None
+        logger.info("model load completed model=%s seconds=%.3f", spec.id, time.monotonic() - started)
         return runtime
 
     def _detach_runtime(self, loading: ModelSpec | None = None) -> Any | None:

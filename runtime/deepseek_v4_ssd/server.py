@@ -11,7 +11,6 @@ import socket
 import sys
 import threading
 import time
-import traceback
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
@@ -55,6 +54,8 @@ from .model_manager import (
 from .model import RuntimeConfig, _POWER_SAVING_LIMITS_GBPS
 from .tool_codec import ToolChoice, ToolStreamDelta, ToolStreamParser
 
+from .event_log import logger, request_scope, request_context, configure as configure_log, failure as log_failure
+
 RESPONSE_HEARTBEAT_SECONDS = 10.0
 CHAT_HEARTBEAT_SECONDS = 10.0
 MAX_REQUEST_BYTES = 1_048_576
@@ -62,10 +63,11 @@ MAX_GENERATION_TOKENS = 272_000
 
 
 def _log_error(context: str, error: Exception) -> None:
-    sys.stderr.write(f"{context}: {error}\n")
-    # Preserve notes and chained failures without capturing locals or dumping requests.
-    traceback.print_exception(error, file=sys.stderr)
-    sys.stderr.flush()
+    context_state = request_context.get()
+    if context_state:
+        context_state.outcome = "failed"
+        context_state.finish = "error"
+    log_failure(context, error)
 
 
 class APIError(Exception):
@@ -158,6 +160,7 @@ class OpenAIServer(ThreadingHTTPServer):
         self.model_manager = model_manager
         self.api_key = api_key
         self.log_level = log_level
+        configure_log(log_level)
         self.metrics = GenerationMetrics()
         self.status_memory = None
         self.assets = None
@@ -184,6 +187,11 @@ class OpenAIServer(ThreadingHTTPServer):
                 for piece in pieces:
                     check_cancelled()
                     self.metrics.record(piece.generation_tokens)
+                    context = request_context.get()
+                    if context:
+                        context.prompt_tokens = piece.prompt_tokens
+                        context.output_tokens = piece.generation_tokens
+                        context.finish = piece.finish_reason or context.finish
                     yield piece
             except ContextWindowExceeded as error:
                 raise APIError(
@@ -415,6 +423,13 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         self._run(self._delete)
 
     def _run(self, action) -> None:
+        with request_scope(self.app.log_level, self.app.api_key or "") as context:
+            self.request_log = context
+            context.generating = urlsplit(self.path).path in {
+                "/v1/chat/completions", "/v1/completions", "/v1/responses", "/api/benchmark/throughput"}
+            self._run_action(action)
+
+    def _run_action(self, action) -> None:
         try:
             action()
         except APIError as error:
@@ -436,7 +451,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                 ).body(),
             )
         except ModelLoadFailed as error:
-            _log_error(f"model load failed for {error.model}", error.cause)
+            _log_error("model load failed", error.cause)
             self._json(
                 500,
                 APIError(
@@ -447,7 +462,10 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                     error_type="server_error",
                 ).body(),
             )
-        except (GenerationCancelled, BrokenPipeError, ConnectionResetError):
+        except (GenerationCancelled, BrokenPipeError, ConnectionResetError) as error:
+            self.request_log.outcome = "cancelled"
+            self.request_log.finish = type(error).__name__
+            logger.info("client disconnected or cancelled; request cleanup complete")
             self.close_connection = True
         except Exception as error:
             _log_error("request failed", error)
@@ -591,10 +609,14 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                         "peak_app_memory_bytes": memory.finish(),
                         "memory_scope": memory.scope,
                     }})
-        except (GenerationCancelled, BrokenPipeError, ConnectionResetError):
+        except (GenerationCancelled, BrokenPipeError, ConnectionResetError) as error:
+            self.request_log.outcome = "cancelled"
+            self.request_log.finish = type(error).__name__
+            logger.info("client disconnected or cancelled; request cleanup complete")
             self.close_connection = True
             return
         except Exception as error:
+            _log_error("throughput failed", error)
             self._sse({"error": {"message": str(error)}})
         self._sse_done()
 
@@ -655,7 +677,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             tool_choice,
             reasoning_effort,
         )
-        request_id = "chatcmpl-" + uuid.uuid4().hex
+        request_id = "chatcmpl-" + self.request_log.id.removeprefix("req-")
         pieces = self.app.track(runtime.stream(prompt, options))
         tool_calling = bool(tools) and tool_choice.mode != "none"
         if stream:
@@ -779,7 +801,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             tool_choice,
             reasoning_effort,
         )
-        request_id = "resp_" + uuid.uuid4().hex
+        request_id = "resp_" + self.request_log.id.removeprefix("req-")
         if tool_choice.mode in {"required", "function"}:
             pieces = self._validated_response_pieces(
                 runtime,
@@ -1125,6 +1147,9 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                 )
 
         def fail(message: str, code: str = "invalid_tool_call") -> None:
+            self.request_log.outcome = "failed"
+            self.request_log.finish = "invalid_tool_call"
+            logger.error("response tool validation failed")
             nonlocal message_item, message_index, message_text
             notice = f"Whallm could not complete the request: {message}"
             if message_text:
@@ -1234,7 +1259,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         prompt = payload.get("prompt")
         if not isinstance(prompt, str):
             raise APIError("prompt must be a string.", param="prompt")
-        request_id = "cmpl-" + uuid.uuid4().hex
+        request_id = "cmpl-" + self.request_log.id.removeprefix("req-")
         pieces = self.app.track(runtime.stream(prompt, options))
         if stream:
             self._stream_completion(
@@ -1306,13 +1331,16 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                     param="stream_options.include_usage",
                 )
         support = support or get_support("qwen3.8-flash-next" if qwen else "deepseek-v4")
-        return _options(
+        options = _options(
             payload, defaults, support=support,
             approximation_default=support.default_approximation(
                 dspark, getattr(defaults, "approximation_mode", "exact"),
             ),
             thinking_mode=thinking_mode,
-        ), stream
+        )
+        logger.debug("sampling max_tokens=%d temperature=%s top_p=%s top_k=%s seed=%s stream=%s",
+                     options.max_tokens, options.temperature, options.top_p, options.top_k, options.seed, stream)
+        return options, stream
 
     @contextmanager
     def _chat_stream(
@@ -1461,11 +1489,29 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         model_name: str,
         approximation_mode: str,
     ) -> None:
-        self._start_sse()
-        created = int(time.time())
-        finish = None
-        for piece in pieces:
-            finish = piece.finish_reason or finish
+        try:
+            self._start_sse()
+            created = int(time.time())
+            finish = None
+            for piece in pieces:
+                finish = piece.finish_reason or finish
+                self._sse(
+                    {
+                        "id": request_id,
+                        "object": "text_completion",
+                        "created": created,
+                        "model": model_name,
+                        "approximation": {"mode": approximation_mode},
+                        "choices": [
+                            {
+                                "index": 0,
+                                "text": piece.text,
+                                "logprobs": None,
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                )
             self._sse(
                 {
                     "id": request_id,
@@ -1476,31 +1522,18 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                     "choices": [
                         {
                             "index": 0,
-                            "text": piece.text,
+                            "text": "",
                             "logprobs": None,
-                            "finish_reason": None,
+                            "finish_reason": finish or "stop",
                         }
                     ],
                 }
             )
-        self._sse(
-            {
-                "id": request_id,
-                "object": "text_completion",
-                "created": created,
-                "model": model_name,
-                "approximation": {"mode": approximation_mode},
-                "choices": [
-                    {
-                        "index": 0,
-                        "text": "",
-                        "logprobs": None,
-                        "finish_reason": finish or "stop",
-                    }
-                ],
-            }
-        )
-        self._sse_done()
+            self._sse_done()
+        finally:
+            close = getattr(pieces, "close", None)
+            if close is not None:
+                close()
 
     def _status(self) -> dict[str, Any]:
         snapshot = self.app.model_manager.status_snapshot()
@@ -1537,19 +1570,17 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         try:
             length = int(raw_length)
         except ValueError as error:
-            raise APIError("Content-Length is invalid.", status=400) from error
+            raise APIError("Content-Length is invalid.", status=400, code="invalid_content_length") from error
         if length < 0 or length > MAX_REQUEST_BYTES:
             raise APIError("Request body is too large.", status=413)
         try:
             value = json.loads(self.rfile.read(length))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise APIError("Request body must be valid JSON.") from error
+            raise APIError("Request body must be valid JSON.", code="invalid_json") from error
         if not isinstance(value, dict):
-            raise APIError("Request body must be a JSON object.")
-        if self.app.log_level == "debug":
-            body = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-            sys.stderr.write(f"[DEBUG] request {self.command} {self.path}: {body}\n")
-            sys.stderr.flush()
+            raise APIError("Request body must be a JSON object.", code="invalid_json_object")
+        # Counts and primitive settings only: never body text, images, tools or credentials.
+        logger.debug("request method=%s bytes=%d fields=%d", self.command, length, len(value))
         return value
 
     def _start_sse(self) -> None:
@@ -1571,6 +1602,29 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def _json(self, status: int, value: dict[str, Any]) -> None:
+        if status >= 400:
+            context = request_context.get()
+            if context:
+                context.outcome = "failed"
+                context.finish = "rejected"
+            error = value.get("error", {})
+            reason = {400: "invalid request fields", 401: "invalid or missing API key",
+                      404: "route not found", 411: "Content-Length required",
+                      413: "request body too large", 500: "server operation failed"}.get(status, "request rejected")
+            safe_codes = {"invalid_api_key", "invalid_media", "model_not_found", "model_load_failed",
+                          "internal_error", "not_found", "context_length_exceeded", "invalid_content_length",
+                          "invalid_json", "invalid_json_object", "invalid_tool_call", "tool_choice_not_satisfied"}
+            code = error.get("code")
+            if code not in safe_codes:
+                code = "validation_error" if status < 500 else "server_error"
+            param = error.get("param")
+            # Param names may include user-supplied tool names: permit only fixed field roots.
+            field = str(param).split(".")[0]
+            if field not in {"messages", "input", "prompt", "content", "model", "configuration",
+                             "max_tokens", "max_output_tokens", "tools", "tool_choice", "seed",
+                             "temperature", "top_p", "top_k", "stream", "logprobs", "approximation"}:
+                field = "request"
+            logger.error("request rejected status=%d code=%s reason=%s field=%s", status, code, reason, field)
         body = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
         self._bytes(status, body, "application/json; charset=utf-8")
 
@@ -1585,19 +1639,25 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         self.close_connection = True
 
     def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
-        if urlsplit(self.path).path == "/api/status":
-            return
         try:
             status = int(code)
         except (TypeError, ValueError):
             status = 500
-        if self.app.log_level == "error" and status < 400:
+        if urlsplit(self.path).path == "/api/status" and status < 400:
             return
-        self.log_message('"%s" %s %s', self.requestline, str(code), str(size))
+        # Do not log query strings, which can contain credentials.
+        path = urlsplit(self.path).path
+        known = path if path in {"/", "/healthz", "/v1/models", "/v1/chat/completions",
+            "/v1/completions", "/v1/responses", "/api/status", "/api/models/load",
+            "/api/models/unload", "/api/models/configure", "/api/status/memory/reset",
+            "/api/benchmark/throughput", "/api/assets"} else "[other route]"
+        emit = logger.error if status >= 400 else logger.info
+        emit('http client=%s "%s %s %s" %s %s', self.client_address[0], self.command,
+             known, self.request_version, status, size)
 
     def log_message(self, format: str, *args: object) -> None:
-        sys.stderr.write(f"{self.client_address[0]} - {format % args}\n")
-        sys.stderr.flush()
+        # BaseHTTPRequestHandler parser errors may contain arbitrary request text.
+        logger.error("HTTP protocol error")
 
 
 def _validate_response_request(payload: dict[str, Any]) -> None:
@@ -2693,10 +2753,13 @@ def main() -> None:
             api_key=arguments.api_key,
             log_level=arguments.log_level,
         )
-        print(f"Ready: http://{arguments.host}:{server.server_port}", flush=True)
+        logger.info("Ready: http://%s:%s", arguments.host, server.server_port)
+        # Readiness is a control message, not a log; the App consumes it even at Error.
+        if os.environ.get("WHALLM_APP_PID"):
+            print("WHALLM_SERVER_READY", flush=True)
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping...", flush=True)
+        logger.info("Server stopping")
     finally:
         if server is not None:
             server.server_close()
