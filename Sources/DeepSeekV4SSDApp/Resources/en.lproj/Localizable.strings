@@ -659,3 +659,5 @@
 "Save logs to file" = "Save logs to file";
 "Saves new logs to ~/.whallm/server.log immediately. Keeps up to 10 MB, removing the oldest content first. Turning this off keeps the existing file. Debug logs may contain sensitive content." = "Saves new logs to ~/.whallm/server.log immediately. Keeps up to 10 MB, removing the oldest content first. Turning this off keeps the existing file. Debug logs may contain sensitive content.";
 "Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry." = "Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry.";
+
+"Toggle Sidebar" = "Toggle Sidebar";

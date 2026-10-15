@@ -18,17 +18,31 @@ struct ContentView: View {
   @State private var aliasDraft = ""
   @State private var aliasError: String?
   @State private var modelNavigationPath: [String] = []
+  @State private var sidebarVisible = true
   @AppStorage("selectedAppPage") private var selectedPage = AppPage.server
   @AppStorage(L10n.preferenceKey) private var languageCode = AppLanguage.appDefault.rawValue
 
   var body: some View {
-    NavigationSplitView {
-      AppSidebar(selection: $selectedPage, language: selectedLanguage)
-        .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 250)
-    } detail: {
+    // Use a native resizable split: automatic navigation columns render blank on macOS 27.
+    HSplitView {
+      if sidebarVisible {
+        AppSidebar(selection: $selectedPage, language: selectedLanguage)
+          .frame(minWidth: 190, idealWidth: 220, maxWidth: 250)
+      }
+
       NavigationStack(path: $modelNavigationPath) {
         VStack(spacing: 0) {
           HStack {
+            Button {
+              sidebarVisible.toggle()
+            } label: {
+              Label(L10n.string("Toggle Sidebar", language: selectedLanguage), systemImage: "sidebar.left")
+            }
+            .buttonStyle(TertiaryIconButtonStyle())
+            .accessibilityLabel(L10n.string("Toggle Sidebar", language: selectedLanguage))
+            .help(L10n.string("Toggle Sidebar", language: selectedLanguage))
+            .keyboardShortcut("s", modifiers: [.control, .command])
+
             Text(selectedPage.title(language: selectedLanguage))
               .font(.title2.bold())
             Spacer()
@@ -50,7 +64,6 @@ struct ContentView: View {
         }
       }
     }
-    .navigationSplitViewStyle(.balanced)
     .background(AppTheme.pageBackground)
     .preferredColorScheme(.dark)
     .environment(\.locale, selectedLanguage.locale)
@@ -2430,6 +2443,14 @@ struct LogsView: View {
   let language: AppLanguage
 
   var body: some View {
+    // Bound the log viewport instead of letting its ideal height size the whole window.
+    GeometryReader { geometry in
+      logContent
+        .frame(width: geometry.size.width, height: geometry.size.height)
+    }
+  }
+
+  private var logContent: some View {
     VStack(alignment: .leading, spacing: 14) {
       SettingRow(
         "Log level",

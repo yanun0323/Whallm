@@ -659,3 +659,5 @@
 "Save logs to file" = "将 log 保存为文件";
 "Saves new logs to ~/.whallm/server.log immediately. Keeps up to 10 MB, removing the oldest content first. Turning this off keeps the existing file. Debug logs may contain sensitive content." = "立即将新的 log 写入 ~/.whallm/server.log。最多保留 10 MB，超出时先删除最旧内容。取消勾选会保留已有文件。Debug log 可能包含敏感内容。";
 "Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry." = "无法保存 log：%@。请检查文件夹权限及剩余磁盘空间，再取消并重新勾选以重试。";
+
+"Toggle Sidebar" = "切换侧边栏";
