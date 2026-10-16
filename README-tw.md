@@ -12,13 +12,13 @@
   <a href="README-ko.md"><img src="https://img.shields.io/badge/한국어-클릭-yellow" alt="한국어"></a>
 </p>
 
-Whallm 讓你在 Apple Silicon Mac 上執行大型語言模型。共用的權重放在記憶體裡，每個 token 需要的專家才從 SSD 讀取，所以能跑比記憶體大很多的模型。App 內建聊天視窗，也提供 OpenAI 相容 API。
+Whallm 讓你在 Apple Silicon Mac 上執行大型語言模型。這類模型由許多叫做「專家」的小部分組成，每個字只會用到其中幾個。Whallm 把每個字都要用的部分放在記憶體裡，專家則在需要時才從 SSD 讀取，所以能跑比 Mac 記憶體大很多的模型。App 內建聊天視窗，也提供 OpenAI 相容 API。
 
 支援的模型：DeepSeek V4、DeepSeek V4.1、Qwen3.8、Swift1.5 Qwen3.8，以及 MiMo（預覽版）。
 
 ## 效能摘要
 
-使用者提供的 **Swift1.5-Qwen3.8-Flash-Next** v1.1.13 跑分，使用 Native 引擎。下方摘要採用獨立的 **16K 輸入／512 輸出**表格；完整的不同長度測試列在後面。兩組記錄的數字不同，沒有混算平均。
+使用者在 v1.1.13 測量 **Swift1.5-Qwen3.8-Flash-Next**，輸入 16K token、回答 512 token。**Prefill** 是 Whallm 讀取輸入的速度，**Decode** 是寫出回答的速度，單位都是每秒 token 數。
 
 | 晶片 | 快取模式 | Slots | Prefill (tok/s) | Decode (tok/s) | 峰值記憶體 (GiB) |
 | --- | --- | --- | --- | --- | --- |
@@ -27,18 +27,18 @@ Whallm 讓你在 Apple Silicon Mac 上執行大型語言模型。共用的權重
 | M5 Pro | 自動 | 8192 | 521.1 | 25.6 | 31.11 |
 | M5 Pro | 固定 | 2089 | 536.0 | 21.7 | 16.25 |
 
-來源的快速摘要與 16K 表格記載的峰值記憶體不同；此表採用 16K 表格中較精確的數值。舊 Qwen 與 DeepSeek 結果仍列在後面，保留原版本標示。
+自動模式由 Whallm 決定快取大小；固定模式用較小的固定大小，記憶體用得少，但寫出回答比較慢。
 
 > 詳細資料見[完整效能測試](#效能測試)。
 
 ## 快速開始
 
 1. 從 [GitHub Releases](https://github.com/yanun0323/Whallm/releases) 下載 `Whallm-macOS-arm64.zip`，解壓縮後開啟 `Whallm.app`。
-2. 開啟 **Model**，選擇模型並按 **Download Model**。App 會先檢查剩餘空間；下載中斷可以接著繼續。
-3. 開啟 **Server**，按 **Start Server**。
-4. 開啟 **Chat** 選擇模型，或依下方範例連接 API 用戶端。
+2. 開啟「模型」，選擇模型並按「下載模型」。App 會先檢查剩餘空間；下載中斷可以接著繼續。
+3. 開啟「伺服器」，按「啟動 server」。
+4. 開啟「對話」選擇模型，或依下方範例連接 API 用戶端。
 
-伺服器位址是 `http://127.0.0.1:11434`。模型在第一次使用時載入。伺服器同一時間只載入一個模型、處理一個請求。如果剛安裝的模型沒有出現在 Chat 清單中，請重新啟動伺服器。
+伺服器預設位址是 `http://127.0.0.1:11434`。模型在第一次使用時才載入。伺服器同一時間只載入一個模型、處理一個請求。如果剛安裝的模型沒有出現在「對話」的清單中，請重新啟動伺服器。
 
 [1.1.13 版本說明](Packaging/ReleaseNotes/1.1.13.md)列出變更、升級步驟與已知限制。
 
@@ -56,64 +56,69 @@ App 不含模型權重。光是 DeepSeek V4.1 的專家與 Engram 檔案就需�
 
 ## Qwen 模型
 
-兩款 Qwen 現在都使用 Native 引擎（C++ 與 Metal，不使用 MLX）。既有下載、模型名稱、API ID 和 Alias 不變。兩個 `-Native` 測試項目已移除，使用這些 ID 的客戶端請改用下方原模型的 ID。MLX 專用設定不再生效，也不會沿用 MLX 提示詞快取。
+兩款 Qwen 都使用 Whallm 自己用 C++ 與 Metal 寫的引擎（**Native 引擎**），不再使用 MLX。你的下載內容、模型名稱、API ID 和 Alias 都不變。如果用戶端還在用舊的 `-Native` 測試 ID，請改用下方的 ID。舊 MLX 引擎儲存的提示快取不會沿用。
 
 ### Swift1.5-Qwen3.8-Flash-Next
 
-1.1.10 版新增。
+1.1.10 新增。
 
 - API model ID：`swift1.5-qwen3.8-flash-next-mxfp4`
-- 來源：`Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4`，版本 `257cb509d72ecc07519be35a8b7558fde3b31b21`
-- 下載容量：**127,714,522,478 bytes**（約 **118.94 GiB**），包含 59 個文字與 MTP 檔案，以及 **897,864,704 bytes** 的圖片權重。不下載稽核檔案。
-- 與 Qwen3.8 FP8 使用同一套推論引擎，但資料夾、設定、Alias 與提示詞快取各自獨立。
+- 來源：`Yanun/Swift1.5-Qwen3.8-Flash-Next-Whallm-MXFP4`，revision `257cb509d72ecc07519be35a8b7558fde3b31b21`
+- 下載大小：**127,714,522,478 bytes**（約 **118.94 GiB**），包含 **897,864,704 bytes** 的圖片權重。
+- 它和 Qwen3.8 FP8 使用同一個引擎，但有自己的資料夾、設定、Alias 與提示快取。
 
 ### Qwen3.8-Flash-Next
 
-- API model ID: `qwen3.8-flash-next-fp8`
-- Qwen3.8 FP8 與 Swift1.5 使用同一個 Native 引擎與設定選項，但安裝、Alias 與提示詞快取各自獨立。
+- API model ID：`qwen3.8-flash-next-fp8`
+- 它和 Swift1.5 使用相同的引擎與設定，有自己的安裝、Alias 與提示快取。
 
 ### 設定
 
-- 兩款模型都保留生成參數、專家快取大小、讀取工作數、Prompt Cache、暖機、MTP 與 8-bit 常駐權重。不再顯示 MLX 記憶體指引、預讀工作數、快取淘汰策略與獨立的 MTP 快取大小。
-- **進階設定**有「自動決定專家快取大小」，預設開啟。開啟時，引擎依模型載入時的可用記憶體決定大小，最多約 20 GiB，並至少為 macOS 和其他 App 保留 7 GiB 或這台 Mac 記憶體的 15%。關閉後可自行設定固定大小。其他設定為生成參數、讀取執行緒、提示詞快取、暖機、MTP 與 8-bit 常駐權重。
-- MTP 預設開啟。它通常能加快輸出，但不是每個提示詞都會變快。輸出可能與關閉 MTP 時略有不同。
-- **使用 8-bit 常駐權重** 在新的或恢復預設的設定中預設開啟；已保存的設定維持原本的選擇。開啟後，常駐記憶體的權重（專家除外）改以 8-bit 取代 BF16 儲存，可減少記憶體用量，通常也會加快輸出，開啟 MTP 時最明顯。輸出可能與關閉時略有不同。
+- 「進階設定」包含生成參數、專家快取大小、讀取工作數、提示快取、暖機、MTP 與 8-bit 常駐權重。
+- 「自動決定專家快取大小」預設開啟。開啟時，Whallm 會用模型載入當下的可用記憶體，最多約 20 GiB，並至少為 macOS 和其他 App 留下 7 GiB 或這台 Mac 記憶體的 15%。關閉後可以自己設定固定大小。
+- **MTP** 會先猜接下來幾個字，再檢查猜得對不對。它預設開啟，通常能讓回答變快，但不是每個提示詞都會變快。回答的文字可能和關閉 MTP 時略有不同。
+- 「使用 8-bit 常駐權重」會把留在記憶體的部分改用較小的格式儲存。記憶體用得比較少，通常也會讓回答變快，開啟 MTP 時最明顯。回答的文字可能和關閉時略有不同。新的或恢復預設的設定會開啟它；已儲存的設定維持你原本的選擇。
 
 ### 圖片
 
-- 兩款 Qwen 都能在 Chat、`/v1/chat/completions` 與 `/v1/responses` 輸入靜態 PNG、JPEG、WebP 圖片。
-- MTP 開或關都能傳送圖片。圖片請求不使用提示詞快取。
-- 每次請求的限制：8 張圖片、每個檔案 8 MiB、合計 32 MiB、縮放後每張最多 1,048,576 像素、最多 2,048 個圖片 tokens。
-- 新安裝已包含圖片權重。舊的安裝請按 **Model → Verify and Repair**，只會下載缺少或損壞的檔案。完整的 Qwen3.8 FP8 安裝為 **126,189,355,659 bytes**（約 **117.52 GiB**）。
-- Qwen 不支援影片、音訊與文件輸入。
-- Native 在 M2 Max 的檢查涵蓋兩款模型的短文字、Chat、Responses、串流與圖片。下方列有使用者提供的 v1.1.13 Swift1.5 在 M2 Max 與 M5 Pro 的跑分。輸出可能與 MLX 不同；這些數據不代表已完成廣泛品質或效能驗證。
+- 兩款 Qwen 都能在「對話」、`/v1/chat/completions` 與 `/v1/responses` 輸入靜態 PNG、JPEG、WebP 圖片。
+- MTP 開或關都能傳送圖片。有圖片的請求不使用提示快取。
+- 每次請求最多 8 張圖片、每個檔案 8 MiB、合計 32 MiB。每張圖片會縮小到最多 1,048,576 像素，所有圖片合計最多 2,048 個圖片 token。
+- 新安裝已包含圖片權重。舊的安裝請選「模型 → 驗證並修復模型」，只會下載缺少或損壞的檔案。完整的 Qwen3.8 FP8 安裝為 **126,189,355,659 bytes**（約 **117.52 GiB**）。
+- Qwen 不接受影片、音訊或文件。
+- 在 M2 Max 上，兩款模型的短文字、對話、Responses、串流與圖片都正常。回答的文字可能和舊的 MLX 引擎不同。這些檢查不代表所有用途的品質或速度都已確認。
 
 ## DeepSeek V4.1
 
-DeepSeek V4.1 現在使用自己的 Native 引擎（C++ 與 Metal，不使用 MLX）。下載內容、模型名稱、API ID 和 Alias 不變。不會沿用 MLX 提示詞快取。
+DeepSeek V4.1 也改用自己的 Native 引擎，不再使用 MLX。你的下載內容、模型名稱、API ID 和 Alias 都不變。舊 MLX 引擎儲存的提示快取不會沿用。
 
-- **Advanced Settings** 顯示生成參數、專家快取大小、讀取工作數、Prompt Cache、暖機與 DSpark。**Size the expert cache automatically** 預設開啟，引擎會依模型載入時的可用記憶體決定大小，最多約 72 GiB，並至少為 macOS 和其他 App 保留 7 GiB 或這台 Mac 記憶體的 15%（取較大者）。若自行設定固定大小，至少要能放下 96 個專家。
-- MLX 專用設定已移除：近似模式、逐層處理輸入、壓縮的 KV 與索引快取、只搜尋候選索引、CED 輸入處理、ANE 投影、預讀工作數、快取淘汰策略與 MLX 記憶體指引。要求近似模式的請求會被拒絕。
-- DSpark 的專家改放在主要專家快取，因此不再顯示獨立的 DSpark 快取大小。使用貪婪取樣時，開關 DSpark 的輸出相同。DSpark 對程式碼這類好預測的文字幫助最大；其他文字可能比關閉時稍慢。
-- 在 M2 Max 64 GiB 上清空檔案快取後各跑一次的驗證：3,000 token 的 Code 輸入處理速度 71 tok/s，16,000 token 為 137 tok/s。程式碼輸出速度未開 DSpark 為 2.9 tok/s，開啟為 3.4 tok/s；小說文字開 DSpark 比關閉慢 2–5%。貪婪取樣的 token 與 MLX 引擎一致。尚未完成廣泛品質、16,000 token 以上的上下文與 M5 驗證。
+- 「進階設定」包含生成參數、專家快取大小、讀取工作數、提示快取、暖機與 DSpark。
+- 「自動決定專家快取大小」預設開啟。開啟時，Whallm 會用模型載入當下的可用記憶體，最多約 72 GiB，並至少為 macOS 和其他 App 留下 7 GiB 或這台 Mac 記憶體的 15%。自己設定固定大小時，至少要放得下 96 個專家。
+- 只在 MLX 上有用的設定已移除，例如近似模式、ANE 投影與 MLX 記憶體指引。要求近似模式的請求會被拒絕。
+- **DSpark** 會先猜接下來好幾個字，再檢查猜得對不對。它的專家和主要專家快取共用，所以不再有自己的快取大小。使用貪婪取樣時，DSpark 不會改變回答的文字。它對程式碼這類好預測的文字幫助最大；其他文字可能比關閉時稍慢。
+- 在 M5 以後的晶片上，長輸入會使用 GPU 的 Neural Accelerators。這部分還沒在 M5 上實測。
+- 在 M2 Max 64 GiB、先清空檔案快取的情況下實測：讀取 3,000 token 的 Code 提示詞約 70 tok/s，16,000 token 約 140 tok/s。不開 DSpark 時，寫出回答約 3.4 tok/s。最近一次加速之後還沒重新測 DSpark 的速度。使用貪婪取樣時，回答與舊的 MLX 引擎一致。品質、超過 16,000 token 的輸入與 M5 都還沒測試。
 
 ## 功能
 
-Whallm 把共用權重放在記憶體，從 SSD 讀取選中的專家。DeepSeek V4.1 的 Engram 資料列與 Qwen 的 N-gram 資料列也只在需要時讀取。
+Whallm 把每個字都要用的部分放在記憶體，只從 SSD 讀取需要的專家。DeepSeek V4.1 的 Engram 資料列與 Qwen 的 N-gram 資料列也只在需要時讀取。
 
-| 模型 | 加速方式 |
+| 模型 | 怎麼加速 |
 | --- | --- |
-| DeepSeek V4 | 逐層處理輸入、批次計算專家、FP8 KV 快取、可選的 ANE 投影與 DSpark |
-| DeepSeek V4.1 | Native 引擎：長輸入的每個專家只讀一次，並在 GPU 計算時同時讀取；產生文字時先算已在快取中的專家；DSpark 驗證草稿時不重算保留的 token |
-| Qwen3.8 | 處理輸入時分組計算專家、每次讀取完成就立即計算專家、QSA 快取壓縮、預先讀取下一層與 MTP |
+| DeepSeek V4 | 一層一層讀取輸入、成批計算專家、用較小的（FP8）注意力快取，並提供 ANE 投影與 DSpark |
+| DeepSeek V4.1 | Native 引擎：長輸入的每個專家只讀一次，並在 GPU 計算時同時讀取；寫出回答時先算已在記憶體的專家；DSpark 檢查猜測時不重算已保留的字 |
+| Qwen3.8 | 讀取輸入時把專家分組計算、每次讀取完成就立刻計算、壓縮 QSA 快取、預先讀取下一層，並使用 MTP |
 
 ## 效能測試
 
 ### v1.1.13：Swift1.5 · Native 引擎
 
-以下各列的輸出上限皆為 512 tokens，記錄的輸出也都是 512 tokens。這兩台機器的自動快取使用 8,192 slots，固定快取使用 2,089 slots；換一台 Mac 或可用記憶體較少時，自動模式可能選擇不同大小。來源未記錄提示詞類型、MTP 與 8-bit 設定、temperature、seed、快取狀態、完整軟硬體環境、原始碼 commit、原始測試檔或輸出 token 雜湊。這些是參考數據，不是與舊版的受控比較。
+下面每一列都要求 512 token 的回答，也都產生了 512 token。自動模式在這些 Mac 上選了 8,192 slots；固定模式用 2,089。換一台 Mac 或可用記憶體較少時，自動模式可能選不同的大小。測量的人沒有記錄提示詞類型、設定、快取狀態或完整環境，所以這些數字只能當參考，不能拿來公平比較舊版本。
 
-**TTFT** 是首個 token 等待時間，**TPOT** 是每個輸出 token 的時間。**Prefill** 與 **Decode** 分別是每秒處理輸入與產生輸出的 tokens。**總時間**是整次耗時；**Throughput** 計算每秒輸入加輸出的 tokens。**峰值記憶體**是記錄的程序記憶體峰值，不是 Peak MLX 或整台 Mac 的用量。App 約每 10 ms 取樣實體記憶體用量，可能漏掉短暫峰值；來源未註明是否包含 App，或僅計算獨立推論程序。
+- **TTFT**：出現第一個 token 前的時間。**TPOT**：每個輸出 token 花的時間。
+- **Prefill** 與 **Decode**：每秒處理的輸入與輸出 token 數。
+- **Total**：從開始到結束的時間。**Throughput**：每秒處理的輸入加輸出 token 數。
+- **峰值記憶體**：回報的程式記憶體最高用量，不是整台 Mac 的用量。App 大約每 10 ms 檢查一次記憶體，很短的高峰可能沒記到。來源沒說明是否包含 App 本身。
 
 #### M2 Max · 自動 · 完整長度測試
 
@@ -156,13 +161,9 @@ Whallm 把共用權重放在記憶體，從 SSD 讀取選中的專家。DeepSeek
 
 ### 歷史結果：v1.1.7–v1.1.12
 
-以下 Qwen 與 DeepSeek V4.1 資料使用先前的 MLX 引擎，不是 Native 引擎。其 Peak MLX 數值不能直接與上方的程序記憶體峰值比較。
+這些結果來自舊的 MLX 引擎。表中的 **Peak MLX** 是 MLX 用到的最多記憶體，單位 **GiB**，和上面的程式記憶體不是同一種數字。舊版 App 匯出的資料把這個值標成 GB，但實際是 GiB。
 
-除了圖片表格，其他資料列都使用 **Code** 輸入。Swift1.5 的資料列輸出上限是 **512 tokens**，其餘是 **128 tokens**。這些資料列測試時沒有記錄 build 版本與快取狀態，請把這些數字當作參考，而不是版本之間或加速方式之間的對照比較。
-
-- **TTFT**：等到第一個 token 出現的時間。
-- **Prefill**：處理輸入的速度。**Decode**：產生輸出的速度。兩者單位都是每秒 tokens。
-- **Peak MLX**：MLX 使用記憶體的最高值，單位 **GiB**，不是整台 Mac 的記憶體用量。較舊的 App 匯出把這個值標成 GB，但實際以 GiB 計算。
+除了圖片表格，其他列都使用 **Code** 輸入。Swift1.5 的列要求 512 token 的回答，其他列要求 128 token。這些測試沒有記錄 build 與快取狀態，所以只能當參考，不能拿來公平比較不同版本。
 
 #### M5 Pro
 
@@ -179,11 +180,11 @@ Whallm 把共用權重放在記憶體，從 SSD 讀取選中的專家。DeepSeek
 | DeepSeek V4 | 1.1.7 | 1152 | 8192 | 42137.5 | 194.4 | 6.8 | 22.83 |
 | DeepSeek V4 | 1.1.7 | 1152 | 16384 | 81517.9 | 201.0 | 6.3 | 22.90 |
 
-1.1.11 的資料列開啟 MTP，使用 temperature 0.0 與 seed 42。1.1.12 的資料列開啟 MTP 與 **使用 8-bit 常駐權重**，使用 temperature 0.0 與 seed 42。較早的量測保留在 [BENCHMARK.md](BENCHMARK.md)。
+1.1.11 的列開啟 MTP，temperature 0.0、seed 42。1.1.12 的列另外開啟「使用 8-bit 常駐權重」。更早的測量記錄在 [BENCHMARK.md](BENCHMARK.md)。
 
 #### M5 Pro：Swift1.5 圖片提示詞搭配 MTP
 
-以 1.1.11 原始碼量測：輸出 160 tokens、temperature 0、關閉 Prompt Cache、專家快取 3,084 slots（7.5 GiB）。每個數字是 3 輪的中位數。草稿接受率是 MTP 猜的字被模型採用的比例。
+在 1.1.11 上測量，回答 160 token、temperature 0、提示快取關閉、3,084 個專家 slots（7.5 GiB）。每個數字是 3 次測量的中位數。草稿接受率是 MTP 的猜測被模型留下的比例。
 
 | 圖片 | 圖片 tokens | 輸入 tokens | MTP | Decode (tok/s) | 第一個 token (s) | 草稿接受率 |
 | --- | ---: | ---: | --- | ---: | ---: | ---: |
@@ -192,7 +193,7 @@ Whallm 把共用權重放在記憶體，從 SSD 讀取選中的專家。DeepSeek
 | 長條圖 | 256 | 281 | 關 | 11.92 | 3.19 | — |
 | 長條圖 | 256 | 281 | 開 | 17.07 | 3.09 | 74% |
 
-開啟 MTP 後，輸出速度分別是 1.38 倍與 1.43 倍，第一個 token 也稍早出現。
+開啟 MTP 後，回答速度分別是 1.38 倍與 1.43 倍，第一個 token 也稍微早一點出現。
 
 #### M2 Max
 
@@ -209,16 +210,16 @@ Whallm 把共用權重放在記憶體，從 SSD 讀取選中的專家。DeepSeek
 | DeepSeek V4.1 | 1.1.7 | 1152 | 8192 | 144011.4 | 56.9 | 2.1 | 32.19 |
 | DeepSeek V4.1 | 1.1.7 | 1152 | 16384 | 248481.9 | 65.9 | 1.9 | 32.75 |
 
-1.1.12 的資料列開啟 MTP 與 **使用 8-bit 常駐權重**，使用 temperature 0.0 與 seed 42。較早的量測保留在 [BENCHMARK.md](BENCHMARK.md)。
+1.1.12 的列開啟 MTP 與「使用 8-bit 常駐權重」，temperature 0.0、seed 42。更早的測量記錄在 [BENCHMARK.md](BENCHMARK.md)。
 
-要測試自己的 Mac，請開啟 **Throughput**，然後選擇：
+要測你自己的 Mac，請開啟「吞吐量」，然後選擇：
 
 - 已安裝的模型
 - **Code** 或 **Novel** 輸入
-- **1K 至 200K** 的輸入長度
-- **128、512、1024 或 4096** 的輸出上限
+- 輸入長度 **1K 到 200K**
+- 輸出上限 **128、512、1024 或 4096**
 
-結果可以複製成純文字、JSON 或 Markdown。測試完成或取消後，App 會卸載測試用的模型。本機 build 另有 **Dry run**，顯示模擬結果。
+結果可以複製成純文字、JSON 或 Markdown。測試結束或取消後，App 會卸載測試用的模型。本機 build 另有 **Dry run**，會顯示模擬結果。
 
 結果會受 SSD 速度、提示詞長度、快取狀態與設定影響。
 
@@ -238,9 +239,9 @@ wire_api = "responses"
 requires_openai_auth = false
 ```
 
-把 `model` 改成 API model ID，或你在 **Model → Advanced Settings** 設定的 Alias，然後重新啟動 Codex。
+把 `model` 改成 API model ID，或你在「模型 → 進階設定」設定的 Alias，然後重新啟動 Codex。
 
-- Chat、Status 與 Throughput 顯示的是顯示名稱，不是 API model ID。請求與效能測試 JSON 仍使用 API model ID。
+- 「對話」、「狀態」與「吞吐量」顯示的是顯示名稱，不是 API model ID。請求與效能測試 JSON 仍使用 API model ID。
 - 這個範例使用預設位址，沒有 API key。如果你在 Whallm 設了 key，用戶端也要設定同一把 key。
 
 詳見 [Codex 設定參考](https://developers.openai.com/codex/config-reference/)。
@@ -254,28 +255,28 @@ API 支援串流文字與工具呼叫，端點如下：
 - `POST /v1/chat/completions` 與 `POST /v1/completions`
 - `POST /api/models/load` 與 `POST /api/models/unload`
 
-**Seed**（v1.1.8 起）：三個生成端點都接受選填的 `seed`，範圍 `0` 至 `4294967295`。省略或傳 `null` 時，每次都用新的隨機 seed。在 Chat 中，Seed 只套用到下一則訊息。固定 seed 只有在提示詞、模型、設定與執行環境都相同時才能重現結果；版本、快取狀態或加速設定不同時，文字仍可能改變。`temperature=0` 一律選擇機率最高的 token。
+**Seed**（v1.1.8 起）：三個生成端點都接受選填的 `seed`，範圍 `0` 到 `4294967295`。省略或傳 `null` 時，每次都用新的隨機 seed。在「對話」中，Seed 只套用到下一則訊息。同一個 seed 只有在提示詞、模型、設定與版本都相同時才會得到相同結果；快取狀態或加速設定不同時，文字仍可能改變。`temperature=0` 一律選擇機率最高的 token。
 
-**工具**：由你的用戶端執行工具並回傳結果，Whallm 不會自行執行 MCP 工具。v1.1.9 起，所有模型的 `/v1/responses` 都接受字串，或由 `input_text` 組成的清單作為 `function_call_output.output`。各段依序直接接起來，中間不加任何字元。請在請求歷史中附上 `call_id` 相同的 `function_call`。
+**工具**：由你的用戶端執行工具並回傳結果，Whallm 不會自己執行 MCP 工具。v1.1.9 起，所有模型的 `/v1/responses` 都接受字串，或由 `input_text` 組成的清單作為 `function_call_output.output`。各段依序直接接起來，中間不加任何字元。請在請求歷史中附上 `call_id` 相同的 `function_call`。
 
-**MiMo（預覽版）** 可透過 Chat、Responses 與 App 附件輸入靜態圖片和短的 PCM WAV 音訊。
+**MiMo（預覽版）** 可以在「對話」、Responses 與 App 附件輸入靜態圖片和短的 PCM WAV 音訊。
 
 - JSON 請求內容：最多 **1 MiB**。
-- `/api/assets` 上傳（需驗證）：PNG、JPEG、WebP、PCM WAV，以及小型 PDF、DOCX、PPTX、XLSX 檔案，每個最多 **8 MiB**。
+- `/api/assets` 上傳（需要登入）：PNG、JPEG、WebP、PCM WAV，以及小型 PDF、DOCX、PPTX、XLSX 檔案，每個最多 **8 MiB**。
 - 音訊：24 kHz、16-bit PCM WAV、單聲道或立體聲，每段最多 30 秒，每次請求最多兩段。
 - 不支援：音訊輸出、影片、`logprobs`、`response_format` 與 `stop`。
 
 詳見 [MiMo 規格與限制](docs/mimo-development.md)。
 
-**隱私**：模型在你的 Mac 上執行。Whallm 只在下載、更新與 API 連線時使用網路。你連接的用戶端可能把資料傳到其他地方。**Debug** 記錄設定與快取資訊，不記錄完整提示詞、工具結果、圖片或 API key。可選擇儲存至 `~/.whallm/server.log`（最多 10 MB，優先刪除最舊內容）。紀錄仍可能包含本機路徑與網路位址，分享前請先檢查。
+**隱私**：模型在你的 Mac 上執行。Whallm 只在下載、更新與 API 連線時使用網路。你連接的用戶端可能會把資料傳到其他地方。「偵錯」會記錄設定與快取資訊，但不記錄完整提示詞、工具結果、圖片或 API key。你也可以把紀錄儲存到 `~/.whallm/server.log`（最多 10 MB，最舊的內容會先刪除）。紀錄仍可能包含本機路徑與網路位址，分享前請先檢查。
 
 ## 驗證與限制
 
-- 測試：**705 項 Python 測試通過**；**193 項 Swift 測試執行，4 項略過，沒有失敗**。
-- 打包檢查涵蓋簽章、內含檔案，以及在無法存取 build 資料夾時以英文、簡體中文、繁體中文啟動。App 與解壓縮後的 ZIP 都會檢查。正式發布時會在簽章、公證後的下載檔上再檢查一次。
+- 測試：**786 項 Python 測試通過、4 項略過**；**209 項 Swift 測試通過、4 項略過**。沒有失敗。
+- 打包時會檢查 App 的簽章與內含檔案，並確認它在無法存取 build 資料夾時，能以英文、簡體中文、繁體中文啟動。App 與解壓縮後的 ZIP 都會檢查。正式發布時，會在簽章、公證後的下載檔上再檢查一次。
 - 工具呼叫測試使用固定的模型輸出，不是完整的 Pi 或 Codex 工作階段。
-- MiMo 仍是預覽版，使用固定的預先處理檔案，支援文字、圖片、短 WAV 音訊與部分文件。影片、影音同步與 MCP Agent 介面尚未完成。詳見[開發狀態](docs/mimo-development.md)。
-- 較早的 MTP 量測早於目前的執行環境。MTP 不是對每個提示詞都更快。
+- MiMo 仍是預覽版，使用一份固定、預先處理好的模型，支援文字、圖片、短 WAV 音訊與部分文件。影片、影音同步與 MCP Agent 介面尚未完成。詳見[開發狀態](docs/mimo-development.md)。
+- 較早的 MTP 測量是在目前的引擎之前做的。MTP 不是對每個提示詞都更快。
 - 部分加速方式只在小模型或單一元件上測試過。
 - 很長的提示詞需要更多快取記憶體。
 
