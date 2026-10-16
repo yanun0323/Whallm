@@ -88,6 +88,15 @@ Added in 1.1.10.
 - Video, audio and document input are not available for Qwen.
 - Native checks on M2 Max covered short text, Chat, Responses, streaming and images for both models. User-provided v1.1.13 Swift1.5 speed measurements on M2 Max and M5 Pro are listed below. Outputs can differ from MLX; these measurements do not establish broad quality or performance validation.
 
+## DeepSeek V4.1
+
+DeepSeek V4.1 now uses its own Native engine (C++ and Metal, without MLX). The download, model name, API ID and Alias stay unchanged. MLX prompt caches are not reused.
+
+- **Advanced Settings** shows generation, expert cache size, read workers, Prompt Cache, warmup and DSpark. **Size the expert cache automatically** is on by default. The engine then uses memory that is free when the model loads, up to about 72 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. A fixed size must hold at least 96 experts.
+- The MLX-only settings are gone: approximate mode, layer-major input processing, packed KV and index caches, candidate-only index search, CED input processing, ANE projection, prefetch workers, cache eviction and the MLX memory guideline. Requests that ask for approximate mode are rejected.
+- DSpark keeps its experts in the main expert cache, so its separate cache size is no longer shown. With greedy sampling, output is the same with DSpark on or off. DSpark helps most on predictable text such as code; on other text it can be slightly slower than DSpark off.
+- Validation on M2 Max 64 GiB with an empty file cache, single runs: input processing ran at 71 tok/s for a 3,000-token Code prompt and 137 tok/s for a 16,000-token one. Code output ran at 2.9 tok/s without DSpark and 3.4 tok/s with it; on Novel text, DSpark was 2–5% slower than off. The greedy tokens matched the MLX engine. Broad quality, contexts above 16,000 tokens and M5 validation remain incomplete.
+
 ## Features
 
 Whallm keeps shared weights in memory and reads the chosen experts from SSD. It also reads DeepSeek V4.1 Engram rows and Qwen N-gram rows only when needed.
@@ -95,7 +104,7 @@ Whallm keeps shared weights in memory and reads the chosen experts from SSD. It 
 | Model | Speed-ups |
 | --- | --- |
 | DeepSeek V4 | Layer-by-layer input processing, batched expert math, FP8 KV cache, optional ANE projection and DSpark |
-| DeepSeek V4.1 | Layer-by-layer input processing, batched experts, packed KV and index caches, scoring only candidate indexes, CED input processing, ANE projection and DSpark |
+| DeepSeek V4.1 | Native engine: long inputs read each expert once while the GPU works, cached experts start first during output, DSpark checks drafts without recomputing kept tokens |
 | Qwen3.8 | Grouped experts during input processing, expert math as soon as each read finishes, QSA cache compression, next-layer prefetch and MTP |
 
 ## Benchmarks
@@ -147,7 +156,7 @@ All rows below have a 512-token output limit and report 512 output tokens. Autom
 
 ### Historical results: v1.1.7–v1.1.12
 
-The following Qwen rows used the previous MLX engine, not the Native engine. Their Peak MLX values are not directly comparable with the process-memory peaks above.
+The following Qwen and DeepSeek V4.1 rows used the previous MLX engine, not the Native engine. Their Peak MLX values are not directly comparable with the process-memory peaks above.
 
 Except for the image table, rows use **Code** input. The output limit is **512 tokens** for the Swift1.5 rows and **128 tokens** for the other rows. For those rows the build revision and cache state were not recorded, so treat these numbers as a reference, not as a controlled comparison between versions or speed-ups.
 

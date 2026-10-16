@@ -2,8 +2,8 @@
 
 This project builds a memory-bounded Apple Silicon runtime for
 `DeepSeek-V4-Flash-0731`, `DeepSeek-V4.1-Flash`, `Qwen3.8-Flash-Next`,
-`MiMo-V2.6-Flash-RL`, and `Swift1.5-Qwen3.8-Flash-Next`. Qwen3.8 and Swift1.5 use
-the native engine under their original model identities.
+`MiMo-V2.6-Flash-RL`, and `Swift1.5-Qwen3.8-Flash-Next`. Qwen3.8, Swift1.5 and
+DeepSeek V4.1 use a native engine under their original model identities.
 
 ## Ubiquitous language
 
@@ -31,11 +31,13 @@ the native engine under their original model identities.
 - **model kind**: The stable identity that selects a model support package.
 - **model support package**: The installation rules, model loading, conversation format,
   and state operations needed to support one model kind.
-- **native engine**: The C++ and Metal inference engine in `Native/QwenNative`, built
-  as `libWhallmQwenNative.dylib`. It does not use MLX. The MLX runtime is the other
-  engine.
-- **automatic expert cache**: The native engine's expert cache sized at load from the
-  memory free at that moment, at most 8,192 slots.
+- **native engine**: A C++ and Metal inference engine that does not use MLX. The Qwen
+  engine is `Native/QwenNative` (`libWhallmQwenNative.dylib`); the DeepSeek V4.1
+  engine is `Native/DeepSeekNative` (`libWhallmDeepSeekNative.dylib`). The MLX runtime
+  is the other engine.
+- **automatic expert cache**: A native engine's expert cache sized at load from the
+  memory free at that moment: at most 8,192 slots for Qwen and 256 to 4,096 for
+  DeepSeek V4.1.
 
 ## Shared Qwen engine, separate model kinds
 
@@ -85,6 +87,14 @@ the prompt cache; the engine returns logits. The App sends MLX-only runtime opti
 their defaults for these kinds, and the runtime rejects any other value. New or reset
 settings use the automatic expert cache, MTP and 8-bit resident weights.
 
+DeepSeek V4.1 (`deepseek-v4.1-flash`) also uses a native engine, with its installation,
+Alias and DSpark files unchanged; its saved MLX-only settings no longer apply. `NativeDeepSeekRuntime`
+(`runtime/deepseek_v4_ssd/native_deepseek.py`) shares the Qwen runtime's sampling,
+prompt cache and text streaming, and runs DSpark rounds. DSpark's routed experts share
+the main expert cache. Its prompt cache states include the DSpark context. Approximate
+mode and the MLX V4.1 options (packed caches, candidate index, CED, ANE prefill) are
+refused; MLX tuning that does not change outputs is ignored.
+
 ## Prompt cache compatibility and memory
 
 MLX disk prompt caches use compatibility contract 2. Earlier caches are
@@ -93,7 +103,7 @@ that the main model had already consumed. The installed model is unchanged;
 DSpark uses a separate cache contract and is unaffected by this invalidation.
 
 For the MLX runtime, the in-memory entry limit counts requests. An ordinary
-request can retain up to three target states; a V4.1 DSpark request retains one target-and-draft snapshot.
+request can retain up to three target states.
 The App estimates these retained states within the configured cache budget,
 except that the runtime always keeps the newest state even if it exceeds that
 budget. It also allows for two in-flight ordinary snapshots before eviction.

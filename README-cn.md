@@ -88,6 +88,15 @@ App 不含模型权重。仅 DeepSeek V4.1 的专家和 Engram 文件就需要�
 - Qwen 不支持视频、音频和文档输入。
 - Native 在 M2 Max 的检查涵盖两款模型的短文本、Chat、Responses、流式输出和图片。下方列有用户提供的 v1.1.13 Swift1.5 在 M2 Max 与 M5 Pro 的跑分。输出可能与 MLX 不同；这些数据不代表已完成广泛质量或性能验证。
 
+## DeepSeek V4.1
+
+DeepSeek V4.1 现在使用自己的 Native 引擎（C++ 和 Metal，不使用 MLX）。下载内容、模型名称、API ID 和 Alias 不变。不会沿用 MLX 提示词缓存。
+
+- **Advanced Settings** 显示生成参数、专家缓存大小、读取线程数、Prompt Cache、预热和 DSpark。**Size the expert cache automatically** 默认开启，引擎会依模型载入时的可用内存决定大小，最多约 72 GiB，并至少为 macOS 和其他 App 保留 7 GiB 或这台 Mac 内存的 15%（取较大者）。如果自行设置固定大小，至少要能放下 96 个专家。
+- MLX 专用设置已移除：近似模式、逐层处理输入、压缩的 KV 和索引缓存、只搜索候选索引、CED 输入处理、ANE 投影、预读线程数、缓存淘汰策略和 MLX 内存指导值。要求近似模式的请求会被拒绝。
+- DSpark 的专家改放在主要专家缓存中，因此不再显示独立的 DSpark 缓存大小。使用贪婪采样时，开关 DSpark 的输出相同。DSpark 对代码这类容易预测的文本帮助最大；其他文本可能比关闭时稍慢。
+- 在 M2 Max 64 GiB 上清空文件缓存后各运行一次的验证：3,000 token 的 Code 输入处理速度 71 tok/s，16,000 token 为 137 tok/s。代码输出速度未开 DSpark 为 2.9 tok/s，开启为 3.4 tok/s；小说文本开 DSpark 比关闭慢 2–5%。贪婪采样的 token 与 MLX 引擎一致。尚未完成广泛质量、16,000 token 以上的上下文和 M5 验证。
+
 ## 功能
 
 Whallm 把共享权重放在内存，从 SSD 读取选中的专家。DeepSeek V4.1 的 Engram 数据行和 Qwen 的 N-gram 数据行也只在需要时读取。
@@ -95,7 +104,7 @@ Whallm 把共享权重放在内存，从 SSD 读取选中的专家。DeepSeek V4
 | 模型 | 加速方式 |
 | --- | --- |
 | DeepSeek V4 | 逐层处理输入、批量计算专家、FP8 KV 缓存、可选的 ANE 投影和 DSpark |
-| DeepSeek V4.1 | 逐层处理输入、批量计算专家、压缩的 KV 和索引缓存、只为候选索引评分、CED 输入处理、ANE 投影和 DSpark |
+| DeepSeek V4.1 | Native 引擎：长输入的每个专家只读一次，并在 GPU 计算时同时读取；生成文本时先算已在缓存中的专家；DSpark 验证草稿时不重算保留的 token |
 | Qwen3.8 | 处理输入时分组计算专家、每次读取完成就立即计算专家、QSA 缓存压缩、预读下一层和 MTP |
 
 ## 性能测试
@@ -147,7 +156,7 @@ Whallm 把共享权重放在内存，从 SSD 读取选中的专家。DeepSeek V4
 
 ### 历史结果：v1.1.7–v1.1.12
 
-以下 Qwen 数据使用之前的 MLX 引擎，不是 Native 引擎。其 Peak MLX 数值不能直接与上方的进程内存峰值比较。
+以下 Qwen 和 DeepSeek V4.1 数据使用之前的 MLX 引擎，不是 Native 引擎。其 Peak MLX 数值不能直接与上方的进程内存峰值比较。
 
 除了图片表格，其他数据行都使用 **Code** 输入。Swift1.5 的数据行输出上限是 **512 tokens**，其余是 **128 tokens**。这些数据行测试时没有记录 build 版本和缓存状态，请把这些数字当作参考，而不是版本之间或加速方式之间的对照比较。
 
