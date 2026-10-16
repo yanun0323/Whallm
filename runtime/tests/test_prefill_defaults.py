@@ -10,8 +10,10 @@ from deepseek_v4_ssd.model_support import get_support
 
 class PrefillDefaultTests(unittest.TestCase):
     def test_default_config_is_valid_for_every_model_and_preserves_opt_out(self):
+        from v41_mlx import mlx_v41_support
         for kind in ('deepseek-v4', 'deepseek-v4.1', 'qwen3.8-flash-next'):
-            support = get_support(kind)
+            # The defaults concern V4.1's MLX runtime; the native engine ignores them.
+            support = mlx_v41_support() if kind == 'deepseek-v4.1' else get_support(kind)
             for enabled in (True, False):
                 with self.subTest(kind=kind, enabled=enabled):
                     config = (RuntimeConfig() if enabled else RuntimeConfig(

@@ -413,9 +413,9 @@ def _zero_runtime_metrics() -> dict[str, Any]:
 
 def open_runtime(spec: ModelSpec):
     """The runtime for a catalog model: the native engine or the MLX runtime."""
-    if get_support(spec.model_kind).descriptor.supports("nativeEngine"):
-        from .native_qwen import NativeQwenRuntime
-        return NativeQwenRuntime.open(spec.path, spec.runtime, spec.model_kind)
+    support = get_support(spec.model_kind)
+    if support.descriptor.supports("nativeEngine"):
+        return support.open_runtime(spec.path, spec.runtime)
     return ModelRuntime.open(spec.path, spec.runtime)
 
 

@@ -264,12 +264,12 @@ class NativeEngine:
         return NativeState(handle)
 
 
-def read_state_tokens(path: Path) -> tuple[int, ...] | None:
+def read_state_tokens(path: Path, magic: bytes = b"WQSTATE1") -> tuple[int, ...] | None:
     """Tokens of a saved state, read from the file header; None for other files."""
     try:
         with path.open("rb") as file:
             header = file.read(32)
-            if len(header) != 32 or header[:8] != b"WQSTATE1":
+            if len(header) != 32 or header[:8] != magic:
                 logger.error("prompt cache header invalid; ignoring file")
                 return None
             contract_size, token_count, _ = np.frombuffer(header[8:], dtype="<u8")
@@ -425,8 +425,10 @@ class NativeExpertCounters:
 
     def metrics_snapshot(self) -> CacheMetrics:
         c = self._engine.counters()
+        # Experts streamed through a long prompt are read without entering the cache.
+        read = int(c.expert_misses) + int(getattr(c, "experts_streamed", 0))
         return CacheMetrics(hits=int(c.expert_hits), misses=int(c.expert_misses),
-                            bytes_read=int(c.expert_misses) * self._blob, read_seconds=float(c.read_seconds),
+                            bytes_read=read * self._blob, read_seconds=float(c.read_seconds),
                             prefill_seeded_experts=int(c.experts_seeded))
 
     @property
@@ -446,6 +448,10 @@ class _CacheEntry:
 
 class NativeQwenRuntime(ChatInterface):
     """One loaded native engine; requests are serialized."""
+
+    # Prompt cache files of this engine (see engine.mm save()).
+    STATE_MAGIC = b"WQSTATE1"
+    STATE_SUFFIX = ".wqstate"
 
     def __init__(self, installed: InstalledModel, config: RuntimeConfig, model_kind: str):
         self.installed = installed
@@ -527,10 +533,10 @@ class NativeQwenRuntime(ChatInterface):
             reused = 0 if images is not None else self._continue_from_cache(tokens)
             if images is not None:
                 self.engine.reset()
-            mtp = self.engine.has_mtp and bool(self.config.mtp_enabled)
+            mtp = self._speculative()
             new_tokens = len(tokens) - reused
             self.metrics.start(len(tokens), reused, min(new_tokens, 1024), new_tokens > 512,
-                               self.expert_cache.metrics_snapshot(), mtp_enabled=mtp)
+                               self.expert_cache.metrics_snapshot(), **self._speculative_metrics(mtp))
             completed = False
             self._persist_later = []
             try:
@@ -587,6 +593,13 @@ class NativeQwenRuntime(ChatInterface):
         self.metrics.record_token(generation_tokens, 0.0, 0.0)
         yield GeneratedPiece(text=final_text, token=last_token, prompt_tokens=len(prompt_tokens),
                              generation_tokens=generation_tokens, finish_reason=finish_reason)
+
+    def _speculative(self) -> bool:
+        """Whether this request decodes through draft rounds."""
+        return self.engine.has_mtp and bool(self.config.mtp_enabled)
+
+    def _speculative_metrics(self, enabled: bool) -> dict:
+        return {"mtp_enabled": enabled}
 
     def _tokens(self, prompt_tokens, reused, images, options, sampler, mtp) -> Iterator[int]:
         """Sampled tokens, each yielded before the model consumes it (as generate_mtp_tokens)."""
@@ -751,7 +764,7 @@ class NativeQwenRuntime(ChatInterface):
         return directory
 
     def _persist(self, state: NativeState) -> None:
-        name = hashlib.sha256(np.asarray(state.tokens, dtype="<i4").tobytes()).hexdigest() + ".wqstate"
+        name = hashlib.sha256(np.asarray(state.tokens, dtype="<i4").tobytes()).hexdigest() + self.STATE_SUFFIX
         path = self._directory / name
         started = time.perf_counter()
         try:
@@ -762,7 +775,7 @@ class NativeQwenRuntime(ChatInterface):
             self.metrics.record_prompt_cache_write_error(error)
             return
         self.metrics.record_prompt_cache_write(time.perf_counter() - started)
-        files = sorted(self._directory.glob("*.wqstate"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(self._directory.glob("*" + self.STATE_SUFFIX), key=lambda p: p.stat().st_mtime, reverse=True)
         for old in files[max(1, int(self.config.persistent_prompt_cache_entries)):]:
             old.unlink(missing_ok=True)
 
@@ -770,8 +783,8 @@ class NativeQwenRuntime(ChatInterface):
         if self._directory is None:
             return None
         best, best_length = None, longer_than
-        for path in self._directory.glob("*.wqstate"):
-            saved = read_state_tokens(path)
+        for path in self._directory.glob("*" + self.STATE_SUFFIX):
+            saved = read_state_tokens(path, self.STATE_MAGIC)
             if saved and best_length < len(saved) <= len(tokens) - 1 and tuple(tokens[:len(saved)]) == saved:
                 best, best_length = path, len(saved)
         return best

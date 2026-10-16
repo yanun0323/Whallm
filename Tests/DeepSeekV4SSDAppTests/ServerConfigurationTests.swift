@@ -21,13 +21,13 @@ final class ServerConfigurationTests: XCTestCase {
           aliases: [:], settings: [kind: settings], powerSavingLimitGBps: nil)
         let runtime = try XCTUnwrap(catalog.models.first).runtime
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(runtime)) as? [String: Any])
-        // Qwen hides these controls and keeps them on (2026-10-09).
+        // The native engine (Qwen, DeepSeek V4.1) has none of these MLX controls.
         let effective = enabled && !kind.usesNativeEngine
         for key in ["layer_major_prefill", "ready_expert_decode", "batched_expert_prefill"] {
           XCTAssertEqual(json[key] as? Bool, effective, "\(kind): \(key)")
         }
         XCTAssertEqual(json["qwen_next_layer_prefetch"] as? Bool, effective && kind == .qwen3_8FlashNext)
-        XCTAssertEqual(json["v41_next_layer_prefetch"] as? Bool, enabled && kind == .deepSeekV41)
+        XCTAssertEqual(json["v41_next_layer_prefetch"] as? Bool, false)
         XCTAssertEqual(json["qwen_grouped_experts"] as? Bool, effective && kind == .qwen3_8FlashNext)
       }
     }
@@ -771,9 +771,10 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertEqual(catalog.models[0].alias, "work-model")
     XCTAssertTrue(catalog.models[0].runtime.dsparkEnabled)
     XCTAssertEqual(catalog.models[0].runtime.powerSavingLimitGBps, 2)
-    XCTAssertTrue(catalog.models[1].runtime.layerMajorPrefill)
-    XCTAssertTrue(catalog.models[1].runtime.batchedExpertPrefill)
-    XCTAssertTrue(catalog.models[1].runtime.v41NextLayerPrefetch)
+    // DeepSeek V4.1 runs on the native engine, which has no MLX prefill switches.
+    XCTAssertFalse(catalog.models[1].runtime.layerMajorPrefill)
+    XCTAssertFalse(catalog.models[1].runtime.batchedExpertPrefill)
+    XCTAssertFalse(catalog.models[1].runtime.v41NextLayerPrefetch)
     XCTAssertFalse(catalog.models[1].runtime.fp8KVCache)
     XCTAssertEqual(catalog.models[1].runtime.promptCacheEntries, 1)
     XCTAssertFalse(catalog.models[1].runtime.persistentPromptCache)
@@ -834,7 +835,7 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertEqual(runtime["qwen_grouped_experts"] as? Bool, false)
     XCTAssertEqual(runtime["ane_prefill"] as? Bool, false)
     let v41Runtime = try XCTUnwrap(models[1]["runtime"] as? [String: Any])
-    XCTAssertEqual(v41Runtime["layer_major_prefill"] as? Bool, true)
+    XCTAssertEqual(v41Runtime["layer_major_prefill"] as? Bool, false)
     XCTAssertEqual(v41Runtime["fp8_kv_cache"] as? Bool, false)
     XCTAssertEqual(v41Runtime["prompt_cache_entries"] as? Int, 1)
     XCTAssertEqual(v41Runtime["persistent_prompt_cache"] as? Bool, false)
@@ -849,12 +850,15 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertTrue(models[0]["warmup_prompt_path"] is NSNull)
   }
 
+  /// DeepSeek V4.1 runs on the native engine (2026-10-16). Switches saved for its MLX
+  /// runtime never reach the native one, which refuses them; DSpark does.
   @MainActor
-  func testNewPerformanceSettingsReachOnlyTheirModelAndDisableConflictingPrefill() throws {
+  func testNativeDeepSeekDropsMLXSettingsAndKeepsDSpark() throws {
+    XCTAssertTrue(ModelKind.deepSeekV41.usesNativeEngine)
+    XCTAssertFalse(ModelKind.deepSeekV41.descriptor.supports("approximation"))
     var settings = ModelAdvancedSettings.defaults(for: .deepSeekV41)
-    XCTAssertFalse(settings.approximationEnabled == true)
-    XCTAssertFalse(settings.packedKVCache == true)
-    XCTAssertFalse(settings.cedPrefill == true)
+    XCTAssertEqual(settings.expertCacheAutomatic, true)
+    XCTAssertEqual(settings.qwen8BitCommonTensors, false)
     settings.layerMajorPrefill = true
     settings.packedKVCache = true
     settings.packedIndexCache = true
@@ -863,29 +867,30 @@ final class ServerConfigurationTests: XCTestCase {
     settings.nextLayerPrefetch = true
     settings.batchedExpertPrefill = true
     settings.deepSeekANEPrefill = true
-    settings.readyExpertDecode = false
     settings.approximationEnabled = true
-    func catalog(_ value: ModelAdvancedSettings) throws -> ModelCatalog {
-      try ModelLibrary.makeServerCatalog(models: [installedModel(.deepSeekV41, hasDSpark: true)],
-        aliases: [:], settings: [.deepSeekV41: value], powerSavingLimitGBps: nil)
-    }
-    let enabled = try XCTUnwrap(catalog(settings).models.first)
-    XCTAssertTrue(enabled.runtime.v41LayerMajorPrefill)
-    XCTAssertTrue(enabled.runtime.v41PackedKV)
-    XCTAssertTrue(enabled.runtime.v41PackedIndex)
-    XCTAssertTrue(enabled.runtime.v41CandidateIndex)
-    XCTAssertTrue(enabled.runtime.v41CEDPrefill)
-    XCTAssertTrue(enabled.runtime.v41NextLayerPrefetch)
-    XCTAssertTrue(enabled.runtime.deepseekANEPrefill)
-    XCTAssertFalse(enabled.runtime.readyExpertDecode)
-    XCTAssertFalse(enabled.runtime.qwenQuantizedKV)
+    settings.qwen8BitCommonTensors = true
     settings.dsparkEnabled = true
-    let speculative = try XCTUnwrap(catalog(settings).models.first)
-    XCTAssertTrue(speculative.runtime.dsparkEnabled)
-    XCTAssertTrue(speculative.runtime.v41LayerMajorPrefill)
-    XCTAssertFalse(speculative.runtime.v41CEDPrefill)
-    XCTAssertTrue(speculative.runtime.v41NextLayerPrefetch)
-    XCTAssertEqual(speculative.defaults.approximationMode, "exact")
+    let entry = try XCTUnwrap(ModelLibrary.makeServerCatalog(models: [installedModel(.deepSeekV41, hasDSpark: true)],
+      aliases: [:], settings: [.deepSeekV41: settings], powerSavingLimitGBps: nil).models.first)
+    let runtime = entry.runtime
+    let sent: [(String, Bool?)] = [("v41LayerMajorPrefill", runtime.v41LayerMajorPrefill), ("v41PackedKV", runtime.v41PackedKV),
+                          ("v41PackedIndex", runtime.v41PackedIndex), ("v41CandidateIndex", runtime.v41CandidateIndex),
+                          ("v41CEDPrefill", runtime.v41CEDPrefill), ("v41NextLayerPrefetch", runtime.v41NextLayerPrefetch),
+                          ("deepseekANEPrefill", runtime.deepseekANEPrefill), ("qwen8BitCommonTensors", runtime.qwen8BitCommonTensors),
+                          ("mtpEnabled", runtime.mtpEnabled)]
+    for (name, value) in sent {
+      XCTAssertNotEqual(value, true, name)
+    }
+    XCTAssertTrue(runtime.dsparkEnabled)
+    XCTAssertTrue(runtime.nativeAutomaticExpertCache)
+    // New and reset V4.1 settings keep drafts from confidence 0.75; V4 (MLX) keeps 0.6.
+    XCTAssertEqual(runtime.dsparkConfidenceThreshold, 0.75)
+    XCTAssertEqual(ModelAdvancedSettings.defaults(for: .deepSeekV4).dsparkConfidenceThreshold, 0.6)
+    XCTAssertEqual(entry.defaults.approximationMode, "exact")
+    // Without the DSpark files the request runs without it.
+    let missing = try XCTUnwrap(ModelLibrary.makeServerCatalog(models: [installedModel(.deepSeekV41)],
+      aliases: [:], settings: [.deepSeekV41: settings], powerSavingLimitGBps: nil).models.first)
+    XCTAssertFalse(missing.runtime.dsparkEnabled)
   }
 
   @MainActor

@@ -83,9 +83,11 @@ class V41DSparkTests(unittest.TestCase):
                 config = RuntimeConfig(dspark_enabled=True, layer_major_prefill_threshold=1,
                     v41_layer_major_prefill=layer_major, layer_major_prefill=layer_major,
                     batched_expert_prefill=False, prompt_cache_entries=0, prefill_step_size=3)
+                from v41_mlx import mlx_v41_support
                 with patch('deepseek_v4_ssd.generation.load_model',
                            return_value=(model, SimpleNamespace(close=lambda: None, metrics_snapshot=CacheMetrics,
                                                               capture_expert_unions=nullcontext))), \
+                     patch('deepseek_v4_ssd.generation.support_for_installed', return_value=mlx_v41_support()), \
                      patch('deepseek_v4_ssd.generation.AutoTokenizer.from_pretrained', return_value=tokenizer):
                     return ModelRuntime(installed, config)
             with runtime(False) as control:

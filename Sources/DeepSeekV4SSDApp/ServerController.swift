@@ -358,12 +358,18 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
       settings.applyQwenFixedTuning()
     }
     if modelKind.usesNativeEngine {
-      // Chosen 2026-10-14: the cache is sized from the free memory (at most 8,192
-      // slots, about 20 GiB); 8-bit resident weights and MTP on, as for the MLX Qwen models.
+      // Chosen 2026-10-14: the cache is sized from the free memory (Qwen: at most 8,192
+      // slots, about 20 GiB; DeepSeek V4.1: at most 4,096, about 72 GiB). For Qwen, 8-bit
+      // resident weights and MTP on, as for the MLX Qwen models.
       settings.expertCacheAutomatic = true
-      settings.mtpEnabled = true
-      settings.qwen8BitCommonTensors = true
+      settings.mtpEnabled = modelKind.isQwen
+      settings.qwen8BitCommonTensors = modelKind.isQwen
       settings.readWorkers = 8
+      if !modelKind.isQwen {
+        // Chosen 2026-10-16 from single 96-token runs on M2 Max (3,000-token prompts):
+        // Code 3.51 tok/s at 0.6, 3.73 at 0.75, 3.80 at 0.9; Novel 2.70, 2.70, 2.58.
+        settings.dsparkConfidenceThreshold = 0.75
+      }
     }
     return settings
   }
@@ -405,7 +411,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.mtpSlots = settings.mtpSlots ?? 32
     let qwen = modelKind.usesQwenEngine
     let native = modelKind.usesNativeEngine
-    settings.qwen8BitCommonTensors = qwen || native ? (settings.qwen8BitCommonTensors ?? true) : false
+    settings.qwen8BitCommonTensors = qwen || (native && modelKind.isQwen) ? (settings.qwen8BitCommonTensors ?? true) : false
     settings.expertCacheAutomatic = native ? (settings.expertCacheAutomatic ?? true) : nil
     settings.qwenExpertWaveSlots = qwen ? (settings.qwenExpertWaveSlots ?? 0) : 0
     settings.qwenNgramIO = qwen ? (settings.qwenNgramIO ?? "mmap") : "mmap"
@@ -427,6 +433,8 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
       settings.deepSeekANEPrefill = false
       settings.packedKVCache = false
       settings.packedIndexCache = false
+      settings.candidateIndex = false
+      settings.cedPrefill = false
       for feature in QwenOptimization.allCases { settings[keyPath: feature.keyPath] = false }
       settings.qwenMTPDraftTokens = 2
       settings.qwenMTPZeroAcceptanceLimit = 32
@@ -512,12 +520,13 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     let blob = ExpertMemory.blobBytes(for: modelKind)
     if let expertCacheGiB {
       _ = try ExpertMemory.capacity(gib: expertCacheGiB, blobBytes: blob,
-        minimum: modelKind.usesQwenEngine ? 10 : 6)
+        minimum: ExpertMemory.minimumSlots(for: modelKind))
     }
     if mtpEnabled == true, let mtpCacheGiB {
       _ = try ExpertMemory.capacity(gib: mtpCacheGiB, blobBytes: blob, minimum: 10)
     }
-    if dsparkEnabled, let dsparkCacheGiB {
+    // The native engine keeps DSpark's experts in the main expert cache.
+    if dsparkEnabled, !modelKind.usesNativeEngine, let dsparkCacheGiB {
       _ = try ExpertMemory.capacity(gib: dsparkCacheGiB, blobBytes: blob, minimum: 30)
     }
     guard slots >= 6 else {

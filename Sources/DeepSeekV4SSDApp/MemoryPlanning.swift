@@ -4,6 +4,13 @@ import Foundation
 enum ExpertMemory {
   static let gib = 1_073_741_824.0
 
+  /// Fewest expert cache slots a model kind runs with. The native DeepSeek engine
+  /// reserves the experts of up to 15 decode tokens (6 each) in one step.
+  static func minimumSlots(for kind: ModelKind) -> Int {
+    if kind.usesNativeEngine && !kind.isQwen { return 96 }
+    return kind.usesQwenEngine || kind.usesNativeEngine ? 10 : 6
+  }
+
   static func bytes(gib value: Double) throws -> UInt64 {
     guard value.isFinite, value > 0, value <= 1_024, value * gib >= 1 else {
       throw ConfigurationError(L10n.string("Expert cache memory must be greater than 0 and at most 1024 GiB."))
@@ -159,7 +166,8 @@ struct MemoryPlanningProfile {
     if kind.usesNativeEngine {
       guard input > 0, output >= 0, (contextTokens != nil || output > 0), input <= maximum,
         output <= maximum - input, s.promptCacheMemoryGiB >= 1, s.promptCacheEntries >= 1 else { return nil }
-      return nativeEstimate(s, mtpAvailable: mtpAvailable, input: input, output: output)
+      return kind.isQwen ? nativeEstimate(s, mtpAvailable: mtpAvailable, input: input, output: output)
+        : nativeDeepSeekEstimate(s, dsparkAvailable: dsparkAvailable, input: input, output: output)
     }
     let ratio = s.anePrefillRatio ?? 0
     guard (kind.usesQwenEngine || [.deepSeekV4, .deepSeekV41].contains(kind)),
@@ -458,6 +466,60 @@ struct MemoryPlanningProfile {
       auxiliary: 0, temporary: scratch + layerBuffers + denseLayer)
     let decoding = MemoryStageEstimate(model: weights + experts, conversation: state + retained,
       auxiliary: 0, temporary: layerBuffers + 16 * number("vocab_size", 248_320) * 4)
+    let result = MemoryEstimate(loading: loading, prefill: prefill, decoding: decoding,
+      inputTokens: input, outputTokens: output)
+    return result.total.isFinite ? result : nil
+  }
+
+  /// DeepSeek V4.1 on the native engine (Native/DeepSeekNative/engine.mm). common.bin is
+  /// copied to the GPU whole; DSpark adds its own file and shares the expert cache.
+  private func nativeDeepSeekEstimate(_ s: ModelAdvancedSettings, dsparkAvailable: Bool, input: Int, output: Int)
+    -> MemoryEstimate?
+  {
+    let blob = Double(manifest.expertBlobSize)
+    func file(_ name: String) -> Double { Double(manifest.files.first { $0.path == name }?.size ?? 0) }
+    guard blob > 0, file("common.bin") > 0 else { return nil }
+    let dspark = s.dsparkEnabled && dsparkAvailable && manifest.dspark != nil
+    let weights = file("common.bin") + (dspark ? file("dspark/common.bin") : 0)
+    // Long prompts stream experts through four waves of 32 (staging).
+    let staging = 4 * 32 * blob
+    let physical = Double(ProcessInfo.processInfo.physicalMemory)
+    let slots: Double
+    if s.expertCacheAutomatic != false {
+      // The engine's ceiling: footprint under 60% of RAM, 256 to 4,096 slots.
+      let budget = 0.6 * physical - weights - staging - 4 * ExpertMemory.gib
+      slots = min(4_096, max(256, (budget / blob).rounded(.down)))
+    } else {
+      let budget = s.expertCacheGiB ?? ExpertMemory.legacyGiB(slots: s.slots, blobBytes: manifest.expertBlobSize)
+      guard let count = try? ExpertMemory.capacity(gib: budget, blobBytes: manifest.expertBlobSize,
+        minimum: ExpertMemory.minimumSlots(for: kind)) else { return nil }
+      slots = Double(count)
+    }
+    let experts = slots * blob
+    // Compressed KV (512 BF16) and index keys (128 BF16) of the four KV source layers
+    // (ratios 2, 2, 2 and 1); each layer's capacity doubles from 4,096 rows.
+    let tokens = Double(input + output)
+    func capacity(_ rows: Double) -> Double {
+      var value = 4_096.0
+      while value < rows { value *= 2 }
+      return value
+    }
+    let rowBytes = (512.0 + 128.0) * 2
+    let state = (3 * capacity(tokens / 2) + capacity(tokens)) * rowBytes
+    let stateBytes = 2.5 * tokens * rowBytes
+    let retained = s.promptCacheMode == .off ? 0
+      : min(Double(s.promptCacheEntries) * 2 * stateBytes, max(stateBytes, Double(s.promptCacheMemoryGiB) * ExpertMemory.gib))
+    // Scratch (reserve() in engine.mm): per pass row (up to 16,384) and per attention
+    // row (up to 1,024), the index scores of one chunk and one wave's expert rows.
+    let passRows = min(Double(input), 16_384)
+    let chunkRows = min(Double(input), 1_024)
+    let scratch = passRows * 150_000 + chunkRows * 650_000 + chunkRows * min(tokens, 1_048_576) * 6
+      + (passRows / 2 + 512) * 60_000 + (input >= 16 ? staging : 0)
+    let loading = MemoryStageEstimate(model: weights + experts, conversation: 0, auxiliary: 0, temporary: 0)
+    let prefill = MemoryStageEstimate(model: weights + experts, conversation: state + retained,
+      auxiliary: 0, temporary: scratch)
+    let decoding = MemoryStageEstimate(model: weights + experts, conversation: state + retained,
+      auxiliary: 0, temporary: 8 * number("vocab_size", 129_280) * 4 + (dspark ? 5 * 129_280 * 4 : 0))
     let result = MemoryEstimate(loading: loading, prefill: prefill, decoding: decoding,
       inputTokens: input, outputTokens: output)
     return result.total.isFinite ? result : nil

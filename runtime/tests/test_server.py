@@ -889,7 +889,7 @@ class ServerTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.param, "approximation.mode")
 
-    def test_approximation_accepts_deepseek_v41_runtime(self):
+    def test_approximation_rejects_deepseek_v41_on_the_native_engine(self):
         options = GenerationOptions(
             approximation_mode="learned-route-drop-lowest-1"
         )
@@ -898,7 +898,8 @@ class ServerTests(unittest.TestCase):
             config=SimpleNamespace(dspark_enabled=False),
         )
 
-        _validate_approximation_runtime(options, runtime)
+        with self.assertRaisesRegex(APIError, "not supported for DeepSeek V4.1"):
+            _validate_approximation_runtime(options, runtime)
 
     def test_generation_token_limit_is_272000(self):
         self.assertEqual(_options({"max_tokens": 272_000}, ServerDefaults()).max_tokens, 272_000)

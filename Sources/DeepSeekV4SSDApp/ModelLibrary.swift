@@ -411,8 +411,7 @@ final class ModelLibrary: ObservableObject {
           qwenQSAMaskedPrefill: modelKind.usesQwenEngine && settings.qwenQSAMaskedPrefill == true,
             qwenPrefillReadExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillReadExperts ?? 1 : 1,
             qwenPrefillSeedExperts: settings.qwenWholeLayerExperimentsActive ? settings.qwenPrefillSeedExperts ?? 0 : 0,
-          qwen8BitCommonTensors: (modelKind.usesQwenEngine || modelKind.usesNativeEngine)
-            && settings.qwen8BitCommonTensors == true,
+          qwen8BitCommonTensors: modelKind.isQwen && settings.qwen8BitCommonTensors == true,
           // Fixed on for both Qwen models, like masked QSA Prefill; no setting (2026-10-12).
           qwenQSASelectedKernel: modelKind.usesQwenEngine,
           qwenMTPDraftTokens: modelKind.usesQwenEngine ? settings.effectiveQwenMTPDraftTokens : 2,

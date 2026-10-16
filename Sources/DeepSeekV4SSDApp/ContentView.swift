@@ -1827,11 +1827,12 @@ struct ModelAdvancedView: View {
             settingsLocked: settingsLocked, language: language)
           if modelKind.usesNativeEngine {
             Divider()
-            toggleField(NativeEngineCopy.automaticCache, hint: NativeEngineCopy.automaticCacheHint,
+            toggleField(NativeEngineCopy.automaticCache,
+              hint: modelKind.isQwen ? NativeEngineCopy.automaticCacheHint : NativeEngineCopy.automaticCacheHintDeepSeek,
               value: optionalToggle(\.expertCacheAutomatic, defaultValue: true))
           }
           Divider()
-          cacheMemoryField(.expert, minimum: modelKind.usesQwenEngine || modelKind.usesNativeEngine ? 10 : 6)
+          cacheMemoryField(.expert, minimum: ExpertMemory.minimumSlots(for: modelKind))
             .disabled(modelKind.usesNativeEngine && settings.expertCacheAutomatic != false)
           // The native engine has its own eviction, read-ahead and memory handling.
           if !modelKind.usesNativeEngine {
@@ -2064,7 +2065,7 @@ struct ModelAdvancedView: View {
               }
             }
           }
-          if modelKind.usesQwenEngine || modelKind.usesNativeEngine {
+          if modelKind.isQwen {
             Divider()
             toggleField(QwenFlashCopy.commonTensors, hint: QwenFlashCopy.commonTensorsHint,
               value: optionalToggle(\.qwen8BitCommonTensors, defaultValue: true))
@@ -2085,9 +2086,12 @@ struct ModelAdvancedView: View {
               value: $settings.dsparkEnabled
             )
             .disabled(!dsparkAvailable)
-            Divider()
-            cacheMemoryField(.dspark, minimum: 30)
-            .disabled(!settings.dsparkEnabled || !dsparkAvailable)
+            // The native engine keeps DSpark's experts in the expert cache.
+            if !modelKind.usesNativeEngine {
+              Divider()
+              cacheMemoryField(.dspark, minimum: 30)
+              .disabled(!settings.dsparkEnabled || !dsparkAvailable)
+            }
             Divider()
             doubleField(
               "DSpark confidence threshold",

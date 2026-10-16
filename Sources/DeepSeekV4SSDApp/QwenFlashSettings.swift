@@ -62,5 +62,6 @@ enum QwenFlashCopy {
 enum NativeEngineCopy {
   static let automaticCache = "Size the expert cache automatically"
   static let automaticCacheHint = "Uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size."
-  static let allKeys = [automaticCache, automaticCacheHint]
+  static let automaticCacheHintDeepSeek = "Uses memory that is free when the model loads, up to about 72 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size."
+  static let allKeys = [automaticCache, automaticCacheHint, automaticCacheHintDeepSeek]
 }

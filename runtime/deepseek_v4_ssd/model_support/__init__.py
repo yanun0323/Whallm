@@ -7,13 +7,13 @@ from .catalog import BY_KIND, DESCRIPTORS
 
 def support_types():
     from .deepseek_v4 import DeepSeekV4Support
-    from .deepseek_v41 import DeepSeekV41Support
     from .mimo import MiMoSupport
+    from .native_deepseek import NativeDeepSeekV41Support
     from .native_qwen import NativeQwenSupport
 
     return {
         "deepseek-v4": DeepSeekV4Support,
-        "deepseek-v4.1": DeepSeekV41Support,
+        "deepseek-v4.1": NativeDeepSeekV41Support,
         "qwen3.8-flash-next": NativeQwenSupport,
         "mimo-v2.6-flash-rl": MiMoSupport,
         "swift1.5-qwen3.8-flash-next": NativeQwenSupport,

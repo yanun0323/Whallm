@@ -143,7 +143,7 @@ final class MemoryPlanningTests: XCTestCase {
   }
 
   func testPeakUsesLargestPhaseAndDoesNotStackDecodeSlotsOnBatchedPrefill() throws {
-    for kind in [ModelKind.deepSeekV4, .deepSeekV41] {
+    for kind in [ModelKind.deepSeekV4] {
       let p = try deepSeekProfile(kind)
       var s = ModelAdvancedSettings.defaults(for: kind)
       s.layerMajorPrefill = true
@@ -196,7 +196,7 @@ final class MemoryPlanningTests: XCTestCase {
 
 
   func testGroupedPromptCacheBudgetAndInFlightSnapshots() throws {
-    for kind in [ModelKind.deepSeekV4, .deepSeekV41] {
+    for kind in [ModelKind.deepSeekV4] {
       let p = try deepSeekProfile(kind)
       for layerMajor in [false, true] {
         var s = ModelAdvancedSettings.defaults(for: kind)
@@ -227,120 +227,32 @@ final class MemoryPlanningTests: XCTestCase {
     }
   }
 
-  func testV41CountsCacheOwnersAndNativePackedByteWidths() throws {
-    let p = try deepSeekProfile(.deepSeekV41)
-    var s = ModelAdvancedSettings.defaults(for: .deepSeekV41)
-    s.promptCacheMode = .off
-    let raw = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 16_384))
-    // Eight window rings; two KV owners (ratio 2 and 1); index layer 6 is a
-    // consumer and must not add a third history. FP32 partial compressor state.
-    let partial = 2.0 * 64 * 8
-    let history = 16_384.0 * 8
-    let rawRecent = 8.0 * 128.0 * 64.0 * 2.0
-    let rawCompressed = (8_192.0 + 16_384.0) * (64.0 + 32.0) * 2.0
-    let rawBytes = rawRecent + rawCompressed + partial + history
-    XCTAssertEqual(raw.decoding.conversation, rawBytes, accuracy: 1)
-    s.packedKVCache = true
-    s.packedIndexCache = true
-    let packed = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 16_384))
-    let packedRecent = 8.0 * 128.0 * 64.0 * (1.0 + 1.0 / 32.0)
-    let packedKVPerCell = 64.0 * (0.5 + 1.0 / 16.0)
-    let packedIndexPerCell = 32.0 * (0.5 + 1.0 / 32.0)
-    let packedCompressed = (8_192.0 + 16_384.0) * (packedKVPerCell + packedIndexPerCell)
-    let packedBytes = packedRecent + packedCompressed + partial + history
-    XCTAssertEqual(packed.decoding.conversation, packedBytes, accuracy: 1)
-    XCTAssertLessThan(packed.total, raw.total)
-    // The inference-style configuration aliases must give the same result.
-    var flat = p.config
-    for (hub, native) in [("hidden_size", "dim"), ("num_attention_heads", "n_heads"),
-                         ("kv_source_layer_ids", "kv_source_layers"), ("index_source_layer_ids", "index_source_layers")] {
-      flat[native] = flat.removeValue(forKey: hub)
-    }
-    let equivalent = MemoryPlanningProfile(kind: .deepSeekV41, manifest: p.manifest, config: flat)
-    XCTAssertEqual(equivalent.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 16_384)?.total, packed.total)
-  }
-
-
-  func testDSparkPlansLayerMajorPrefillOnlyForV41() throws {
-    for kind in [ModelKind.deepSeekV4, .deepSeekV41] {
-      let p = try deepSeekProfile(kind)
-      let descriptor = try JSONDecoder().decode(DSparkDescriptor.self,
-        from: JSONSerialization.data(withJSONObject: ["layerCount": 3, "blockSize": 5,
-          "noiseTokenID": 128799, "targetLayerIDs": [5, 6, 7], "markovRank": 256, "commonTensors": []]))
-      let file = try JSONDecoder().decode(InstalledFile.self,
-        from: JSONSerialization.data(withJSONObject: ["path": "dspark/common.bin", "size": 200_000_000, "sha256": "fixture"]))
-      let m = p.manifest
-      let manifest = InstalledManifest(formatVersion: 1, modelID: "fixture", revision: "fixture",
-        layerCount: m.layerCount, expertCount: m.expertCount, selectedExpertCount: m.selectedExpertCount,
-        expertBlobSize: m.expertBlobSize, files: m.files + [file], commonTensors: [], expertRegions: [],
-        dspark: descriptor, maximumContext: 1_048_576)
-      let dspark = MemoryPlanningProfile(kind: kind, manifest: manifest, config: p.config)
-      var s = ModelAdvancedSettings.defaults(for: kind)
-      s.dsparkEnabled = true
-      s.layerMajorPrefill = true
-      let a = try XCTUnwrap(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768))
-      s.layerMajorPrefill = false
-      let b = try XCTUnwrap(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768))
-      if kind == .deepSeekV41 {
-        XCTAssertNotEqual(a.prefill.temporary, b.prefill.temporary)
-        XCTAssertEqual(a.decoding.total, b.decoding.total)
-      } else {
-        XCTAssertEqual(a.total, b.total)
-      }
-      XCTAssertGreaterThan(a.decoding.auxiliary, a.prefill.auxiliary)
-      s.promptCacheMode = .off
-      let off = try XCTUnwrap(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768))
-      if kind == .deepSeekV41 {
-        let draftState = 3.0 * 128 * 64 * 4
-        let bundle = off.decoding.conversation + draftState
-        XCTAssertEqual(b.decoding.conversation - off.decoding.conversation,
-          Double(s.promptCacheEntries) * bundle, accuracy: 1)
-        XCTAssertEqual(b.prefill.temporary, off.prefill.temporary)
-        XCTAssertEqual(b.decoding.temporary, off.decoding.temporary)
-        s.promptCacheMode = .disk
-        XCTAssertEqual(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768)?.total,
-          b.total)
-        s.promptCacheEntries = 128
-        s.promptCacheMemoryGiB = 1
-        let capped = try XCTUnwrap(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768))
-        XCTAssertEqual(capped.decoding.conversation - off.decoding.conversation, ExpertMemory.gib, accuracy: 1)
-        var largeConfig = p.config
-        largeConfig["head_dim"] = 512
-        let large = MemoryPlanningProfile(kind: kind, manifest: manifest, config: largeConfig)
-        s.promptCacheMode = .off
-        let largeOff = try XCTUnwrap(large.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 1_048_576))
-        let largeBundle = largeOff.decoding.conversation + 3 * 128 * 512 * 4
-        XCTAssertGreaterThan(largeBundle, ExpertMemory.gib)
-        s.promptCacheMode = .memory
-        let overBudget = try XCTUnwrap(large.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 1_048_576))
-        XCTAssertEqual(overBudget.decoding.conversation - largeOff.decoding.conversation, largeBundle, accuracy: 1)
-      } else {
-        XCTAssertEqual(off.total, b.total)
-      }
-    }
-  }
-
-
-  func testV41CandidateStorageUsesEachChunksVisibleHistoryAndInt64Positions() throws {
-    let base = try deepSeekProfile(.deepSeekV41)
-    var config = base.config
-    config["candidate_source_layer_id"] = 4
-    config["candidate_topk_blocks"] = 2
-    config["candidate_block_size"] = 8
-    let candidates = MemoryPlanningProfile(kind: base.kind, manifest: base.manifest, config: config)
-    var s = ModelAdvancedSettings.defaults(for: .deepSeekV41)
+  /// The MLX runtime turns layer-major prefill off with DSpark (DeepSeek V4).
+  func testDSparkDisablesLayerMajorPrefillOnMLX() throws {
+    let kind = ModelKind.deepSeekV4
+    let p = try deepSeekProfile(kind)
+    let descriptor = try JSONDecoder().decode(DSparkDescriptor.self,
+      from: JSONSerialization.data(withJSONObject: ["layerCount": 3, "blockSize": 5,
+        "noiseTokenID": 128799, "targetLayerIDs": [5, 6, 7], "markovRank": 256, "commonTensors": []]))
+    let file = try JSONDecoder().decode(InstalledFile.self,
+      from: JSONSerialization.data(withJSONObject: ["path": "dspark/common.bin", "size": 200_000_000, "sha256": "fixture"]))
+    let m = p.manifest
+    let manifest = InstalledManifest(formatVersion: 1, modelID: "fixture", revision: "fixture",
+      layerCount: m.layerCount, expertCount: m.expertCount, selectedExpertCount: m.selectedExpertCount,
+      expertBlobSize: m.expertBlobSize, files: m.files + [file], commonTensors: [], expertRegions: [],
+      dspark: descriptor, maximumContext: 1_048_576)
+    let dspark = MemoryPlanningProfile(kind: kind, manifest: manifest, config: p.config)
+    var s = ModelAdvancedSettings.defaults(for: kind)
+    s.dsparkEnabled = true
     s.layerMajorPrefill = true
-    s.prefillStepSize = 256
+    let a = try XCTUnwrap(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768))
+    s.layerMajorPrefill = false
+    let b = try XCTUnwrap(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768))
+    XCTAssertEqual(a.total, b.total)
+    XCTAssertGreaterThan(a.decoding.auxiliary, a.prefill.auxiliary)
     s.promptCacheMode = .off
-    let without = try XCTUnwrap(base.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 1_024))
-    let with = try XCTUnwrap(candidates.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: 1_024))
-    // Candidate masks are bool; production _candidate_blocks promotes positions
-    // to int64. Earlier chunks retain their own history width, not cache capacity.
-    let historyWidths: [Double] = [256, 512, 768, 1_024]
-    let expected = historyWidths.reduce(0.0) { total, width in
-      total + 256.0 * (width + 16.0 * 8.0)
-    }
-    XCTAssertEqual(with.prefill.temporary - without.prefill.temporary, expected, accuracy: 1)
+    let off = try XCTUnwrap(dspark.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 32_768))
+    XCTAssertEqual(off.total, b.total)
   }
 
   func testInstalledMemoryEstimateAudit() throws {
@@ -368,48 +280,43 @@ final class MemoryPlanningTests: XCTestCase {
     }
   }
 
-  func testV41SplitPrefillUsesStructuralAllowanceUntilRecalibrated() throws {
+  /// DeepSeek V4.1 on the native engine: common.bin and DSpark's file are copied whole,
+  /// DSpark shares the expert cache, and the conversation is the four KV source layers'
+  /// compressed rows (512 + 128 BF16 values; ratios 2, 2, 2 and 1).
+  func testNativeDeepSeekEstimate() throws {
     let base = try deepSeekProfile(.deepSeekV41)
-    let manifest = InstalledManifest(formatVersion: 1, modelID: "fixture", revision: "fixture",
-      layerCount: 40, expertCount: 256, selectedExpertCount: 6,
-      expertBlobSize: ExpertMemory.blobBytes(for: .deepSeekV41),
-      files: base.manifest.files, commonTensors: [], expertRegions: [], maximumContext: 1_048_576)
-    let profile = MemoryPlanningProfile(kind: .deepSeekV41, manifest: manifest, config: [
-      "hidden_size": 5_120, "head_dim": 512, "num_attention_heads": 64, "hc_mult": 4,
-      "index_n_heads": 32, "index_head_dim": 128, "candidate_source_layer_id": 20,
-      "candidate_topk_blocks": 64, "candidate_block_size": 64,
-      "compress_ratios": [0, 0] + Array(repeating: 2, count: 18) + Array(repeating: 1, count: 20),
-      "kv_source_layer_ids": [2, 20], "index_source_layer_ids": [2, 20]])
-    var settings = ModelAdvancedSettings.defaults(for: .deepSeekV41)
-    settings.prefillStepSize = 1_024
-    settings.layerMajorPrefill = true
-    settings.batchedExpertPrefill = true
-    settings.packedKVCache = true
-    settings.packedIndexCache = true
-    settings.cedPrefill = true
-    settings.candidateIndex = true
-    func estimate(_ s: ModelAdvancedSettings, _ n: Int) throws -> MemoryEstimate {
-      try XCTUnwrap(profile.estimate(s, mtpAvailable: false, dsparkAvailable: false, contextTokens: n))
-    }
-    let measured = try estimate(settings, 65_536)
-    var fallback = settings
-    fallback.candidateIndex = false
-    let structural = try estimate(fallback, 65_536)
-    XCTAssertEqual(measured.prefill.temporary, structural.prefill.temporary)
-    XCTAssertEqual(measured.decoding.total, structural.decoding.total)
-    fallback = settings
-    fallback.cedPrefill = false
-    XCTAssertEqual(try estimate(fallback, 65_536).prefill.temporary, structural.prefill.temporary)
-    // A longer context grows the retained source scores faster than linearly.
-    let short = try estimate(settings, 32_768)
-    let long = try estimate(settings, 131_072)
-    XCTAssertGreaterThan(long.prefill.temporary - measured.prefill.temporary,
-      2 * (measured.prefill.temporary - short.prefill.temporary))
-    // The two header scenarios use their own context, independent of generation defaults.
-    settings.defaultMaxTokens = 1_000_000
-    settings.estimateInputTokens = 262_144
-    XCTAssertEqual(try estimate(settings, 65_536).total, measured.total)
-    XCTAssertEqual(try estimate(settings, 131_072).total, long.total)
+    let blob = ExpertMemory.blobBytes(for: .deepSeekV41)
+    let dsparkFile = try JSONDecoder().decode(InstalledFile.self,
+      from: JSONSerialization.data(withJSONObject: ["path": "dspark/common.bin", "size": 700_000_000, "sha256": "fixture"]))
+    let descriptor = try JSONDecoder().decode(DSparkDescriptor.self,
+      from: JSONSerialization.data(withJSONObject: ["layerCount": 3, "blockSize": 5, "noiseTokenID": 128799,
+        "targetLayerIDs": [37, 38, 39], "markovRank": 256, "commonTensors": []]))
+    let manifest = InstalledManifest(formatVersion: 3, modelID: "fixture", revision: "fixture",
+      layerCount: 40, expertCount: 384, selectedExpertCount: 6, expertBlobSize: blob,
+      files: base.manifest.files + [dsparkFile], commonTensors: [], expertRegions: [], dspark: descriptor,
+      maximumContext: 1_048_576)
+    let p = MemoryPlanningProfile(kind: .deepSeekV41, manifest: manifest, config: base.config)
+    var s = ModelAdvancedSettings.defaults(for: .deepSeekV41)
+    s.expertCacheAutomatic = false
+    s.expertCacheGiB = ExpertMemory.exactGiB(slots: 1_000, blobBytes: blob)
+    s.promptCacheMode = .off
+    let common = Double(base.manifest.files.first { $0.path == "common.bin" }!.size)
+    let plain = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 65_536))
+    XCTAssertEqual(plain.decoding.model, common + 1_000 * Double(blob), accuracy: 1)
+    // 3 ratio-2 layers at 32,768 rows and one ratio-1 layer at 65,536 rows.
+    XCTAssertEqual(plain.decoding.conversation, (3 * 32_768 + 65_536) * 1_280, accuracy: 1)
+    s.dsparkEnabled = true
+    let dspark = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 65_536))
+    XCTAssertEqual(dspark.decoding.model - plain.decoding.model, 700_000_000, accuracy: 1)
+    // The engine needs 96 slots; a smaller fixed cache has no estimate.
+    s.expertCacheGiB = ExpertMemory.exactGiB(slots: 95, blobBytes: blob)
+    XCTAssertNil(p.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 65_536))
+    // The automatic cache is sized within the engine's bounds.
+    s.expertCacheAutomatic = true
+    let automatic = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 65_536))
+    let slots = (automatic.decoding.model - common - 700_000_000) / Double(blob)
+    XCTAssertGreaterThanOrEqual(slots, 256)
+    XCTAssertLessThanOrEqual(slots, 4_096)
   }
 
   private func deepSeekProfile(_ kind: ModelKind) throws -> MemoryPlanningProfile {

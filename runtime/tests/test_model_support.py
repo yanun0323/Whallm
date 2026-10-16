@@ -97,8 +97,8 @@ class ModelSupportTests(unittest.TestCase):
 
     def test_v41_rejects_unsupported_state_and_uses_exact_requests(self):
         support = model_support.get_support("deepseek-v4.1")
-        self.assertTrue(support.uses_layer_major_prefill(RuntimeConfig(), 10_000))
-        self.assertFalse(support.uses_layer_major_prefill(RuntimeConfig(v41_layer_major_prefill=False), 10_000))
+        # The native engine streams long prompts itself; the MLX switch does not apply.
+        self.assertFalse(support.uses_layer_major_prefill(RuntimeConfig(), 10_000))
         self.assertEqual(support.default_approximation(), "exact")
         for operation, arguments in ((support.clone_cache, ([],)),
                                      (support.snapshot_cache, ([],)),

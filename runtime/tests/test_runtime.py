@@ -174,12 +174,14 @@ class ModelRuntimeTests(unittest.TestCase):
                 with get_support(kind).approximation(model, "learned-route-drop-lowest-1"):
                     pass
             self.assertEqual(router.top_k, 10)
-        for kind, count, field in (("deepseek-v4.1", 6, "topk"),):
+        # V4.1 lost approximate mode with the native engine; its MLX support keeps it.
+        from v41_mlx import mlx_v41_support
+        self.assertFalse(get_support("deepseek-v4.1").descriptor.supports("approximation"))
+        for support, count, field in ((mlx_v41_support(), 6, "topk"),):
             router = SimpleNamespace(**{field: count})
             layer = (SimpleNamespace(mlp=router) if field == "top_k"
                      else SimpleNamespace(ffn=SimpleNamespace(gate=router)))
             model = SimpleNamespace(model=SimpleNamespace(layers=[layer]))
-            support = get_support(kind)
             with self.assertRaisesRegex(RuntimeError, "stop"):
                 with support.approximation(model, "learned-route-drop-lowest-1"):
                     self.assertEqual(getattr(router, field), count - 1)
@@ -194,9 +196,10 @@ class ModelRuntimeTests(unittest.TestCase):
 
 
     def test_v41_warm_prompt_uses_plain_chunked_prefill(self):
+        from v41_mlx import mlx_v41_support
         runtime = ModelRuntime.__new__(ModelRuntime)
         runtime._is_qwen = False
-        runtime.support = get_support("deepseek-v4.1")
+        runtime.support = mlx_v41_support()
         runtime.model = SimpleNamespace(mtp=None)
         runtime._encode_prompt = lambda _: [1, 2, 3]
         runtime._generation_lock = threading.Lock()

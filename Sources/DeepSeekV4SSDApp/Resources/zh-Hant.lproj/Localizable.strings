@@ -651,6 +651,7 @@
 "Whallm's estimate for this same request with Prompt Cache off." = "Whallm 對同一請求（Prompt Cache 關閉）的估算。";
 "Size the expert cache automatically" = "自動決定專家快取大小";
 "Uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size." = "依模型載入時的可用記憶體決定大小，最多約 20 GiB，並至少為 macOS 和其他 App 保留 7 GiB 或這台 Mac 記憶體的 15%（取較大者）。關閉後可自行設定固定大小。";
+"Uses memory that is free when the model loads, up to about 72 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size." = "依模型載入時的可用記憶體決定大小，最多約 72 GiB，並至少為 macOS 和其他 App 保留 7 GiB 或這台 Mac 記憶體的 15%（取較大者）。關閉後可自行設定固定大小。";
 "Context window" = "上下文視窗";
 "Longest input plus output for each request." = "每次 request 輸入加輸出的最大長度。";
 "Allow longer conversations, but long prompts use more time and memory. Longer prompts are rejected, and answers are shortened to fit. Maximum: %@ tokens." = "調高可容納更長的對話，但長輸入會更久、記憶體用量更多。超過的輸入會被拒絕，回答會縮短到放得下。上限：%@ 個 token。";

@@ -6,6 +6,7 @@ Swift1.5 model and is skipped when the library or the model is missing.
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -223,6 +224,24 @@ class RuntimeTest(unittest.TestCase):
         self.assertTrue(duplicate.closed)
 
 
+class StateHeaderTest(unittest.TestCase):
+    def test_engine_headers_and_invalid_header_logging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "cache.state"
+            for magic in (b"WQSTATE1", b"WDSTATE1"):
+                with self.subTest(magic=magic):
+                    path.write_bytes(magic + np.asarray([3, 2, 0], dtype="<u8").tobytes()
+                                     + b"v1!" + np.asarray([7, 9], dtype="<i4").tobytes())
+                    with mock.patch.object(native_qwen.logger, "error") as logged:
+                        self.assertEqual(native_qwen.read_state_tokens(path, magic), (7, 9))
+                        if magic == b"WQSTATE1":
+                            self.assertEqual(native_qwen.read_state_tokens(path), (7, 9))
+                        logged.assert_not_called()
+                        other = b"WDSTATE1" if magic == b"WQSTATE1" else b"WQSTATE1"
+                        self.assertIsNone(native_qwen.read_state_tokens(path, other))
+                        logged.assert_called_once_with("prompt cache header invalid; ignoring file")
+
+
 class CatalogTest(unittest.TestCase):
     def raw(self, **runtime):
         return {"version": 1, "models": [{
@@ -268,9 +287,9 @@ class CatalogTest(unittest.TestCase):
             installed = SimpleNamespace(model_kind=kind)
             config = RuntimeConfig()
             with mock.patch("deepseek_v4_ssd.generation.InstalledModel.open", return_value=installed), \
-                 mock.patch("deepseek_v4_ssd.native_qwen.NativeQwenRuntime", return_value="native") as opened:
+                 mock.patch("deepseek_v4_ssd.native_qwen.NativeQwenRuntime.open", return_value="native") as opened:
                 self.assertEqual(ModelRuntime.open("/fixture", config), "native")
-                opened.assert_called_once_with(installed, config, kind)
+                opened.assert_called_once_with("/fixture", config, kind)
 
     def test_native_kind_rejects_mlx_only_options(self):
         for name, value in (("qwen_sorted_expert_prefill", True), ("qwen_qsa_selected_kernel", True),

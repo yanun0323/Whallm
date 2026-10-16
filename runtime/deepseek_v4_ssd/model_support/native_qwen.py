@@ -24,6 +24,10 @@ class NativeQwenSupport(QwenSupport):
         if type(getattr(config, "native_automatic_expert_cache", False)) is not bool:
             raise ValueError("native_automatic_expert_cache must be a boolean")
 
+    def open_runtime(self, model_path, config):
+        from ..native_qwen import NativeQwenRuntime
+        return NativeQwenRuntime.open(model_path, config, self.descriptor.kind)
+
     def load(self, installed, config, raw_config, weights, read_limiter):
         raise ValueError("The native Qwen engine is opened by NativeQwenRuntime")
 

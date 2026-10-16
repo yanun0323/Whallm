@@ -651,6 +651,7 @@
 "Whallm's estimate for this same request with Prompt Cache off." = "Whallm's estimate for this same request with Prompt Cache off.";
 "Size the expert cache automatically" = "Size the expert cache automatically";
 "Uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size." = "Uses memory that is free when the model loads, up to about 20 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size.";
+"Uses memory that is free when the model loads, up to about 72 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size." = "Uses memory that is free when the model loads, up to about 72 GiB, and keeps at least 7 GiB or 15% of this Mac's memory for macOS and other apps. Turn off to choose a fixed size.";
 "Context window" = "Context window";
 "Longest input plus output for each request." = "Longest input plus output for each request.";
 "Allow longer conversations, but long prompts use more time and memory. Longer prompts are rejected, and answers are shortened to fit. Maximum: %@ tokens." = "Allow longer conversations, but long prompts use more time and memory. Longer prompts are rejected, and answers are shortened to fit. Maximum: %@ tokens.";

@@ -110,8 +110,8 @@ final class QwenFlashSettingsTests: XCTestCase {
   func testEightBitResidentWeightsAreOnByDefaultForQwenOnly() throws {
     for kind in ModelLibrary.supportedModelKinds {
       let defaults = ModelAdvancedSettings.defaults(for: kind)
-      // The native engine has 8-bit resident weights too, on by default.
-      let eightBit = kind.usesQwenEngine || kind.usesNativeEngine
+      // The native Qwen engine has 8-bit resident weights too, on by default.
+      let eightBit = kind.isQwen
       XCTAssertEqual(defaults.qwen8BitCommonTensors, eightBit)
       XCTAssertEqual(try object(catalog(defaults, kind: kind).models[0].runtime)["qwen_8bit_common_tensors"]
         as? Bool, eightBit)
@@ -203,7 +203,7 @@ final class QwenFlashSettingsTests: XCTestCase {
       XCTAssertEqual(json["qwen_qsa_masked_prefill"] as? Bool, qwen)
       XCTAssertEqual(json["qwen_qsa_selected_kernel"] as? Bool, qwen)
       XCTAssertEqual(json["qwen_packed_gdn_prefill"] as? Bool, false)
-      XCTAssertEqual(json["mtp_enabled"] as? Bool, kind.usesNativeEngine)
+      XCTAssertEqual(json["mtp_enabled"] as? Bool, kind.usesNativeEngine && kind.isQwen)
       if let base = ProcessInfo.processInfo.environment["WHALLM_QWEN_UI_ARTIFACTS"] {
         let directory = URL(fileURLWithPath: base).appendingPathComponent("catalogs")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -233,7 +233,8 @@ final class QwenFlashSettingsTests: XCTestCase {
       XCTAssertEqual(entry.defaults.approximationMode, "exact")
     }
     XCTAssertTrue(ModelKind.deepSeekV4.descriptor.supports("approximation"))
-    XCTAssertTrue(ModelKind.deepSeekV41.descriptor.supports("approximation"))
+    // The native DeepSeek V4.1 engine computes every selected expert.
+    XCTAssertFalse(ModelKind.deepSeekV41.descriptor.supports("approximation"))
   }
 
   private func object<T: Encodable>(_ value: T) throws -> [String: Any] {

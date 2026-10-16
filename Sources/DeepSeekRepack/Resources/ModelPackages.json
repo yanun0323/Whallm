@@ -66,22 +66,11 @@
         "engram/layer_14.weight.bin"
       ],
       "features": [
+        "nativeEngine",
         "promptCache",
-        "approximation",
-        "layerMajorPrefill",
-        "readyExpertDecode",
-        "batchedExpertPrefill",
-        "deepseekANEPrefill",
-        "packedKVCache",
-        "packedIndexCache",
-        "candidateIndex",
-        "cedPrefill",
-        "nextLayerPrefetch",
         "dspark"
       ],
-      "editableSettings": [
-        "prefillThreshold"
-      ],
+      "editableSettings": [],
       "defaults": {
         "slots": 1152,
         "promptCacheEntries": 1,
