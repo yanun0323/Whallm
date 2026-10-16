@@ -85,6 +85,14 @@ qwen-native:
 check-qwen-native:
 	./Native/QwenNative/check.sh "$(or $(QWEN_NATIVE_MODEL),$(HOME)/.dsmodel/swift1.5-qwen3.8-flash-next-mxfp4.dsv4)"
 
+## deepseek-native: build the native DeepSeek V4.1 engine library (C++ and Metal, no MLX)
+deepseek-native:
+	./Scripts/build-deepseek-native.sh
+
+## check-deepseek-native: check the native DeepSeek V4.1 engine against recorded tokens (DEEPSEEK_NATIVE_MODEL: V4.1 install)
+check-deepseek-native:
+	./Native/DeepSeekNative/check.sh "$(or $(DEEPSEEK_NATIVE_MODEL),$(HOME)/.dsmodel/deepseek-v4.1-flash.dsv4)"
+
 ## test-release: test manual workflow policy and bounded Pages verification
 .PHONY: test-release
 test-release:
