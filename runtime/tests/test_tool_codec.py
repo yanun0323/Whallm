@@ -6,7 +6,10 @@ from hashlib import sha256
 from pathlib import Path
 from unittest.mock import patch
 
+from types import SimpleNamespace
+
 from deepseek_v4_ssd.tool_codec import (
+    DeepSeekV41ToolCodec,
     DeepSeekV41ToolStreamParser,
     ToolCall,
     ToolChoice,
@@ -69,6 +72,30 @@ def parse_message_from_completion_text(text, thinking_mode):
             self.assertEqual(turn.reasoning_content, "plan")
             self.assertEqual(turn.tool_calls[0].name, "get_weather")
             self.assertEqual(turn.tool_calls[0].arguments, '{"city":"Taipei"}')
+
+    def test_v41_codec_sends_developer_messages_as_system(self):
+        # The V4.1 encoder raises on an unknown role; Responses instructions arrive as developer.
+        def encode_messages(messages, thinking_mode, reasoning_effort=None):
+            for message in messages:
+                if message["role"] not in {"system", "user", "assistant", "tool"}:
+                    raise NotImplementedError(f"Unknown role: {message['role']}")
+            return [(message["role"], message.get("content"), bool(message.get("tools"))) for message in messages]
+
+        codec = DeepSeekV41ToolCodec(SimpleNamespace(encode_messages=encode_messages))
+        messages = [
+            {"role": "developer", "content": "Be brief."},
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello"},
+            {"role": "developer", "content": "Now be formal."},
+            {"role": "user", "content": "Bye"},
+        ]
+        tools = [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}]
+        self.assertEqual(
+            codec.encode(messages, "chat", tools),
+            [("system", "Be brief.", True), ("user", "Hi", False), ("assistant", "Hello", False),
+             ("system", "Now be formal.", False), ("user", "Bye", False)],
+        )
+        self.assertEqual(messages[0]["role"], "developer")
 
     def test_codec_rejects_an_unverified_encoder(self):
         with tempfile.TemporaryDirectory() as directory:

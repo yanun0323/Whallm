@@ -28,8 +28,8 @@ class DeepSeekV41Support(ModelSupport):
             model, tokens, cache, step_size, expert_cache, config)
 
     def open_codec(self, root, tokenizer):
-        from ..tool_codec import V41_ENCODER_SHA256, ToolCodec
-        return ToolCodec.from_encoder(root / "encoding/encoding.py", V41_ENCODER_SHA256)
+        from ..tool_codec import V41_ENCODER_SHA256, DeepSeekV41ToolCodec
+        return DeepSeekV41ToolCodec.from_encoder(root / "encoding/encoding.py", V41_ENCODER_SHA256)
 
     def make_tool_stream_parser(self, thinking_mode):
         from ..tool_codec import DeepSeekV41ToolStreamParser

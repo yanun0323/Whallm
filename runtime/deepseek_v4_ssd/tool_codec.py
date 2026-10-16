@@ -525,6 +525,24 @@ def _split_qwen_output(text: str, thinking_mode: str) -> AssistantTurn:
     return AssistantTurn(content, reasoning, tuple(calls))
 
 
+class DeepSeekV41ToolCodec(ToolCodec):
+    """The V4.1 encoder has no developer role; it accepts system messages anywhere."""
+
+    def encode(
+        self,
+        messages: list[dict[str, Any]],
+        thinking_mode: str,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: ToolChoice = ToolChoice(),
+        reasoning_effort: str = "low",
+    ) -> str:
+        messages = [
+            {**message, "role": "system"} if message.get("role") == "developer" else message
+            for message in messages
+        ]
+        return super().encode(messages, thinking_mode, tools, tool_choice, reasoning_effort)
+
+
 class QwenToolCodec(ToolCodec):
     """Use the checkpoint chat template and Qwen XML tool format."""
 
