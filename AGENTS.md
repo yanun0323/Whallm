@@ -15,6 +15,32 @@ Public documentation must be readable from a fresh checkout. Keep `README*.md`,
 `BENCHMARK.md`, and `CONTEXT.md` free of links to local documentation or archives.
 `.vscode/` contains local files excluded from version control; keep them local.
 
+### README writing
+
+Keep `README*.md` an entry point: what Whallm does, whether it fits the
+reader's Mac, and how to start. Aim for roughly 100–140 lines per language;
+clarity and essential warnings matter more than the count.
+
+- Use plain language, short paragraphs and compact comparison tables. Explain
+  necessary technical terms on first use; omit implementation details from the intro.
+- Order content: introduction, requirements and models, quick start, performance
+  summary, Codex connection, limits and privacy, documentation links, license.
+- Keep detailed model settings and API contracts in `docs/usage.md`, full and
+  historical measurements in `BENCHMARK.md`, and changes and upgrade steps in
+  `Packaging/ReleaseNotes/`. Link rather than duplicate; prefer links over large
+  collapsed sections. Keep test counts and packaging checklists out of READMEs.
+- Keep only a small performance table in READMEs, with model, version, workload,
+  units, source and evidence limits. Preserve measurements and caveats when moving
+  them; incomplete observations must not become controlled comparison claims.
+- Keep hardware and storage needs, preview status, concurrency limits and privacy
+  warnings visible. Shortening must not hide requirements or unsupported features.
+- Synchronize all five language versions unless the user limits the scope. Preserve
+  language navigation, corresponding sections, facts and example behavior. Shared
+  detailed references may stay in English; label them in translated READMEs.
+- Before finishing, check every changed README's local links, images, anchors and
+  code fences; compare examples and numbers across languages and their sources.
+  Confirm moved content remains reachable and remove duplicated explanations.
+
 ### `.vscode/docs/`
 
 When maintaining runtime behavior or recording validation, start with
