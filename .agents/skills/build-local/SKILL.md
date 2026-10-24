@@ -1,6 +1,6 @@
 ---
 name: build-local
-description: Build and verify local Whallm App and ZIP packages. Use when the user requests `build local` or as the first step of `release new version`.
+description: Build and verify local Whallm App and ZIP packages. Use when the user requests `build local` or before publishing a stable or dev release.
 ---
 
 # Build local

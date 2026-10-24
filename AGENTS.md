@@ -8,6 +8,7 @@ Treat these as workflow requests and read the corresponding skill before startin
 
 - `build local`: [.agents/skills/build-local/SKILL.md](.agents/skills/build-local/SKILL.md).
 - `release new version`: [.agents/skills/release-new-version/SKILL.md](.agents/skills/release-new-version/SKILL.md).
+- `release dev version`: [.agents/skills/release-dev-version/SKILL.md](.agents/skills/release-dev-version/SKILL.md).
 
 ## Documentation
 
