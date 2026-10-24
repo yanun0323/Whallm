@@ -60,8 +60,8 @@ class MiMoToolStreamParser(QwenToolStreamParser):
             text, self._opening = self._opening.removeprefix("<think>"), None
         return super().feed(text)
 
-    def finish(self):
+    def finish(self, *, truncated=False):
         if self._opening:
             self.failed = True
             return ()
-        return super().finish()
+        return super().finish(truncated=truncated)

@@ -88,10 +88,13 @@ class ToolStreamParser:
                 break
         return tuple(deltas)
 
-    def finish(self) -> tuple[ToolStreamDelta, ...]:
+    def finish(self, *, truncated: bool = False) -> tuple[ToolStreamDelta, ...]:
         if self.failed:
             return ()
-        if self._state == "content" and self._buffer:
+        if truncated and self._state == "reasoning" and self._buffer:
+            value, self._buffer = self._buffer, ""
+            return (ToolStreamDelta(reasoning_content=value),)
+        if self._state == "content" and self._buffer and not truncated:
             delta = ToolStreamDelta(content=self._buffer)
             self._buffer = ""
             return (delta,)
@@ -685,10 +688,13 @@ class QwenToolStreamParser:
                 break
         return tuple(deltas)
 
-    def finish(self) -> tuple[ToolStreamDelta, ...]:
+    def finish(self, *, truncated: bool = False) -> tuple[ToolStreamDelta, ...]:
         if self.failed:
             return ()
-        if self._state == "content" and self._buffer:
+        if truncated and self._state == "reasoning" and self._buffer:
+            value, self._buffer = self._buffer, ""
+            return (ToolStreamDelta(reasoning_content=value),)
+        if self._state == "content" and self._buffer and not truncated:
             value, self._buffer = self._buffer, ""
             return (ToolStreamDelta(content=value),)
         if self._state == "tool" and self._buffer.strip():

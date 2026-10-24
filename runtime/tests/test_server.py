@@ -25,6 +25,7 @@ from deepseek_v4_ssd.server import (
     OpenAIServer,
     ServerDefaults,
     _options,
+    _parse_tool_output,
     _parser,
     _reasoning_settings,
     _response_internal_tool_name,
@@ -32,7 +33,7 @@ from deepseek_v4_ssd.server import (
     _validate_approximation_runtime,
 )
 from deepseek_v4_ssd.tool_codec import (
-    AssistantTurn, QwenToolCodec, QwenToolStreamParser, ToolCall,
+    AssistantTurn, QwenToolCodec, QwenToolStreamParser, ToolCall, ToolStreamParser,
 )
 
 
@@ -133,6 +134,7 @@ class FakeRuntime:
         self.last_options = None
         self.last_parse_text = None
         self.parse_error = False
+        self.finish_reason = "stop"
         self.closed = False
 
     def encode_chat(
@@ -172,7 +174,7 @@ class FakeRuntime:
             midpoint = max(1, len(text) // 2)
             chunks = [text[:midpoint], text[midpoint:]]
         for index, chunk in enumerate(chunks, 1):
-            finish = "stop" if index == len(chunks) else None
+            finish = self.finish_reason if index == len(chunks) else None
             yield GeneratedPiece(chunk, 9 + index, 5, index, finish)
             if index == self.pause_after_chunks:
                 self.chunk_paused.set()
@@ -480,6 +482,165 @@ class QwenSamplingServerTests(unittest.TestCase):
                         self.assertEqual(events[-2]["choices"][0]["finish_reason"], "tool_calls")
                         self.assertEqual(events[-1]["usage"]["completion_tokens"], len(fragments))
                         self.assertTrue(body.endswith(b"data: [DONE]\n\n"))
+
+    def test_qwen_tool_length_returns_usage_without_incomplete_calls(self):
+        complete = '<tool_call><function=exec_command><parameter=cmd>pwd</parameter></function></tool_call>'
+        cases = [
+            ("p" * 8192, "p" * 8192, "", 0),
+            ("plan</thi", "plan</thi", "", 0),
+            ("plan</think>Partial answer", "plan", "Partial answer", 0),
+            ("plan</think>Partial answer<tool_ca", "plan", "Partial answer", 0),
+            ('plan</think><tool_call><function=exec_command><parameter=cmd>pw', "plan", "", 0),
+            ("plan</think>" + complete, "plan", "", 1),
+            ("plan</think>" + complete + '<tool_call><function=exec_command>', "plan", "", 1),
+        ]
+        runtime = self.runtime
+        with (
+            patch.object(runtime, "parse_chat", side_effect=QwenToolCodec(None).parse),
+            patch.object(runtime, "make_tool_stream_parser", QwenToolStreamParser, create=True),
+            patch.object(runtime, "finish_reason", "length"),
+        ):
+            for endpoint in ("chat/completions", "responses"):
+                for stream in (False, True):
+                    for raw, reasoning, content, count in cases:
+                        with self.subTest(endpoint=endpoint, stream=stream, raw=raw), patch.object(
+                            runtime, "response_chunks", list(raw),
+                        ):
+                            before = runtime.stream_call_count
+                            payload = {"model": "qwen3.8-flash-next-fp8", "stream": stream,
+                                       "thinking_mode": "thinking"}
+                            if endpoint == "responses":
+                                payload.update(input="Inspect.", tools=[self.codex_tool], tool_choice="required")
+                            else:
+                                payload.update(messages=[{"role": "user", "content": "Inspect."}],
+                                               tools=[{"type": "function", "function": {
+                                                   k: v for k, v in self.codex_tool.items() if k != "type"}}])
+                                if stream:
+                                    payload["stream_options"] = {"include_usage": True}
+                            status, body = self.request("/v1/" + endpoint, payload)
+                            self.assertEqual(status, 200, body)
+                            self.assertEqual(runtime.stream_call_count - before, 1)
+                            events = ([json.loads(line[6:]) for line in body.decode().splitlines()
+                                       if line.startswith("data: {")] if stream else [])
+                            self.assertFalse(any("error" in e and e["error"] for e in events), body)
+                            if endpoint == "responses":
+                                response = events[-1]["response"] if stream else json.loads(body)
+                                if stream:
+                                    self.assertEqual(events[-1]["type"], "response.incomplete")
+                                self.assertEqual(response["status"], "incomplete")
+                                self.assertEqual(response["incomplete_details"], {"reason": "max_output_tokens"})
+                                self.assertEqual(response["usage"]["output_tokens"], len(raw))
+                                output = response["output"]
+                                self.assertEqual(sum(i["type"] == "function_call" for i in output), count)
+                                self.assertEqual("".join(p["text"] for i in output if i["type"] == "reasoning"
+                                                         for p in i["summary"]), reasoning)
+                                self.assertEqual("".join(p["text"] for i in output if i["type"] == "message"
+                                                         for p in i["content"]), content)
+                            elif stream:
+                                self.assertEqual(events[-2]["choices"][0]["finish_reason"], "length")
+                                self.assertEqual(events[-1]["usage"]["completion_tokens"], len(raw))
+                                deltas = [c["delta"] for e in events for c in e.get("choices", [])]
+                                self.assertEqual("".join(d.get("reasoning_content", "") for d in deltas), reasoning)
+                                self.assertEqual("".join(d.get("content", "") for d in deltas), content)
+                                self.assertEqual(sum("id" in c for d in deltas for c in d.get("tool_calls", [])), count)
+                                self.assertTrue(body.endswith(b"data: [DONE]\n\n"))
+                            else:
+                                response = json.loads(body)
+                                self.assertEqual(response["choices"][0]["finish_reason"], "length")
+                                self.assertEqual(response["usage"]["completion_tokens"], len(raw))
+                                message = response["choices"][0]["message"]
+                                self.assertEqual(message.get("reasoning_content", ""), reasoning)
+                                self.assertEqual(message["content"] or "", content)
+                                self.assertEqual(len(message.get("tool_calls", [])), count)
+
+    def test_truncated_tool_output_shared_parsers(self):
+        from deepseek_v4_ssd.mimo.codec import MiMoToolStreamParser
+
+        ds_call = ('\n\n<｜DSML｜tool_calls>\n<｜DSML｜invoke name="exec_command">\n'
+                   '<｜DSML｜parameter name="cmd" string="true">pwd'
+                   '</｜DSML｜parameter>\n</｜DSML｜invoke>\n')
+        xml_call = '<tool_call><function=exec_command><parameter=cmd>pwd</parameter></function></tool_call>'
+        for factory, prefix, call, partial in (
+            (ToolStreamParser, "plan", ds_call, '<｜DSML｜invoke name="exec_command">\n'),
+            (MiMoToolStreamParser, "<think>plan", xml_call, '<tool_call><function=exec_command>'),
+        ):
+            runtime = SimpleNamespace(make_tool_stream_parser=factory)
+            with self.subTest(parser=factory.__name__):
+                turn = _parse_tool_output(runtime, prefix + "</thi", "thinking", "length")
+                self.assertEqual(turn, AssistantTurn("", "plan</thi", ()))
+                turn = _parse_tool_output(runtime, prefix + "</think>" + call + partial, "thinking", "length")
+                self.assertEqual([call.name for call in turn.tool_calls], ["exec_command"])
+                self.assertEqual(json.loads(turn.tool_calls[0].arguments), {"cmd": "pwd"})
+                self.assertEqual(turn.reasoning_content, "plan")
+
+    def test_xhigh_preserves_configured_and_explicit_output_limits(self):
+        defaults = ServerDefaults(max_tokens=8192)
+        for limit in (None, 32768):
+            payload = {"reasoning_effort": "xhigh"}
+            if limit is not None:
+                payload["max_completion_tokens"] = limit
+            mode, effort = _reasoning_settings(payload, qwen=True)
+            self.assertEqual((mode, effort), ("thinking", "xhigh"))
+            options = _options(payload, defaults, qwen=True, thinking_mode=mode)
+            self.assertEqual(options.max_tokens, limit or 8192)
+
+    def test_responses_text_length_is_incomplete(self):
+        for stream in (False, True):
+            with self.subTest(stream=stream), patch.object(self.runtime, "finish_reason", "length"), patch.object(
+                self.runtime, "response_chunks", ["plan</think>Partial answer"],
+            ):
+                status, body = self.request("/v1/responses", {
+                    "model": "qwen3.8-flash-next-fp8", "stream": stream,
+                    "reasoning": {"effort": "xhigh"}, "input": "Inspect.",
+                })
+                self.assertEqual(status, 200)
+                if stream:
+                    events = [json.loads(line[6:]) for line in body.decode().splitlines()
+                              if line.startswith("data: {")]
+                    self.assertEqual(events[-1]["type"], "response.incomplete")
+                    response = events[-1]["response"]
+                else:
+                    response = json.loads(body)
+                self.assertEqual(response["status"], "incomplete")
+                self.assertEqual(response["incomplete_details"], {"reason": "max_output_tokens"})
+                self.assertEqual(response["usage"]["output_tokens"], 1)
+                message = next(i for i in response["output"] if i["type"] == "message")
+                self.assertEqual(message["status"], "incomplete")
+                self.assertEqual(message["content"][0]["text"], "Partial answer")
+
+    def test_qwen_length_does_not_accept_malformed_complete_tool(self):
+        raw = 'plan</think><tool_call><function=exec_command>not parameters</function></tool_call>'
+        with (patch.object(self.runtime, "parse_chat", side_effect=QwenToolCodec(None).parse),
+              patch.object(self.runtime, "make_tool_stream_parser", QwenToolStreamParser, create=True),
+              patch.object(self.runtime, "response_chunks", [raw]),
+              patch.object(self.runtime, "finish_reason", "length")):
+            for endpoint in ("chat/completions", "responses"):
+                for stream in (False, True):
+                    with self.subTest(endpoint=endpoint, stream=stream):
+                        payload = {"model": "qwen3.8-flash-next-fp8", "stream": stream,
+                                   "reasoning_effort": "xhigh", "thinking_mode": "thinking"}
+                        if endpoint == "responses":
+                            payload.update(input="Inspect.", tools=[self.codex_tool])
+                        else:
+                            payload.update(messages=[{"role": "user", "content": "Inspect."}],
+                                           tools=[{"type": "function", "function": {"name": "exec_command"}}])
+                        status, body = self.request("/v1/" + endpoint, payload)
+                        self.assertEqual(status, 200 if stream else 500)
+                        self.assertIn(b'"invalid_tool_call"', body)
+
+    def test_qwen_stopped_unclosed_thinking_remains_an_error(self):
+        with (patch.object(self.runtime, "parse_chat", side_effect=QwenToolCodec(None).parse),
+              patch.object(self.runtime, "make_tool_stream_parser", QwenToolStreamParser, create=True),
+              patch.object(self.runtime, "response_chunks", ["plan"]),
+              patch.object(self.runtime, "finish_reason", "stop")):
+            for stream in (False, True):
+                status, body = self.request("/v1/chat/completions", {
+                    "model": "qwen3.8-flash-next-fp8", "stream": stream, "reasoning_effort": "xhigh",
+                    "messages": [{"role": "user", "content": "Inspect."}],
+                    "tools": [{"type": "function", "function": {"name": "exec_command"}}],
+                })
+                self.assertEqual(status, 200 if stream else 500)
+                self.assertIn(b'"invalid_tool_call"', body)
 
     def test_qwen_codex_responses_preserve_multiple_calls_and_tool_results(self):
         calls = [

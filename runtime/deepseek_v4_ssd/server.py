@@ -52,7 +52,7 @@ from .model_manager import (
     validate_runtime_config,
 )
 from .model import RuntimeConfig, _POWER_SAVING_LIMITS_GBPS
-from .tool_codec import ToolChoice, ToolStreamDelta, ToolStreamParser
+from .tool_codec import AssistantTurn, ToolCall, ToolChoice, ToolStreamDelta, ToolStreamParser
 
 from .event_log import logger, request_scope, request_context, configure as configure_log, failure as log_failure
 
@@ -706,7 +706,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         if tool_calling:
             raw, prompt_tokens, generated, finish = _collect_raw(pieces)
             try:
-                turn = runtime.parse_chat(raw, thinking_mode)
+                turn = _parse_tool_output(runtime, raw, thinking_mode, finish)
             except Exception as error:
                 raise APIError(
                     "The model returned an invalid tool call.",
@@ -735,7 +735,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                         {
                             "index": 0,
                             "message": message,
-                            "finish_reason": "tool_calls" if tool_calls else finish,
+                            "finish_reason": "length" if finish == "length" else "tool_calls" if tool_calls else finish,
                         }
                     ],
                     "usage": _usage(prompt_tokens, generated),
@@ -832,9 +832,9 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             return
 
         if tool_calling:
-            raw, prompt_tokens, generated, _ = _collect_raw(pieces)
+            raw, prompt_tokens, generated, finish = _collect_raw(pieces)
             try:
-                turn = runtime.parse_chat(raw, thinking_mode)
+                turn = _parse_tool_output(runtime, raw, thinking_mode, finish)
             except Exception as error:
                 raise APIError(
                     "The model returned an invalid tool call.",
@@ -849,11 +849,15 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             )
             output.extend(_response_function_calls(turn.tool_calls, response_tools))
         else:
-            text, reasoning, prompt_tokens, generated, _ = _collect(
+            text, reasoning, prompt_tokens, generated, finish = _collect(
                 pieces,
                 thinking_mode == "thinking",
             )
             output = _response_output(text, reasoning)
+        if finish == "length":
+            for item in output:
+                if item["type"] == "message":
+                    item["status"] = "incomplete"
         response = _response_object(
             request_id,
             model.name,
@@ -861,6 +865,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             options,
             output,
             _response_usage(prompt_tokens, generated),
+            status="incomplete" if finish == "length" else "completed",
         )
         self._json(200, response)
 
@@ -879,9 +884,14 @@ class OpenAIHandler(BaseHTTPRequestHandler):
         parse_failed = False
         for attempt in range(2):
             pieces = list(self._response_pieces(runtime.stream(current_prompt, options)))
+            finish = next((p.finish_reason for p in reversed(pieces) if p.finish_reason), "stop")
+            if finish == "length":
+                # Exhausted output is not a failed tool choice; do not spend a second budget.
+                yield from pieces
+                return
             raw = "".join(piece.text for piece in pieces)
             try:
-                turn = runtime.parse_chat(raw, thinking_mode)
+                turn = _parse_tool_output(runtime, raw, thinking_mode, finish)
             except Exception:
                 parse_failed = True
             else:
@@ -987,6 +997,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
     ) -> None:
         output: list[dict[str, Any]] = []
         prompt_tokens = generated = 0
+        finish = "stop"
         reasoning_item: dict[str, Any] | None = None
         reasoning_index = -1
         reasoning_text = ""
@@ -1068,11 +1079,11 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             )
 
         def finish_message() -> None:
-            if message_item is None or message_item["status"] == "completed":
+            if message_item is None or message_item["status"] != "in_progress":
                 return
             text_part = _response_text(message_text)
             message_item["content"] = [text_part]
-            message_item["status"] = "completed"
+            message_item["status"] = "incomplete" if finish == "length" else "completed"
             send(
                 "response.output_text.done",
                 item_id=message_item["id"],
@@ -1177,16 +1188,16 @@ class OpenAIHandler(BaseHTTPRequestHandler):
 
         if tool_calling:
             try:
-                raw, prompt_tokens, generated, _ = _collect_raw(pieces)
+                raw, prompt_tokens, generated, finish = _collect_raw(pieces)
             except APIError as error:
                 fail(str(error), error.code or "invalid_tool_call")
                 return
             try:
-                turn = runtime.parse_chat(raw, thinking_mode)
+                turn = _parse_tool_output(runtime, raw, thinking_mode, finish)
             except Exception:
                 fail("The model returned an invalid tool call.")
                 return
-            if not _tool_choice_satisfied(turn.tool_calls, tool_choice):
+            if finish != "length" and not _tool_choice_satisfied(turn.tool_calls, tool_choice):
                 fail(
                     "The model did not return the required tool call.",
                     "tool_choice_not_satisfied",
@@ -1206,6 +1217,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             for piece in pieces:
                 prompt_tokens = piece.prompt_tokens
                 generated = piece.generation_tokens
+                finish = piece.finish_reason or finish
                 reasoning, content = parser.feed(piece.text)
                 send_delta(ToolStreamDelta(reasoning_content=reasoning, content=content))
             reasoning, content = parser.finish()
@@ -1235,8 +1247,9 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             options,
             output,
             _response_usage(prompt_tokens, generated),
+            status="incomplete" if finish == "length" else "completed",
         )
-        send("response.completed", response=completed)
+        send("response.incomplete" if finish == "length" else "response.completed", response=completed)
 
     def _completion(self, payload: dict[str, Any], model: ModelRequest) -> None:
         runtime = model.runtime
@@ -1460,12 +1473,17 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             finish = piece.finish_reason or finish
             for delta in parser.feed(piece.text):
                 send(delta)
+        if finish == "length" and not parser.failed:
+            for delta in parser.finish(truncated=True):
+                send(delta)
+            events.finish("length", prompt_tokens, generated, include_usage)
+            return
         for delta in parser.finish():
             send(delta)
 
         raw = "".join(raw_parts)
         try:
-            turn = runtime.parse_chat(raw, thinking_mode)
+            turn = _parse_tool_output(runtime, raw, thinking_mode, finish)
         except Exception as error:
             raise APIError(
                 "The model returned an invalid tool call.",
@@ -1994,6 +2012,38 @@ def _response_usage(input_tokens: int, output_tokens: int) -> dict[str, Any]:
     }
 
 
+def _parse_tool_output(runtime: Any, raw: str, thinking_mode: str, finish: str) -> AssistantTurn:
+    if finish != "length":
+        return runtime.parse_chat(raw, thinking_mode)
+    # On truncation, retain parsed text and complete calls, never invent closing tags.
+    factory = getattr(runtime, "make_tool_stream_parser", None)
+    parser = factory(thinking_mode) if callable(factory) else ToolStreamParser(thinking_mode)
+    deltas = list(parser.feed(raw))
+    if parser.failed:
+        raise ValueError("invalid tool output before the length limit")
+    deltas.extend(parser.finish(truncated=True))
+    names: dict[int, str] = {}
+    arguments: dict[int, str] = {}
+    for delta in deltas:
+        if delta.tool_index is not None:
+            if delta.tool_name is not None:
+                names[delta.tool_index] = delta.tool_name
+            arguments[delta.tool_index] = arguments.get(delta.tool_index, "") + delta.arguments
+    calls = []
+    for index, name in names.items():
+        value = arguments[index]
+        try:
+            json.loads(value)
+        except json.JSONDecodeError:
+            continue
+        calls.append(ToolCall(name, value))
+    return AssistantTurn(
+        "".join(d.content for d in deltas),
+        "".join(d.reasoning_content for d in deltas),
+        tuple(calls),
+    )
+
+
 def _response_object(
     request_id: str,
     model: str,
@@ -2012,7 +2062,7 @@ def _response_object(
         "status": status,
         "completed_at": now if status == "completed" else None,
         "error": None,
-        "incomplete_details": None,
+        "incomplete_details": {"reason": "max_output_tokens"} if status == "incomplete" else None,
         "instructions": payload.get("instructions"),
         "max_output_tokens": options.max_tokens,
         "model": model,
