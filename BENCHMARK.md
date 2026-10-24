@@ -58,6 +58,12 @@ The source’s quick summary and 16K tables show different peak-memory values; t
 | Swift1.5 | 2089 | 512 | 16384 / 512 | 31.8s | 51ms | 514.7 | 19.5 | 58.1s | 290.8 | 16.22 |
 | Swift1.5 | 2089 | 512 | 32768 / 512 | 1m6s | 50ms | 492.8 | 19.9 | 1m32s | 361.1 | 17.26 |
 
+## DeepSeek V4.1 Native observations
+
+Retained from the README. The original summary did not record a source commit, exact build, complete configuration, raw runs or output token hashes. These are reference observations, not a new formal performance result.
+
+Measured on M2 Max with 64 GiB and the file cache emptied first: Whallm read a 3,000-token Code prompt at about 70 tok/s and a 16,000-token one at about 140 tok/s. Without DSpark, it wrote about 3.4 tok/s. DSpark's speed has not been measured again since the latest speed-ups. With greedy sampling, the output matched the old MLX engine. Quality, inputs longer than 16,000 tokens and M5 have not been tested.
+
 ## v1.1.12: Qwen models with MTP and 8-bit resident weights (M5 Pro, M2 Max)
 
 Recorded by the user with the built-in **Throughput** test on v1.1.12, with MTP and **Use 8-bit resident weights** on. Slot count, output limit, temperature and seed are as displayed. These rows do not include a source commit, full configuration, cache state, raw run artifact or output token hash. Treat them as reference observations, not a controlled comparison with other versions.
@@ -93,6 +99,21 @@ Recorded by the user with the v1.1.11 App's built-in **Throughput** test on an M
 | Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 128 | 4096 / 128 | 7140.3 | 68.3 | 573.6 | 14.6 | 15.8 | 267.0 | 16.93 GiB | 0.0 | 42 |
 | Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 128 | 8192 / 128 | 13357.9 | 57.2 | 613.3 | 17.5 | 20.6 | 403.4 | 17.83 GiB | 0.0 | 42 |
 | Swift1.5-Qwen3.8-Flash-Next | Code | 2089 | 128 | 16384 / 128 | 28679.3 | 66.9 | 571.3 | 14.9 | 37.2 | 444.1 | 18.81 GiB | 0.0 | 42 |
+
+## v1.1.11: M5 Pro · Swift1.5 image prompts with MTP
+
+Historical MLX-engine results retained from the README, not measurements of the current Native engine. The README did not include a source commit, full environment, raw runs or output token hashes; these remain reference observations, not reproducible performance validation.
+
+Measured on 1.1.11 with a 160-token answer, temperature 0, Prompt Cache off and 3,084 expert slots (7.5 GiB). Each number is the middle result of 3 runs. Draft acceptance is the share of MTP's guesses that the model kept.
+
+| Image | Image tokens | Input tokens | MTP | Decode (tok/s) | First token (s) | Draft acceptance |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| House drawing | 384 | 404 | Off | 12.31 | 3.78 | — |
+| House drawing | 384 | 404 | On | 17.13 | 3.56 | 67% |
+| Bar chart | 256 | 281 | Off | 11.92 | 3.19 | — |
+| Bar chart | 256 | 281 | On | 17.07 | 3.09 | 74% |
+
+With MTP on, answers came 1.38× and 1.43× as fast, and the first token came slightly sooner.
 
 ## Swift1.5 Qwen3.8 Flash Next
 
@@ -427,6 +448,19 @@ neither candidate was integrated. Fewer command buffers in a resident component
 probe did not establish an end-to-end speedup. Cache-warming effects and small
 system swap-in deltas were reported explicitly, not hidden or credited as gains.
 
+## Run a benchmark
+
+To test your own Mac, open **Throughput** and pick:
+
+- an installed model
+- **Code** or **Novel** input
+- an input length from **1K to 200K**
+- an output limit of **128, 512, 1024 or 4096**
+
+You can copy the results as plain text, JSON or Markdown. The app unloads the test model when the run finishes or is cancelled. Local builds also offer **Dry run**, which shows simulated results.
+
+Results depend on SSD speed, prompt length, cache state and settings.
+
 ## Current Throughput sampling
 
 Throughput fixes **`temperature=0` and `seed=42`** for every trial, regardless
@@ -546,8 +580,7 @@ process physical footprint; it does not change saved settings or model files.
 
 These results were recorded with the built-in **Throughput** benchmark using
 **Code** context, input lengths of **1,024, 4,096, 8,192, and 16,384 tokens**,
-and an output limit of **128 tokens**. The same rows appear in the
-[README benchmark tables](README.md#benchmarks).
+and an output limit of **128 tokens**.
 
 Each row is an individual measurement, not a P95 statistic. Build revisions
 and cache state were not recorded alongside these rows, so they are reference
