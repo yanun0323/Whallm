@@ -80,6 +80,8 @@ The API streams text and supports tool calls through:
 
 **Tools**: your client runs the tools and sends back the results. Whallm never runs MCP tools by itself. Since v1.1.9, for every model, `/v1/responses` accepts `function_call_output.output` as a string or as a list of `input_text` parts. The parts are joined in order with nothing between them. Include the matching `function_call` with the same `call_id` in the request history.
 
+**Output limits (1.1.14-dev.1)**: reaching the output-token limit keeps Chat's `finish_reason: "length"` and token usage, including tool-enabled requests. Responses returns `status: "incomplete"` with `incomplete_details.reason: "max_output_tokens"`; streams end with `response.incomplete`. Unfinished thinking or tool markup alone does not turn a length-limited response into a parsing error. Required-tool requests do not retry after exhausting the output budget; malformed completed output still fails validation.
+
 **MiMo (preview)** accepts still images and short PCM WAV audio in Chat, Responses and app attachments.
 
 - JSON request bodies: up to **1 MiB**.
