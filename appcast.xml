@@ -6,6 +6,49 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Whallm</title>
         <item>
+            <title>1.1.14</title>
+            <pubDate>Sat, 24 Oct 2026 21:24:42 +0800</pubDate>
+            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.14-dev.1</link>
+            <sparkle:channel>dev</sparkle:channel>
+            <sparkle:version>1.1.14d1</sparkle:version>
+            <sparkle:shortVersionString>1.1.14</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.14-dev.1
+
+Development prerelease. Changes since v1.1.13. Select **Settings → Updates → Dev** to receive dev updates; the stable channel remains on v1.1.13.
+
+## DeepSeek V4.1 Native engine
+
+- DeepSeek V4.1 now uses the bundled C++ and Metal Native engine instead of MLX, including text generation, DSpark and Memory/Disk Prompt Cache.
+- Existing model files, API model ID, installation and Alias stay unchanged. DSpark experts share the main expert cache.
+- Automatic expert cache sizing uses available memory at model load, from 256 to 4,096 slots. Fixed caches must hold at least 96 experts.
+- Advanced Settings no longer offers MLX-only controls for this model. Approximate mode and incompatible MLX-specific runtime options are rejected.
+- Developer messages are encoded as system messages for DeepSeek V4.1, including tool conversations.
+
+## App and logging
+
+- Fix the main window layout so navigation and Logs remain visible, including at smaller window sizes.
+- Add runtime event logging and an optional **Save logs to file** setting. File logging is off by default and keeps at most 10 MB in `~/.whallm/server.log`, removing oldest lines first.
+- Debug events omit full prompts, tool results, images and API keys. Logs can still contain local paths and network addresses; review them before sharing.
+
+## API output limits
+
+- Tool-enabled requests that exhaust their output budget preserve the length-limit result rather than failing solely because thinking or tool markup is unfinished.
+- Chat keeps `finish_reason: "length"` and token usage. Responses reports `status: "incomplete"`, `incomplete_details.reason: "max_output_tokens"`, and `response.incomplete` for streaming requests.
+- Required-tool requests do not spend a second output budget after reaching the limit. Malformed completed output remains an error.
+
+## Upgrade and validation limits
+
+- Quit the old App and restart with this build. No model redownload is required. DeepSeek V4.1 prompt caches from MLX are not reused; native caches rebuild on demand. Saved MLX-only tuning no longer applies.
+- This is a dev build, not a new stable release. MiMo remains a preview, and the server still handles one generation request at a time.
+- API regression tests use fixed model output; they do not establish real-model tool quality or full Pi/Codex compatibility.
+- Earlier DeepSeek V4.1 checks on M2 Max observed greedy output matching MLX. These are limited observations, not broad quality validation. Inputs longer than 16,000 tokens and M5 performance remain unvalidated; DSpark speed has not been remeasured after the latest changes.
+- No new real-model performance or quality measurements are claimed for this release. See [the usage reference](https://github.com/yanun0323/Whallm/blob/v1.1.14-dev.1/docs/usage.md) and [benchmark limitations](https://github.com/yanun0323/Whallm/blob/v1.1.14-dev.1/BENCHMARK.md).
+]]></description>
+            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.14-dev.1/Whallm-macOS-arm64.zip" length="202306837" type="application/octet-stream" sparkle:edSignature="Ttx2NmmwqHC/4AJcVo23xw/CnTLJqaLFkzAmCKmB2HBxI4Bd6vPq7c4mDpjGHW5tWaPz3VmIHjENHJzAP996Dw=="/>
+        </item>
+        <item>
             <title>1.1.13</title>
             <pubDate>Thu, 15 Oct 2026 18:36:21 +0800</pubDate>
             <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.13</link>
@@ -52,45 +95,9 @@ Requires Apple Silicon and macOS 15 or later. Model weights are downloaded separ
 ]]></description>
             <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.13/Whallm-macOS-arm64.zip" length="202113332" type="application/octet-stream" sparkle:edSignature="iK1k5l3jW4j136STG1zA4FLxT2dch7cPC0HSNG1ysnJvDzOulUt+2DA79abeewMdNBvwdl+rJ3NoiSA5/vuvDg=="/>
         </item>
-        <item>
-            <title>1.1.7</title>
-            <pubDate>Mon, 14 Sep 2026 02:30:41 +0800</pubDate>
-            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.7-dev.2</link>
-            <sparkle:channel>dev</sparkle:channel>
-            <sparkle:version>1.1.7d2</sparkle:version>
-            <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[## Whallm 1.1.7-dev.2 — Alpha
-
-This alpha adds a Throughput benchmark page and updates model defaults. Select **dev** in **Settings → Updates** to receive it. Stable users continue to receive official releases only.
-
-### Throughput benchmark
-
-- Select an installed model and run the benchmark; the app loads the selected model automatically.
-- Choose **Code** or **Novel**. Both are bundled and work offline: a Whallm source snapshot and Herman Melville's *Moby-Dick*. Each contains enough tokens for 200K inputs with all three supported tokenizers, without repeating a short excerpt.
-- Select one or more context lengths from **1K to 200K**, with a generation limit of **128, 1024, or 4096** tokens.
-- View first-token latency, time per output token, input/output speed, total time, throughput, and peak MLX memory. Results include the slots used by that run.
-- Copy results as **plain text, JSON, or a Markdown table**. The results table fills the available width, and settings controls align on the right.
-- Cancel a running benchmark and retain completed results. Tests run one request at a time with prompt reuse disabled; model loading and input tokenization are excluded from timing, and no extra warm-up is performed.
-
-### Model settings
-
-- **Max tokens now defaults to 8192 for every model**. Explicitly saved values remain unchanged; reset or edit Advanced Settings to change an existing preference.
-
-### Validation and alpha limits
-
-- Development checks passed 412 Python tests and 82 Swift tests. Three Swift tests require unavailable model fixtures and were skipped; the interactive Keychain round-trip test was excluded.
-- Packaging checks verify signatures, notarization, all three localizations, and isolated startup for both the app and an extracted ZIP copy.
-- **Dry run is available only in local builds.** This alpha excludes the simulated-results option and its generator.
-- Corpus coverage is an offline tokenizer check, not a measured 200K generation result. No new full-model speed or output-quality claim is made. Actual generation can end before the selected output limit.
-- DeepSeek V4.1 remains experimental and text-only; its previous unsupported features remain unchanged.
-]]></description>
-            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.7-dev.2/Whallm-macOS-arm64.zip" length="186839652" type="application/octet-stream" sparkle:edSignature="xPkXpqJbcjpGvxrQ/FVtv07svxNgvUDAmSMaZm1ObCloOoBRkSDVyX0RPK3nUTyY8ZjdSjIfzCW4FI+eTCPGAQ=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: qukoAwWMbdaHSt9YgQWuXIw+W3bXrp0dvqvlESeqVv3cncdyfSSD02BLFMIIOy0XTvxhChK21Lgco137nmrVCw==
-length: 7172
+edSignature: J6tWETtqDqUjFLOEDxbSZ8/uODVPop/QBRwwimva3iP06xJoibeWiodG2I5vwoLviO5PEJqNzC0XpunKuRwfDQ==
+length: 7870
 -->
