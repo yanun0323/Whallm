@@ -1772,10 +1772,21 @@ struct ModelAdvancedView: View {
           )
           Divider()
           integerField(
-            "Max tokens",
-            hint: "Default token limit for each request.",
+            "Total output limit",
+            hint: "Includes thinking, answers and tool calls. Clients can override this limit.",
             value: $settings.defaultMaxTokens
           )
+          if modelKind.isQwen {
+            Divider()
+            toggleField("Limit thinking", hint: "Switch to answering when the thinking limit is reached.",
+              value: Binding(get: { settings.thinkBudget != nil },
+                             set: { settings.thinkBudget = $0 ? min(8_192, settings.defaultMaxTokens / 2) : nil }))
+            if settings.thinkBudget != nil {
+              Divider()
+              integerField("Thinking limit", hint: "Thinking tokens only. 0 switches to answering immediately.",
+                value: Binding(get: { settings.thinkBudget ?? 8_192 }, set: { settings.thinkBudget = $0 }))
+            }
+          }
           if modelKind.descriptor.supports("adaptiveSampling") {
             Divider()
             toggleField(
@@ -2409,6 +2420,7 @@ struct ModelAdvancedView: View {
         format: .number.grouping(.never)
       )
       .labelsHidden()
+      .accessibilityLabel(L10n.string(label, language: language))
       .appInput(width: 120)
     }
   }

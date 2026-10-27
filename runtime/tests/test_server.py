@@ -483,6 +483,83 @@ class QwenSamplingServerTests(unittest.TestCase):
                         self.assertEqual(events[-1]["usage"]["completion_tokens"], len(fragments))
                         self.assertTrue(body.endswith(b"data: [DONE]\n\n"))
 
+    def test_think_budget_validation_and_default_override(self):
+        defaults = ModelDefaults(16_384, 0.7, 0.8, 20, think_budget=8192)
+        for kind in ("qwen3.8-flash-next", "swift1.5-qwen3.8-flash-next"):
+            from deepseek_v4_ssd.model_support import get_support
+            support = get_support(kind)
+            self.assertEqual(_options({}, defaults, support=support).think_budget, 8192)
+            self.assertEqual(_options({"think_budget": 0}, defaults, support=support).think_budget, 0)
+            self.assertIsNone(_options({"think_budget": None}, defaults, support=support).think_budget)
+            for value in (-1, True, 1.5, "8192", 16_383, 16_384):
+                with self.subTest(kind=kind, value=value), self.assertRaises(APIError):
+                    _options({"think_budget": value}, defaults, support=support)
+            with self.assertRaises(APIError):
+                _options({"max_tokens": 8192}, defaults, support=support)
+        with self.assertRaises(APIError):
+            _options({"think_budget": 1}, ServerDefaults())
+
+    def test_native_budget_boundary_streams_answers_and_complete_tools(self):
+        from runtime.tests.test_native_qwen import fake_runtime
+        from deepseek_v4_ssd.native_qwen import Sampler
+        import numpy as np
+        call = '<tool_call><function=exec_command><parameter=cmd>pwd</parameter></function></tool_call>'
+        for mtp in (False, True):
+            for tool in (False, True):
+                for endpoint in ("chat/completions", "responses"):
+                    for stream in (False, True):
+                        native = fake_runtime()
+                        native.tokenizer = SimpleNamespace(encode=lambda text, **kw: [40 if text == "<think>" else 41])
+                        def pieces(prompt, options):
+                            iterator = native._tokens([40, 1], 0, None, options,
+                                                      Sampler(options, np.random.default_rng(0)), mtp)
+                            try:
+                                for count, token in enumerate(iterator, 1):
+                                    text = {2: "plan", 3: ".", 41: "</think>", 42: call if tool else "Answer"}.get(token, "")
+                                    yield GeneratedPiece(text, token, 2, count, "stop" if token == 43 else None)
+                                    if token == 43:
+                                        break
+                            finally:
+                                iterator.close()
+                        payload = {"model": "qwen3.8-flash-next-fp8", "think_budget": 2,
+                                   "max_tokens": 16, "temperature": 0, "stream": stream, "thinking_mode": "thinking"}
+                        payload.update({"input": "Hi"} if endpoint == "responses" else
+                                       {"messages": [{"role": "user", "content": "Hi"}]})
+                        if tool:
+                            payload["tools"] = ([self.codex_tool] if endpoint == "responses" else
+                                                [{"type": "function", "function": {
+                                                    k: v for k, v in self.codex_tool.items() if k != "type"}}])
+                        with self.subTest(mtp=mtp, tool=tool, endpoint=endpoint, stream=stream), \
+                             patch.object(self.runtime, "stream", side_effect=pieces), \
+                             patch.object(self.runtime, "parse_chat", side_effect=QwenToolCodec(None).parse), \
+                             patch.object(self.runtime, "make_tool_stream_parser", QwenToolStreamParser, create=True):
+                            status, raw = self.request("/v1/" + endpoint, payload)
+                            self.assertEqual(status, 200, raw)
+                            self.assertNotIn(b'"error":{', raw)
+                            self.assertIn(b"plan", raw)
+                            self.assertIn(b"exec_command" if tool else b"Answer", raw)
+                            self.assertIn(41, native.engine.tokens)
+                            if endpoint == "responses":
+                                events = [json.loads(line[6:]) for line in raw.decode().splitlines()
+                                          if line.startswith("data: {")]
+                                response = events[-1]["response"] if stream else json.loads(raw)
+                                self.assertEqual(response["status"], "completed")
+                                self.assertEqual(response["usage"]["output_tokens"], 5)
+                            else:
+                                self.assertIn(b'"finish_reason":"tool_calls"' if tool else b'"finish_reason":"stop"', raw)
+
+    def test_think_budget_reaches_chat_and_responses(self):
+        for endpoint in ("chat/completions", "responses"):
+            for stream in (False, True):
+                payload = {"model": "qwen3.8-flash-next-fp8", "think_budget": 4,
+                           "max_tokens": 16, "stream": stream, "thinking_mode": "thinking"}
+                payload.update({"input": "Hi"} if endpoint == "responses" else
+                               {"messages": [{"role": "user", "content": "Hi"}]})
+                with self.subTest(endpoint=endpoint, stream=stream):
+                    status, body = self.request("/v1/" + endpoint, payload)
+                    self.assertEqual(status, 200, body)
+                    self.assertEqual(self.runtime.last_options.think_budget, 4)
+
     def test_qwen_tool_length_returns_usage_without_incomplete_calls(self):
         complete = '<tool_call><function=exec_command><parameter=cmd>pwd</parameter></function></tool_call>'
         cases = [

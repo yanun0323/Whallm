@@ -292,6 +292,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   var dsparkSlots = 768
   var dsparkConfidenceThreshold = 0.6
   var defaultMaxTokens = 8_192
+  var thinkBudget: Int?
   /// Input plus output token limit; nil in settings saved before this option.
   var contextWindow: Int?
   var defaultTemperature = 0.2
@@ -394,6 +395,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
     settings.approximationEnabled = descriptor.supports("approximation")
       && (settings.approximationEnabled ?? false)
     settings.qwenAdaptiveSampling = settings.qwenAdaptiveSampling ?? true
+    if !modelKind.isQwen { settings.thinkBudget = nil }
     settings.contextWindow = settings.contextWindow ?? descriptor.maximumContext
     settings.recentExpertCache = settings.recentExpertCache ?? true
     settings.layerMajorPrefillThreshold = settings.layerMajorPrefillThreshold ?? 1_024
@@ -564,6 +566,12 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
       (0...248_320).contains(defaultTopK)
     else {
       throw ConfigurationError(L10n.string("Correct the default generation parameters."))
+    }
+    if let thinkBudget {
+      guard modelKind.isQwen, thinkBudget >= 0, thinkBudget <= defaultMaxTokens - 2 else {
+        throw ConfigurationError(L10n.string(
+          "Thinking limit must be 0 or greater and leave at least 2 tokens within the total output limit."))
+      }
     }
     let maximumContext = modelKind.descriptor.maximumContext
     let window = contextWindow ?? maximumContext
@@ -1066,10 +1074,12 @@ struct ModelCatalog: Codable, Equatable, Sendable {
       let approximationMode: String?
       let qwenAdaptiveSampling: Bool?
       var contextWindow: Int? = nil
+      var thinkBudget: Int? = nil
 
       enum CodingKeys: String, CodingKey {
         case maxTokens = "max_tokens"
         case contextWindow = "context_window"
+        case thinkBudget = "think_budget"
         case temperature
         case topP = "top_p"
         case topK = "top_k"

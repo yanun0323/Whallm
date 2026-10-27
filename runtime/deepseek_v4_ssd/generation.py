@@ -127,6 +127,8 @@ class GenerationOptions:
     seed: int | None = None
     # Input plus output token limit; None uses the model's maximum context.
     context_window: int | None = None
+    # Qwen only: generated thinking tokens before forcing its end marker.
+    think_budget: int | None = None
 
 
 class ContextWindowExceeded(ValueError):

@@ -433,7 +433,8 @@ final class ModelLibrary: ObservableObject {
           approximationMode: settings.approximationEnabled == true && !settings.dsparkEnabled && settings.mtpEnabled != true
             ? "learned-route-drop-lowest-1" : "exact",
           qwenAdaptiveSampling: settings.qwenAdaptiveSampling ?? true,
-          contextWindow: settings.contextWindow ?? modelKind.descriptor.maximumContext
+          contextWindow: settings.contextWindow ?? modelKind.descriptor.maximumContext,
+          thinkBudget: modelKind.isQwen ? settings.thinkBudget : nil
         ),
         warmupPromptPath: settings.warmupPromptPath.isEmpty
           ? nil : settings.warmupPromptPath

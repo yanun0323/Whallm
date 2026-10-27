@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import threading
 import unittest
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -19,7 +20,7 @@ from mlx_lm.sample_utils import make_logits_processors
 
 from deepseek_v4_ssd import native_qwen
 from deepseek_v4_ssd.dspark import sampling_logprobs
-from deepseek_v4_ssd.generation import GenerationOptions, RuntimeMetrics
+from deepseek_v4_ssd.generation import ContextWindowExceeded, GenerationOptions, RuntimeMetrics
 from deepseek_v4_ssd.model import RuntimeConfig
 from deepseek_v4_ssd.model_manager import open_runtime, parse_model_catalog
 from deepseek_v4_ssd.model_support import get_support
@@ -191,6 +192,96 @@ class RuntimeTest(unittest.TestCase):
         # Every yielded token but the last was consumed, in order.
         self.assertEqual(runtime.engine.consumed[:len(prompt) + 19], prompt + plain[:19])
 
+    def test_think_budget_closes_thinking_and_keeps_engine_history(self):
+        for mtp in (False, True):
+            for budget in (0, 1, 2, 7):
+                with self.subTest(mtp=mtp, budget=budget):
+                    runtime = fake_runtime()
+                    runtime.tokenizer = SimpleNamespace(encode=lambda text, **kw: [40 if text == "<think>" else 41])
+                    options = GenerationOptions(max_tokens=16, temperature=0.0, think_budget=budget)
+                    sampler = Sampler(options, np.random.default_rng(0))
+                    prompt = [40, 1]
+                    tokens = list(runtime._tokens(prompt, 0, None, options, sampler, mtp))
+                    self.assertEqual(tokens[:budget], list(range(2, 2 + budget)))
+                    self.assertEqual(tokens[budget:budget + 2], [41, 42])
+                    self.assertEqual(len(tokens), 16)
+                    self.assertEqual(runtime.engine.tokens[:len(prompt) + 15], tuple(prompt + tokens[:-1]))
+                    # Reuse the real continuation selector: the forced end is in the state.
+                    runtime._store(runtime.engine.snapshot(), persist=False)
+                    continuation = list(runtime.engine.tokens) + [12]
+                    self.assertEqual(runtime._continue_from_cache(continuation), len(continuation) - 1)
+                    runtime.engine.reset()
+                    runtime.engine.eval(prompt[:-1])
+                    replay = list(runtime._tokens(prompt, len(prompt) - 1, None, options,
+                                                  Sampler(options, np.random.default_rng(0)), mtp))
+                    self.assertEqual(replay, tokens)
+
+    def test_8192_thinking_tokens_leave_room_for_an_answer(self):
+        for mtp in (False, True):
+            runtime = fake_runtime()
+            runtime.tokenizer = SimpleNamespace(encode=lambda text, **kw: [40 if text == "<think>" else 41])
+            def logits(last):
+                values = np.full(50, -np.inf, dtype=np.float32)
+                values[42 if last in (41, 42) else 2] = 0
+                return values
+            runtime.engine._logits = logits
+            # Exercise sampled verification as well as the small greedy boundary cases.
+            options = GenerationOptions(max_tokens=8196, temperature=0.7, think_budget=8192)
+            tokens = list(runtime._tokens([40, 1], 0, None, options,
+                                         Sampler(options, np.random.default_rng(0)), mtp))
+            self.assertEqual(tokens, [2] * 8192 + [41, 42, 42, 42])
+            self.assertEqual(runtime.engine.tokens[:8197], tuple([40, 1] + tokens[:-1]))
+
+    def test_think_budget_also_applies_after_image_prefill(self):
+        runtime = fake_runtime()
+        runtime.tokenizer = SimpleNamespace(encode=lambda text, **kw: [40 if text == "<think>" else 41])
+        options = GenerationOptions(max_tokens=8, temperature=0.0, think_budget=2)
+        images = [object()]
+        with mock.patch.object(runtime.engine, "eval_images", create=True,
+                               side_effect=lambda tokens, images: runtime.engine.eval(tokens)) as evaluate:
+            tokens = list(runtime._tokens([40, 1], 0, images, options,
+                                         Sampler(options, np.random.default_rng(0)), True))
+        evaluate.assert_called_once_with([40, 1], images)
+        self.assertEqual(tokens[:4], [2, 3, 41, 42])
+
+    def test_think_budget_leaves_early_end_and_chat_unchanged(self):
+        for prompt in ([40, 39], [40, 41, 1], [1, 2]):
+            for mtp in (False, True):
+                runtime = fake_runtime()
+                runtime.tokenizer = SimpleNamespace(encode=lambda text, **kw: [40 if text == "<think>" else 41])
+                options = GenerationOptions(max_tokens=10, temperature=0.0, think_budget=4)
+                result = list(runtime._tokens(prompt, 0, None, options,
+                                             Sampler(options, np.random.default_rng(0)), mtp))
+                self.assertEqual(result, self.run_tokens(fake_runtime(), prompt, 10, mtp))
+
+    def test_budget_cancellation_and_retry_do_not_leave_a_draft_round(self):
+        from deepseek_v4_ssd.cancellation import GenerationCancelled
+        runtime = fake_runtime()
+        runtime.tokenizer = SimpleNamespace(encode=lambda text, **kw: [40 if text == "<think>" else 41])
+        options = GenerationOptions(max_tokens=12, temperature=0.0, think_budget=2)
+        stream = runtime._tokens([40, 1], 0, None, options, Sampler(options, np.random.default_rng(0)), True)
+        self.assertEqual([next(stream) for _ in range(3)], [2, 3, 41])
+        with mock.patch.object(native_qwen, "check_cancelled", side_effect=GenerationCancelled("cancelled")):
+            with self.assertRaises(GenerationCancelled):
+                next(stream)
+        self.assertEqual(runtime.engine.verified, [])
+        reused = runtime._continue_from_cache([40, 1])
+        again = list(runtime._tokens([40, 1], reused, None, options,
+                                     Sampler(options, np.random.default_rng(0)), True))
+        self.assertEqual(again[:4], [2, 3, 41, 42])
+
+    def test_budget_is_checked_after_context_fit_before_engine_work(self):
+        runtime = fake_runtime()
+        runtime._lock = threading.Lock()
+        runtime.support = get_support(NATIVE)
+        runtime.installed = SimpleNamespace(maximum_context=8)
+        with self.assertRaises(ContextWindowExceeded):
+            list(runtime.stream([40, 1, 2, 3], GenerationOptions(max_tokens=12, think_budget=4)))
+        self.assertEqual(runtime.engine.tokens, ())
+        for invalid in (-1, True, 1.5, 11):
+            with self.assertRaises(ValueError):
+                list(runtime.stream([40, 1], GenerationOptions(max_tokens=12, think_budget=invalid)))
+
     def test_cache_uses_the_longest_prefix_that_leaves_a_token(self):
         runtime = fake_runtime()
         runtime._store(FakeState([1, 2, 3]), persist=False)
@@ -321,6 +412,70 @@ class RealEngineTest(unittest.TestCase):
     def tearDownClass(cls):
         if hasattr(cls, "runtime"):
             cls.runtime.close()
+
+    def test_think_budget_real_model_answers_with_mtp_and_cache(self):
+        prompt = self.runtime.encode_chat([{"role": "user", "content": "What is 2 + 3? Answer briefly."}],
+                                          thinking_mode="thinking")
+        for mtp in (False, True):
+            with self.subTest(mtp=mtp), mock.patch.object(self.runtime, "config", replace(self.runtime.config, mtp_enabled=mtp)):
+                options = GenerationOptions(max_tokens=48, temperature=0.0, think_budget=4)
+                first = list(self.runtime.stream(prompt, options))
+                end = self.runtime.tokenizer.encode("</think>", add_special_tokens=False)[0]
+                self.assertLessEqual([p.token for p in first].index(end), 4)
+                raw = "".join(p.text for p in first)
+                turn = self.runtime.parse_chat(raw, "thinking")
+                self.assertTrue(turn.content.strip(), raw)
+                self.assertLessEqual(first[-1].generation_tokens, 48)
+                self.assertIn(end, self.runtime.engine.tokens)
+                state = self.runtime.engine.snapshot()
+                try:
+                    with tempfile.TemporaryDirectory() as directory:
+                        path = Path(directory) / "budget.wqstate"
+                        self.runtime.engine.save(state, path)
+                        restored = self.runtime.engine.load(path)
+                        try:
+                            self.assertEqual(restored.tokens, state.tokens)
+                            self.runtime.engine.restore(restored)
+                            self.assertEqual(self.runtime.engine.tokens, state.tokens)
+                        finally:
+                            restored.close()
+                finally:
+                    state.close()
+                second = list(self.runtime.stream(prompt, options))
+                self.assertEqual([p.token for p in first], [p.token for p in second])
+
+    def test_verification_commit_boundaries_survive_state_restore(self):
+        engine = self.runtime.engine
+        prompt = [760, 6511, 314, 9338, 369, 11751, 13]
+        batch = [25358, 13, 561, 6511, 314, 14898]
+        engine.reset()
+        engine.eval(prompt)
+        initial = engine.snapshot()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "verification.wqstate"
+                for rows in (2, 3, 4, 6):
+                    for keep in range(1, rows + 1):
+                        with self.subTest(rows=rows, keep=keep):
+                            reference = None
+                            for _ in range(2):
+                                engine.restore(initial)
+                                logits = engine.verify(batch[:rows]).tobytes()
+                                engine.commit(keep)
+                                self.assertEqual(engine.tokens, tuple(prompt + batch[:keep]))
+                                state = engine.snapshot()
+                                try:
+                                    engine.save(state, path)
+                                    result = (logits, path.read_bytes())
+                                finally:
+                                    state.close()
+                                if reference is None:
+                                    reference = result
+                                else:
+                                    self.assertEqual(result, reference)
+        finally:
+            initial.close()
+            engine.reset()
 
     def test_greedy_tokens_match_the_mlx_engine(self):
         # Recorded from the MLX Qwen engine (BF16 resident weights, MTP off), 2026-10-14.

@@ -24,7 +24,7 @@ from transformers import AutoTokenizer
 from .cancellation import GenerationCancelled, check_cancelled
 from .expert_cache import CacheMetrics
 from .generation import (
-    ChatInterface, GeneratedPiece, GenerationOptions, RuntimeMetrics, fit_context_window,
+    ChatInterface, ContextWindowExceeded, GeneratedPiece, GenerationOptions, RuntimeMetrics, fit_context_window,
 )
 from .manifest import InstalledModel
 from .media import MediaRequest
@@ -512,6 +512,12 @@ class NativeQwenRuntime(ChatInterface):
 
     def stream(self, prompt: str | list[int] | MediaRequest, options: GenerationOptions) -> Iterator[GeneratedPiece]:
         check_cancelled()
+        if options.think_budget is not None:
+            from .model_support.catalog import QWEN_MODEL_KINDS
+            if self.support.descriptor.kind not in QWEN_MODEL_KINDS:
+                raise ValueError("think_budget is only supported by Qwen models")
+            if type(options.think_budget) is not int or not 0 <= options.think_budget <= options.max_tokens - 2:
+                raise ValueError("think_budget must leave room for the end marker and an answer token")
         with self._lock:
             sampler = Sampler(options, np.random.default_rng(
                 options.seed if options.seed is not None else secrets.randbits(32)))
@@ -530,6 +536,9 @@ class NativeQwenRuntime(ChatInterface):
                 raise ValueError("the prompt has no tokens")
             options = fit_context_window(
                 len(tokens), options, getattr(self.installed, "maximum_context", 262_144))
+            if options.think_budget is not None and options.think_budget > options.max_tokens - 2:
+                raise ContextWindowExceeded("The context window leaves no room for think_budget, "
+                                            "the end marker and an answer token.")
             reused = 0 if images is not None else self._continue_from_cache(tokens)
             if images is not None:
                 self.engine.reset()
@@ -604,12 +613,24 @@ class NativeQwenRuntime(ChatInterface):
     def _tokens(self, prompt_tokens, reused, images, options, sampler, mtp) -> Iterator[int]:
         """Sampled tokens, each yielded before the model consumes it (as generate_mtp_tokens)."""
         engine = self.engine
+        thinking = False
+        end = None
+        if options.think_budget is not None:
+            start_ids = self.tokenizer.encode("<think>", add_special_tokens=False)
+            end_ids = self.tokenizer.encode("</think>", add_special_tokens=False)
+            if len(start_ids) != 1 or len(end_ids) != 1 or start_ids == end_ids:
+                raise ValueError("think_budget requires Qwen's single-token thinking markers")
+            start, end = start_ids[0], end_ids[0]
+            # Only the open thinking block of the current assistant turn counts.
+            marker = next((token for token in reversed(prompt_tokens) if token in (start, end)), None)
+            thinking = marker == start
         history = [prompt_tokens[-1]]
         if images is not None:
             logits = engine.eval_images(prompt_tokens, images)[0]
         else:
             logits = self._prefill(prompt_tokens[reused:])
-        anchor = sampler.sample(sampler.distribution(logits, history))
+        anchor = end if thinking and options.think_budget == 0 else sampler.sample(sampler.distribution(logits, history))
+        thinking = thinking and anchor != end
         yield anchor
         history.append(anchor)
         generated = 1
@@ -618,8 +639,22 @@ class NativeQwenRuntime(ChatInterface):
         while generated < options.max_tokens:
             check_cancelled()
             remaining = options.max_tokens - generated
+            if thinking and generated >= options.think_budget:
+                # Consume the pending token, then emit the actual control token. The
+                # next eval/verify consumes it too, so caches and MTP see the same history.
+                engine.eval([anchor])
+                anchor = end
+                thinking = False
+                yield anchor
+                history.append(anchor)
+                generated += 1
+                continue
+            if thinking:
+                # No speculative round may commit tokens past the thinking boundary.
+                remaining = min(remaining, options.think_budget - generated)
             if fallback or remaining == 1:
                 anchor = sampler.sample(sampler.distribution(engine.eval([anchor])[0], history))
+                thinking = thinking and anchor != end
                 yield anchor
                 history.append(anchor)
                 generated += 1
@@ -645,12 +680,14 @@ class NativeQwenRuntime(ChatInterface):
             for token in drafts[:accepted]:
                 if generated >= options.max_tokens:
                     return
+                thinking = thinking and token != end
                 yield token
                 history.append(token)
                 generated += 1
             if generated >= options.max_tokens:
                 return
             anchor = next_token
+            thinking = thinking and anchor != end
             yield anchor
             history.append(anchor)
             generated += 1

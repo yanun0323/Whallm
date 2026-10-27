@@ -2071,13 +2071,18 @@ class EngineImpl : public Engine {
 
   // -------------------------------------------------------------- MoE: s_.mixed -> s_.result
   void experts(const LayerW& lw, int layer, int T, bool whole_layer) {
+    // Verification only: overlap shared-expert work with host routing and demand reads.
+    // Keep single-token decode, prefill and the draft layer on their existing schedule.
+    const bool early_router = logging_ && !whole_layer && T >= 2 && T <= 6;
     linear(s_.mixed, lw.router, s_.router, T, H, EXPERTS);
+    if (early_router) gpu_.flush();
     linear(s_.mixed, lw.shared_gate, s_.shared_gate, T, H, 1, true);
     linear(s_.mixed, lw.shared_gate_proj, s_.gate_proj, T, H, MOE_M, true);
     linear(s_.mixed, lw.shared_up, s_.up_proj, T, H, MOE_M, true);
     gpu_.run("mul_silu", {s_.gate_proj, s_.up_proj, s_.shared_act}, CountP{(uint32_t)(T * MOE_M), 1.0f}, (size_t)T * MOE_M);
     linear(s_.shared_act, lw.shared_down, s_.shared, T, MOE_M, H);
-    gpu_.flush();  // the router's choice decides which experts to read
+    if (early_router) gpu_.commit();
+    else gpu_.flush();  // the router's choice decides which experts to read
 
     const float* logits = (const float*)s_.router.buffer.contents;
     Pair* pairs = (Pair*)s_.pairs.buffer.contents;

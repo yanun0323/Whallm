@@ -594,7 +594,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
                     support = support_for_runtime(runtime)
                     options, _ = self._common(
                         {"max_tokens": generation, "temperature": throughput.TEMPERATURE,
-                         "seed": throughput.SEED}, model.defaults, support=support,
+                         "seed": throughput.SEED, "think_budget": None}, model.defaults, support=support,
                         dspark=bool(getattr(runtime.config, "dspark_enabled", False)),
                     )
                     _validate_approximation_runtime(options, runtime)
@@ -1351,8 +1351,8 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             ),
             thinking_mode=thinking_mode,
         )
-        logger.debug("sampling max_tokens=%d temperature=%s top_p=%s top_k=%s seed=%s stream=%s",
-                     options.max_tokens, options.temperature, options.top_p, options.top_k, options.seed, stream)
+        logger.debug("sampling max_tokens=%d think_budget=%s temperature=%s top_p=%s top_k=%s seed=%s stream=%s",
+                     options.max_tokens, options.think_budget, options.temperature, options.top_p, options.top_k, options.seed, stream)
         return options, stream
 
     @contextmanager
@@ -1639,7 +1639,7 @@ class OpenAIHandler(BaseHTTPRequestHandler):
             # Param names may include user-supplied tool names: permit only fixed field roots.
             field = str(param).split(".")[0]
             if field not in {"messages", "input", "prompt", "content", "model", "configuration",
-                             "max_tokens", "max_output_tokens", "tools", "tool_choice", "seed",
+                             "max_tokens", "max_output_tokens", "think_budget", "tools", "tool_choice", "seed",
                              "temperature", "top_p", "top_k", "stream", "logprobs", "approximation"}:
                 field = "request"
             logger.error("request rejected status=%d code=%s reason=%s field=%s", status, code, reason, field)
@@ -2149,6 +2149,14 @@ def _options(
             f"max_tokens must be between 1 and {MAX_GENERATION_TOKENS}.",
             param="max_tokens",
         )
+    think_budget = payload.get("think_budget", getattr(defaults, "think_budget", None))
+    if think_budget is not None:
+        from .model_support.catalog import QWEN_MODEL_KINDS
+        if support.descriptor.kind not in QWEN_MODEL_KINDS:
+            raise APIError("think_budget is only supported by Qwen models.", param="think_budget")
+        if type(think_budget) is not int or not 0 <= think_budget <= max_tokens - 2:
+            raise APIError("think_budget must be a nonnegative integer and leave at least two output tokens "
+                           "for the end marker and an answer.", param="think_budget")
     sampling_defaults = support.sampling_defaults(defaults, thinking_mode)
     seed = payload.get("seed")
     if seed is not None and (type(seed) is not int or not 0 <= seed <= 2**32 - 1):
@@ -2179,6 +2187,7 @@ def _options(
         approximation_mode=approximation_mode,
         seed=seed,
         context_window=getattr(defaults, "context_window", None),
+        think_budget=think_budget,
     )
 
 

@@ -6,6 +6,46 @@ import XCTest
 
 final class ServerConfigurationTests: XCTestCase {
   @MainActor
+  func testThinkingBudgetPersistsAndReachesQwenCatalogOnly() throws {
+    let isolated = try isolatedDefaults()
+    defer { isolated.defaults.removePersistentDomain(forName: isolated.suite) }
+    for kind in [ModelKind.qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext] {
+      var settings = ModelAdvancedSettings.defaults(for: kind)
+      XCTAssertNil(settings.thinkBudget)
+      // Older saved settings have no budget and keep their output limit.
+      var old = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+      old.removeValue(forKey: "thinkBudget")
+      let decoded = try JSONDecoder().decode(ModelAdvancedSettings.self, from: JSONSerialization.data(withJSONObject: old))
+      XCTAssertNil(decoded.thinkBudget)
+      XCTAssertEqual(decoded.defaultMaxTokens, 8_192)
+      settings.defaultMaxTokens = 16_384
+      settings.thinkBudget = 8_192
+      try settings.validate(for: kind)
+      settings.save(for: kind, defaults: isolated.defaults)
+      let restored = ModelAdvancedSettings.loadOrDefault(for: kind, defaults: isolated.defaults)
+      XCTAssertEqual(restored.thinkBudget, 8_192)
+      let catalog = try ModelLibrary.makeServerCatalog(models: [installedModel(kind)],
+        aliases: [:], settings: [kind: restored], powerSavingLimitGBps: nil)
+      let defaults = try XCTUnwrap(catalog.models.first).defaults
+      let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(defaults)) as? [String: Any])
+      XCTAssertEqual(json["think_budget"] as? Int, 8_192)
+      XCTAssertEqual(json["max_tokens"] as? Int, 16_384)
+      for invalid in [-1, 16_383, 16_384] {
+        settings.thinkBudget = invalid
+        XCTAssertThrowsError(try settings.validate(for: kind))
+      }
+      settings.thinkBudget = 0
+      XCTAssertNoThrow(try settings.validate(for: kind))
+      XCTAssertNil(settings.normalized(for: .deepSeekV41).thinkBudget)
+    }
+    for language in [AppLanguage.simplifiedChinese, .traditionalChinese] {
+      for key in ["Total output limit", "Limit thinking", "Thinking limit"] {
+        XCTAssertNotEqual(L10n.string(key, language: language), key)
+      }
+    }
+  }
+
+  @MainActor
   func testAccelerationDefaultsAndOptOutsReachSerializedCatalogForEveryModel() throws {
     for kind in [ModelKind.deepSeekV4, .deepSeekV41, .qwen3_8FlashNext] {
       for enabled in [true, false] {

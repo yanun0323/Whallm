@@ -55,6 +55,8 @@ enum AdvancedSettingImpact {
       "Shorten prefill and reduce temporary memory; full-model validation is still limited."
     case "Context window":
       "Allow longer conversations, but long prompts use more time and memory. Longer prompts are rejected, and answers are shortened to fit. Maximum: %@ tokens."
+    case "Total output limit":
+      "Includes thinking, answers and tool calls. Clients can override this limit."
     case "Max tokens":
       "Allow longer answers, but generation may take more time and memory."
     case "Temperature", "Top P":

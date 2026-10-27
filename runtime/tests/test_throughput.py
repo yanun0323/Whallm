@@ -90,6 +90,21 @@ class ThroughputTests(unittest.TestCase):
         return Request(self.url, data=json.dumps(payload).encode(), headers={
             "Authorization": "Bearer secret", "Content-Type": "application/json"})
 
+    def test_benchmark_ignores_chat_thinking_budget(self):
+        from deepseek_v4_ssd.model_manager import ModelRequest
+        request = ModelRequest("deepseek-v4-flash-0731", "deepseek-v4-flash-0731", self.runtime,
+                               ModelDefaults(16_384, 0.2, 0.98, 0, think_budget=8192))
+        from contextlib import contextmanager
+        @contextmanager
+        def model_request(_):
+            yield request
+        with patch.object(self.manager, "request", model_request):
+            with urlopen(self.request()) as response:
+                events = [json.loads(line[6:]) for line in response.read().decode().splitlines()
+                          if line.startswith("data: {")]
+        self.assertTrue(any("result" in e for e in events), events)
+        self.assertIsNone(self.runtime.options.think_budget)
+
     def test_benchmark_evidence_reports_effective_config_and_unknown_io(self):
         result = run_trial(self.runtime, GenerationOptions(max_tokens=128), 1024, iter, lambda _: None)
         diagnostics = result["diagnostics"]

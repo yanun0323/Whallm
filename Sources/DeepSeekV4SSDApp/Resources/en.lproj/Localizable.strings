@@ -662,3 +662,11 @@
 "Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry." = "Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry.";
 
 "Toggle Sidebar" = "Toggle Sidebar";
+
+"Total output limit" = "Total output limit";
+"Includes thinking, answers and tool calls. Clients can override this limit." = "Includes thinking, answers and tool calls. Clients can override this limit.";
+"Limit thinking" = "Limit thinking";
+"Switch to answering when the thinking limit is reached." = "Switch to answering when the thinking limit is reached.";
+"Thinking limit" = "Thinking limit";
+"Thinking tokens only. 0 switches to answering immediately." = "Thinking tokens only. 0 switches to answering immediately.";
+"Thinking limit must be 0 or greater and leave at least 2 tokens within the total output limit." = "Thinking limit must be 0 or greater and leave at least 2 tokens within the total output limit.";

@@ -24,7 +24,7 @@ from .model import (
 CATALOG_VERSION = 1
 MAX_GENERATION_TOKENS = 272_000
 from .model_support import get_support
-from .model_support.catalog import DESCRIPTORS
+from .model_support.catalog import DESCRIPTORS, QWEN_MODEL_KINDS
 
 MODEL_IDS = {item.kind: item.api_model_id for item in DESCRIPTORS}
 MODEL_OWNERS = {item.kind: item.owner for item in DESCRIPTORS}
@@ -55,6 +55,7 @@ class ModelDefaults:
     qwen_adaptive_sampling: bool = True
     # None uses the model's maximum context.
     context_window: int | None = None
+    think_budget: int | None = None
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,8 @@ def _parse_model(value: Any, index: int) -> ModelSpec:
     except ValueError as error:
         raise ModelCatalogError(str(error)) from error
     defaults = _parse_defaults(value["defaults"], f"{prefix}.defaults")
+    if defaults.think_budget is not None and model_kind not in QWEN_MODEL_KINDS:
+        raise ModelCatalogError(f"{prefix}.defaults.think_budget is only supported by Qwen models")
     maximum_context = get_support(model_kind).descriptor.maximum_context
     if defaults.context_window is not None and defaults.context_window > maximum_context:
         raise ModelCatalogError(
@@ -350,7 +353,7 @@ def validate_runtime_config(config: RuntimeConfig) -> None:
 
 def _parse_defaults(value: Any, prefix: str) -> ModelDefaults:
     required = {"max_tokens", "temperature", "top_p", "top_k"}
-    optional = {"approximation_mode", "qwen_adaptive_sampling", "context_window"}
+    optional = {"approximation_mode", "qwen_adaptive_sampling", "context_window", "think_budget"}
     if not isinstance(value, dict) or not required <= set(value) <= required | optional:
         raise ModelCatalogError(f"{prefix} has invalid fields")
     approximation = value.get("approximation_mode", "exact")
@@ -384,8 +387,11 @@ def _parse_defaults(value: Any, prefix: str) -> ModelDefaults:
         0 <= top_k <= 248_320
     ):
         raise ModelCatalogError(f"{prefix}.top_k must be between 0 and 248320")
+    think_budget = value.get("think_budget")
+    if think_budget is not None and (type(think_budget) is not int or not 0 <= think_budget <= max_tokens - 2):
+        raise ModelCatalogError(f"{prefix}.think_budget must leave room for the end marker and an answer token")
     return ModelDefaults(
-        max_tokens, float(temperature), float(top_p), top_k, approximation, adaptive, context_window,
+        max_tokens, float(temperature), float(top_p), top_k, approximation, adaptive, context_window, think_budget,
     )
 
 

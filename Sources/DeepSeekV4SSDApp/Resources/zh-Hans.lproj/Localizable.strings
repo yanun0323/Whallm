@@ -662,3 +662,11 @@
 "Unable to save logs: %@. Check folder permissions and free disk space, then turn saving off and on to retry." = "无法保存 log：%@。请检查文件夹权限及剩余磁盘空间，再取消并重新勾选以重试。";
 
 "Toggle Sidebar" = "切换侧边栏";
+
+"Total output limit" = "总输出上限";
+"Includes thinking, answers and tool calls. Clients can override this limit." = "包含思考、回答与工具调用。客户端可覆盖此上限。";
+"Limit thinking" = "限制思考长度";
+"Switch to answering when the thinking limit is reached." = "达到思考上限后，切换为回答。";
+"Thinking limit" = "思考上限";
+"Thinking tokens only. 0 switches to answering immediately." = "仅计算思考 tokens。0 表示立即切换为回答。";
+"Thinking limit must be 0 or greater and leave at least 2 tokens within the total output limit." = "思考上限须为 0 或以上，且须在总输出上限内至少留下 2 个 tokens。";

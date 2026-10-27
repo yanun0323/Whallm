@@ -93,6 +93,23 @@ class FakeRuntime:
 
 
 class ModelCatalogTests(unittest.TestCase):
+    def test_think_budget_is_optional_and_qwen_only(self):
+        for kind in ("qwen3.8-flash-next", "deepseek-v4", "deepseek-v4.1"):
+            model = raw_model(kind)
+            model["defaults"]["max_tokens"] = 16_384
+            parse = lambda: parse_model_catalog({"version": 1, "models": [model]})[0]
+            self.assertIsNone(parse().defaults.think_budget)
+            model["defaults"]["think_budget"] = 8192
+            if kind == "qwen3.8-flash-next":
+                self.assertEqual(parse().defaults.think_budget, 8192)
+            else:
+                with self.assertRaises(ModelCatalogError):
+                    parse()
+            for value in (-1, True, 1.5, "8192", 16_383):
+                model["defaults"]["think_budget"] = value
+                with self.assertRaises(ModelCatalogError):
+                    parse()
+
     def test_legacy_catalog_without_either_grouped_field_loads(self):
         for kind in ("deepseek-v4", "deepseek-v4.1", "qwen3.8-flash-next"):
             with self.subTest(kind=kind):
