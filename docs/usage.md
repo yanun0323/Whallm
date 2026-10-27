@@ -37,6 +37,32 @@ Both Qwen models use Whallm's own engine, written in C++ and Metal (the **Native
 - **MTP** guesses the next few words ahead, then checks them. It is on by default and usually makes answers faster, but not for every prompt. The text can differ slightly from the text with MTP off.
 - **Use 8-bit resident weights** stores the parts that stay in memory in a smaller format. It uses less memory and usually speeds up answers, most of all with MTP on. The text can differ slightly from the text with the setting off. It is on for new or reset settings; saved settings keep your choice.
 
+### Thinking and total output limits (1.1.14-dev.2)
+
+Both Qwen models support an optional `think_budget` in Chat, Responses and Completions requests. It counts generated thinking tokens, not input tokens. At the limit, Whallm emits and feeds the model's `</think>` token back into the engine, then continues answering or making tool calls within the same request. Thinking that ends earlier is left alone. A prompt with no open thinking block is unchanged.
+
+- `max_tokens` (or `max_completion_tokens` / `max_output_tokens`) still limits **all output**: thinking, its closing marker, answers and tool calls. Thinking is not a separate free allowance.
+- `think_budget` is a nonnegative integer. `0` ends an open thinking block immediately; `null` disables the budget for that request. Omitting it uses the App/catalog default, initially unset. Other models reject a non-null budget.
+- Leave at least two tokens beyond the budget for the closing marker and one answer token; allow much more for useful answers. A budget that does not fit the requested total is rejected. If the input leaves too little context space, the request fails with `context_length_exceeded` rather than silently spending the answer space on thinking.
+- In **Model → Advanced Settings**, set **Total output limit**, enable **Limit thinking**, and set **Thinking limit**. Enabling initially chooses half the total, capped at 8,192; it does not increase the total. Old settings remain unchanged. API values override these defaults, so a client sending `max_tokens: 8192` must raise that value to use an 8,192-token thinking budget.
+- MTP remains available; verification rounds stop at the thinking boundary. The closing marker counts in usage and is included in the engine's prompt-cache history. Forcing the boundary does not guarantee a correct or complete answer.
+
+For example, these fields allow up to 8,192 thinking tokens, leaving up to 8,191 tokens for the answer after the closing marker:
+
+```json
+{
+  "model": "swift1.5-qwen3.8-flash-next-mxfp4",
+  "messages": [{"role": "user", "content": "Explain your solution."}],
+  "reasoning_effort": "xhigh",
+  "think_budget": 8192,
+  "max_tokens": 16384
+}
+```
+
+This requires `1.1.14-dev.2` or later; it is not included in `1.1.14-dev.1`. Short Swift-model checks cover forced transitions, MTP on/off, repeat generation and state-file round trips; they are not broad quality validation or an 8,192-token remote Mho session test.
+
+Starting with `1.1.14-dev.2`, the shared Qwen engine also overlaps shared-expert computation with routing and required expert reads during 2–6-row MTP verification. No setting is needed. The change preserves the arithmetic and does not prefetch guessed experts. A short Swift-only M2 Max experiment measured about 2.15% faster decoding overall; other models, Macs and long contexts have not been validated for this release.
+
 ### Images
 
 - Both Qwen models accept still PNG, JPEG and WebP images in Chat, `/v1/chat/completions` and `/v1/responses`.
