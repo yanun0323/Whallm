@@ -239,6 +239,8 @@ final class ModelLibrary: ObservableObject {
     ModelKind.deepSeekV4.rawValue: 166_878_580_480,
     // Pinned V4.1 revision dba1be0: repack plan installed weight bytes.
     ModelKind.deepSeekV41.rawValue: 501_382_643_728,
+    // Pinned 1017 revision 1bae0e1: verified with dsv4-repack inspect on 2026-10-28.
+    ModelKind.deepSeekV41_1017.rawValue: 501_382_643_728,
     ModelKind.qwen3_8FlashNext.rawValue: 125_291_490_955 + QwenVisionArtifact.installedBytes,
     ModelKind.swift1_5Qwen3_8FlashNext.rawValue: SwiftQwenInstalledModelArtifact.installedBytes,
   ]
