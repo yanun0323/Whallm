@@ -33,6 +33,8 @@ public struct ModelKind: RawRepresentable, Codable, Hashable, Sendable {
 
   public static let deepSeekV4 = Self(rawValue: "deepseek-v4")!
   public static let deepSeekV41 = Self(rawValue: "deepseek-v4.1")!
+  public static let deepSeekV41_1017 = Self(rawValue: "deepseek-v4.1-1017")!
+  public var isDeepSeekV41: Bool { self == .deepSeekV41 || self == .deepSeekV41_1017 }
   public static let qwen3_8FlashNext = Self(rawValue: "qwen3.8-flash-next")!
   public static let mimoV26FlashRL = Self(rawValue: "mimo-v2.6-flash-rl")!
   public static let swift1_5Qwen3_8FlashNext = Self(rawValue: "swift1.5-qwen3.8-flash-next")!

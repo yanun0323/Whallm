@@ -22,7 +22,7 @@ enum ExpertMemory {
   static func blobBytes(for kind: ModelKind) -> UInt64 {
     switch kind {
     case .deepSeekV4, .mimoV26FlashRL: 13_369_344
-    case .deepSeekV41: 18_800_640
+    case .deepSeekV41, .deepSeekV41_1017: 18_800_640
     case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 2_611_200
     default: 0
     }
@@ -75,7 +75,7 @@ enum ExpertMemory {
 
   private static func fallbackExpertsPerLayer(_ kind: ModelKind) -> Int {
     switch kind {
-    case .deepSeekV41: 384
+    case .deepSeekV41, .deepSeekV41_1017: 384
     case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 512
     default: 256
     }
@@ -84,7 +84,7 @@ enum ExpertMemory {
   private static func fallbackLayers(_ kind: ModelKind) -> Int {
     switch kind {
     case .deepSeekV4: 43
-    case .deepSeekV41: 40
+    case .deepSeekV41, .deepSeekV41_1017: 40
     case .mimoV26FlashRL: 47
     case .qwen3_8FlashNext, .swift1_5Qwen3_8FlashNext: 48
     default: 1
@@ -170,7 +170,7 @@ struct MemoryPlanningProfile {
         : nativeDeepSeekEstimate(s, dsparkAvailable: dsparkAvailable, input: input, output: output)
     }
     let ratio = s.anePrefillRatio ?? 0
-    guard (kind.usesQwenEngine || [.deepSeekV4, .deepSeekV41].contains(kind)),
+    guard (kind.usesQwenEngine || (kind == .deepSeekV4 || kind.isDeepSeekV41)),
       input > 0, output >= 0, (contextTokens != nil || output > 0),
       input <= maximum, output <= maximum - input,
       s.readWorkers > 0, (s.prefetchReadWorkers ?? 2) > 0,
@@ -193,7 +193,7 @@ struct MemoryPlanningProfile {
     let flashWaves = qwen && s.qwenFlashWavesEnabled
     // Packed LRU payload only; Python objects and OS pages are outside this estimate.
     let ngramCache = qwen ? Double(s.effectiveQwenNgramCacheBytes) : 0
-    let v41 = kind == .deepSeekV41
+    let v41 = kind.isDeepSeekV41
     let mtp = qwen && s.mtpEnabled == true && mtpAvailable
     let dspark = !qwen && s.dsparkEnabled && dsparkAvailable
     if mtp && manifest.mtp == nil || dspark && manifest.dspark == nil { return nil }
@@ -564,7 +564,7 @@ struct MemoryPlanningProfile {
       return CacheFootprint(bytes: full * perLayer + recurrent + conv + ple,
         growth: perLayer + unpack, maxHistoryRows: capacity)
     }
-    let v41 = kind == .deepSeekV41
+    let v41 = kind.isDeepSeekV41
     let ratios = config["compress_ratios"] as? [Int]
       ?? (0..<manifest.layerCount).map { $0 == 0 || $0 == manifest.layerCount - 1 ? 0 : ($0 % 2 == 0 ? 4 : 128) }
     let sources = v41 ? integers("kv_source_layer_ids", alias: "kv_source_layers") ?? [] : Array(0..<manifest.layerCount)

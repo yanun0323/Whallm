@@ -416,13 +416,13 @@ final class ModelLibrary: ObservableObject {
           qwenQSASelectedKernel: modelKind.usesQwenEngine,
           qwenMTPDraftTokens: modelKind.usesQwenEngine ? settings.effectiveQwenMTPDraftTokens : 2,
           qwenMTPZeroAcceptanceLimit: modelKind.usesQwenEngine ? settings.effectiveQwenMTPZeroAcceptanceLimit : 32,
-          v41PackedKV: modelKind == .deepSeekV41 && settings.packedKVCache == true,
-          v41PackedIndex: modelKind == .deepSeekV41 && settings.packedIndexCache == true,
-          v41CandidateIndex: modelKind == .deepSeekV41 && settings.candidateIndex == true,
-          v41CEDPrefill: modelKind == .deepSeekV41 && settings.cedPrefill == true && settings.layerMajorPrefill && !settings.dsparkEnabled,
-          v41NextLayerPrefetch: modelKind == .deepSeekV41 && settings.nextLayerPrefetch == true && settings.layerMajorPrefill && settings.batchedExpertPrefill != false,
+          v41PackedKV: modelKind.isDeepSeekV41 && settings.packedKVCache == true,
+          v41PackedIndex: modelKind.isDeepSeekV41 && settings.packedIndexCache == true,
+          v41CandidateIndex: modelKind.isDeepSeekV41 && settings.candidateIndex == true,
+          v41CEDPrefill: modelKind.isDeepSeekV41 && settings.cedPrefill == true && settings.layerMajorPrefill && !settings.dsparkEnabled,
+          v41NextLayerPrefetch: modelKind.isDeepSeekV41 && settings.nextLayerPrefetch == true && settings.layerMajorPrefill && settings.batchedExpertPrefill != false,
           deepseekANEPrefill: !modelKind.usesQwenEngine && settings.deepSeekANEPrefill == true,
-          v41LayerMajorPrefill: modelKind == .deepSeekV41 && settings.layerMajorPrefill,
+          v41LayerMajorPrefill: modelKind.isDeepSeekV41 && settings.layerMajorPrefill,
           nativeAutomaticExpertCache: modelKind.usesNativeEngine && settings.expertCacheAutomatic == true
         ),
         defaults: ModelCatalog.Entry.Defaults(
@@ -957,8 +957,8 @@ final class ModelLibrary: ObservableObject {
         Task { @MainActor in self?.updateRepackProgress(progress, phase: .installingDSpark) }
       }
       let manifest = try InstalledModel.loadManifest(at: url)
-      if manifest.modelKind == .deepSeekV41 {
-        _ = try await DeepSeekV41Checkpoint().installDSpark(at: url, progress: progress)
+      if let kind = manifest.modelKind, kind.isDeepSeekV41 {
+        _ = try await DeepSeekV41Checkpoint(kind: kind).installDSpark(at: url, progress: progress)
       } else {
         _ = try await DeepSeekV4Checkpoint().installDSpark(at: url, progress: progress)
       }

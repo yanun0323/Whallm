@@ -89,11 +89,11 @@ enum DeepSeekV41Contract {
     }
   }
 
-  static func validate(_ plan: RepackPlan) throws {
-    guard plan.formatVersion == 3,
-      plan.modelKind == .deepSeekV41,
-      plan.modelID == modelID,
-      plan.revision == revision,
+  static func validate(_ plan: RepackPlan, kind: ModelKind = .deepSeekV41) throws {
+    guard kind.isDeepSeekV41, plan.formatVersion == 3,
+      plan.modelKind == kind,
+      plan.modelID == kind.descriptor.checkpointModelID,
+      plan.revision == kind.descriptor.checkpointRevision,
       plan.layerCount == layerCount,
       plan.expertCount == expertCount,
       plan.selectedExpertCount == selectedExpertCount,
@@ -110,11 +110,11 @@ enum DeepSeekV41Contract {
     try validateDSpark(plan.dspark, files: plan.files.map { InstalledFile(path: $0.path, size: $0.size, sha256: "") })
   }
 
-  static func validate(_ manifest: InstalledManifest) throws -> InstalledManifest {
-    guard manifest.formatVersion == 3,
-      manifest.modelKind == .deepSeekV41,
-      manifest.modelID == modelID,
-      manifest.revision == revision,
+  static func validate(_ manifest: InstalledManifest, kind: ModelKind = .deepSeekV41) throws -> InstalledManifest {
+    guard kind.isDeepSeekV41, manifest.formatVersion == 3,
+      manifest.modelKind == kind,
+      manifest.modelID == kind.descriptor.checkpointModelID,
+      manifest.revision == kind.descriptor.checkpointRevision,
       manifest.layerCount == layerCount,
       manifest.expertCount == expertCount,
       manifest.selectedExpertCount == selectedExpertCount,
@@ -286,9 +286,12 @@ struct DeepSeekV41Config: Decodable, Sendable {
 }
 
 enum DeepSeekV41Planner {
-  static func makePlan(index: CheckpointIndex, tensors: [String: SafeTensor], includeDSpark: Bool = false) throws
+  static func makePlan(index: CheckpointIndex, tensors: [String: SafeTensor], includeDSpark: Bool = false, kind: ModelKind = .deepSeekV41) throws
     -> RepackPlan
   {
+    guard kind.isDeepSeekV41 else {
+      throw RepackError.incompatibleModel("not a V4.1 checkpoint")
+    }
     guard Set(index.weightMap.keys) == Set(tensors.keys) else {
       throw RepackError.invalidPlan("checkpoint tensor table does not match the index")
     }
@@ -434,8 +437,8 @@ enum DeepSeekV41Planner {
 
     return RepackPlan(
       formatVersion: 3,
-      modelID: DeepSeekV41Contract.modelID,
-      revision: DeepSeekV41Contract.revision,
+      modelID: kind.descriptor.checkpointModelID,
+      revision: kind.descriptor.checkpointRevision,
       layerCount: DeepSeekV41Contract.layerCount,
       expertCount: DeepSeekV41Contract.expertCount,
       selectedExpertCount: DeepSeekV41Contract.selectedExpertCount,
@@ -446,7 +449,7 @@ enum DeepSeekV41Planner {
       expertRegions: DeepSeekV41Contract.expertRegions,
       dspark: dspark,
       copies: copies,
-      modelKind: .deepSeekV41,
+      modelKind: kind,
       maximumContext: DeepSeekV41Contract.maximumContext,
       engram: DeepSeekV41Contract.engram)
   }
@@ -481,14 +484,19 @@ enum DeepSeekV41Planner {
 
 public struct DeepSeekV41Checkpoint: Sendable {
   private let source: any CheckpointSource
+  private let kind: ModelKind
 
-  public init() {
+  public init(kind: ModelKind = .deepSeekV41) {
+    precondition(kind.isDeepSeekV41, "not a V4.1 checkpoint")
+    self.kind = kind
     source = HuggingFaceSource(
-      modelID: DeepSeekV41Contract.modelID, revision: DeepSeekV41Contract.revision)
+      modelID: kind.descriptor.checkpointModelID, revision: kind.descriptor.checkpointRevision)
   }
 
-  init(source: any CheckpointSource) {
+  init(source: any CheckpointSource, kind: ModelKind = .deepSeekV41) {
+    precondition(kind.isDeepSeekV41, "not a V4.1 checkpoint")
     self.source = source
+    self.kind = kind
   }
 
   public func makeRepackPlan(includeDSpark: Bool = false) async throws -> RepackPlan {
@@ -502,7 +510,7 @@ public struct DeepSeekV41Checkpoint: Sendable {
     try DeepSeekV41Contract.validate(config)
     let indexData = try await source.data(path: "model.safetensors.index.json")
     let index = try CheckpointIndex.decode(indexData)
-    return try DeepSeekV41Planner.makePlan(index: index, tensors: try await readTensors(index: index), includeDSpark: includeDSpark)
+    return try DeepSeekV41Planner.makePlan(index: index, tensors: try await readTensors(index: index), includeDSpark: includeDSpark, kind: kind)
   }
 
   public func repack(
@@ -518,7 +526,7 @@ public struct DeepSeekV41Checkpoint: Sendable {
     to output: URL,
     progress: (@Sendable (RepackProgress) -> Void)? = nil
   ) async throws -> InstalledManifest {
-    try DeepSeekV41Contract.validate(plan)
+    try DeepSeekV41Contract.validate(plan, kind: kind)
     return try await Repacker(source: source).run(plan: plan, output: output, progress: progress)
   }
 
@@ -527,7 +535,7 @@ public struct DeepSeekV41Checkpoint: Sendable {
     invalidFiles: Set<String>,
     progress: (@Sendable (RepackProgress) -> Void)? = nil
   ) async throws -> InstalledManifest {
-    let installed = try InstalledModel.loadManifest(at: output)
+    let installed = try DeepSeekV41Contract.validate(InstalledModel.loadManifest(at: output), kind: kind)
     let plan = try await makeRepackPlan(includeDSpark: installed.dspark != nil)
     return try await Repacker(source: source).repair(
       plan: plan, output: output, invalidFiles: invalidFiles, progress: progress)
@@ -535,7 +543,7 @@ public struct DeepSeekV41Checkpoint: Sendable {
 
   public func installDSpark(at output: URL,
     progress: (@Sendable (RepackProgress) -> Void)? = nil) async throws -> InstalledManifest {
-    let manifest = try DeepSeekV41Contract.validate(InstalledModel.loadManifest(at: output))
+    let manifest = try DeepSeekV41Contract.validate(InstalledModel.loadManifest(at: output), kind: kind)
     if manifest.dspark != nil { return try InstalledModel.verify(at: output) }
     let plan = try await makeRepackPlan(includeDSpark: true)
     return try await Repacker(source: source).repair(plan: plan, output: output,

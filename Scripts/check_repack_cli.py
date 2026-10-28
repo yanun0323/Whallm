@@ -17,6 +17,7 @@ def main():
             (None, 1, "pinned model contract"),
             ("deepseek-v4", 1, "pinned model contract"),
             ("deepseek-v4.1", 3, "pinned V4.1 model contract"),
+            ("deepseek-v4.1-1017", 3, "pinned V4.1 model contract"),
             ("qwen3.8-flash-next", 2, "pinned Qwen model contract"),
         ):
             plan = dict(

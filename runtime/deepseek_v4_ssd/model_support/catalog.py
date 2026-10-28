@@ -11,6 +11,9 @@ from pathlib import Path
 from types import MappingProxyType
 
 
+DEEPSEEK_V41_MODEL_KINDS = frozenset({"deepseek-v4.1", "deepseek-v4.1-1017"})
+
+
 QWEN_MODEL_KINDS = frozenset({"qwen3.8-flash-next", "swift1.5-qwen3.8-flash-next"})
 
 

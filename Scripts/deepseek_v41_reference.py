@@ -71,7 +71,7 @@ def main() -> int:
     from unittest import mock
     from deepseek_v4_ssd.model_support.catalog import BY_KIND
     from deepseek_v4_ssd.model_support.deepseek_v41 import DeepSeekV41Support
-    mlx = DeepSeekV41Support(replace(BY_KIND["deepseek-v4.1"], features=frozenset({"promptCache", "dspark"})))
+    mlx = DeepSeekV41Support(replace(BY_KIND[installed.model_kind], features=frozenset({"promptCache", "dspark"})))
     with mock.patch("deepseek_v4_ssd.model_support.support_for_installed", return_value=mlx):
         model, expert_cache = load_model(installed, RuntimeConfig(slots=args.slots, v41_layer_major_prefill=False))
     core = model.model

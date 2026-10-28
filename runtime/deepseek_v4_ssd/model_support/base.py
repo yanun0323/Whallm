@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from .catalog import ModelDescriptor, QWEN_MODEL_KINDS
+from .catalog import ModelDescriptor, QWEN_MODEL_KINDS, DEEPSEEK_V41_MODEL_KINDS
 
 
 class ModelSupport:
@@ -32,7 +32,7 @@ class ModelSupport:
             if (getattr(config, name, default) != default
                     and self.descriptor.kind not in QWEN_MODEL_KINDS):
                 raise ValueError(f"{name} requires a Qwen inference model")
-        if self.descriptor.kind == "deepseek-v4.1" and getattr(config, "dspark_enabled", False):
+        if self.descriptor.kind in DEEPSEEK_V41_MODEL_KINDS and getattr(config, "dspark_enabled", False):
             for name in ("v41_ced_prefill", "dspark_sequential_verification"):
                 if getattr(config, name, False):
                     raise ValueError(f"{name} is not supported by V4.1 DSpark")
@@ -40,10 +40,10 @@ class ModelSupport:
         # They must not prevent a default RuntimeConfig from loading V4 or Qwen.
         for name in ("qwen_quantized_kv", "qwen_quantized_index", "v41_packed_kv", "v41_packed_index",
                      "v41_candidate_index", "v41_ced_prefill"):
-            allowed = QWEN_MODEL_KINDS if name.startswith("qwen_") else {"deepseek-v4.1"}
+            allowed = QWEN_MODEL_KINDS if name.startswith("qwen_") else DEEPSEEK_V41_MODEL_KINDS
             if getattr(config, name, False) and self.descriptor.kind not in allowed:
                 raise ValueError(f"{name} is not supported by {self.descriptor.kind}")
-        if getattr(config, "deepseek_ane_prefill", False) and self.descriptor.kind not in ("deepseek-v4", "deepseek-v4.1"):
+        if getattr(config, "deepseek_ane_prefill", False) and self.descriptor.kind not in ({"deepseek-v4"} | DEEPSEEK_V41_MODEL_KINDS):
             raise ValueError("DeepSeek ANE prefill requires a DeepSeek model")
         if getattr(config, "v41_ced_prefill", False) and not (config.layer_major_prefill and config.v41_layer_major_prefill):
             raise ValueError("CED prefill requires layer-major prefill")
@@ -61,7 +61,7 @@ class ModelSupport:
         return self.descriptor.display_name
 
     def uses_layer_major_prefill(self, config, token_count: int) -> bool:
-        if self.descriptor.kind == "deepseek-v4.1" and not getattr(config, "v41_layer_major_prefill", False):
+        if self.descriptor.kind in DEEPSEEK_V41_MODEL_KINDS and not getattr(config, "v41_layer_major_prefill", False):
             return False
         threshold = self.descriptor.prefill_threshold
         if threshold is None:

@@ -99,3 +99,43 @@ See the [MiMo contract and limits](mimo-development.md).
 - Older MTP measurements were made before the current engine. MTP is not faster for every prompt.
 - Some speed-ups have been tested only on small models or on single parts.
 - Very long prompts need more cache memory.
+
+## DeepSeek V4.1 Flash 1017
+
+Select **DeepSeek-V4.1-Flash-1017** in the Model page to install the October
+checkpoint alongside the September release. Both use the native DeepSeek engine.
+The new API model ID is `deepseek-v4.1-flash-1017`; its default installation folder
+is `~/.dsmodel/deepseek-v4.1-flash-1017.dsv4`. Existing September installations,
+settings and Aliases keep their identities. Each checkpoint needs its own weights;
+renaming an old installation or changing its manifest does not upgrade it.
+
+The installer pins revision `1bae0e1088993b9b82de08f59de5be5a34e42170` and
+calculates storage from the repack plan. Expect a roughly 500 GB installation;
+DSpark is additional and must come from the same checkpoint. The existing 64 GiB
+memory guidance and automatic expert cache apply. No 1017 M1 Max throughput result
+is established by these metadata changes.
+
+For metadata inspection before installing weights:
+
+```sh
+swift run -Xswiftc -DWHALLM_LOCAL_BUILD dsv4-repack inspect --model deepseek-v4.1-1017
+```
+
+This reads checkpoint metadata and safetensors headers, not the full weight payload.
+The pinned 1017 configuration and tensor index match September, but its encoder
+contains tool-message fixes and has a separate checksum. Metadata-only regression
+checks can run on any host with Python 3.10 or newer:
+
+```sh
+python3 Scripts/check_v41_contract.py
+```
+
+On the supported macOS development environment, also run `make test`,
+`make test-python` and `python3 Scripts/check_repack_cli.py .build/debug/dsv4-repack`.
+Build the native engine with `Native/DeepSeekNative/build.sh`.
+These checks do not replace numerical validation with the installed checkpoint.
+`Native/DeepSeekNative/check.sh` deliberately requires the September weights because
+its golden continuations were recorded from that checkpoint. For 1017, generate
+an independent MLX reference with `Scripts/deepseek_v41_reference.py` using the
+1017 installation and compare native results for the same tokens and settings;
+do not overwrite September goldens with unverified native output.

@@ -213,7 +213,7 @@ struct Repacker {
       var companions = requestedCompanions ?? {
         ModelPackages.companions(for: plan.modelKind ?? .deepSeekV4)
       }()
-      if plan.modelKind == .deepSeekV41 && plan.dspark != nil {
+      if plan.modelKind?.isDeepSeekV41 == true && plan.dspark != nil {
         companions.append(CompanionFile(source: "inference/config.json", destination: "inference/config.json"))
       }
       for companion in companions {

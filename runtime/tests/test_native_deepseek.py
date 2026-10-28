@@ -173,6 +173,17 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(open_runtime(spec), "native")
         opened.assert_called_once_with("/tmp/v41", spec.runtime, KIND)
 
+    def test_1017_catalog_opens_native_runtime_and_keeps_api_identity(self):
+        raw = self.raw()
+        raw["models"][0].update(id="deepseek-v4.1-flash-1017", model_kind="deepseek-v4.1-1017")
+        spec = parse_model_catalog(raw)[0]
+        with mock.patch.object(NativeDeepSeekRuntime, "open", return_value="native") as opened:
+            self.assertEqual(open_runtime(spec), "native")
+        opened.assert_called_once_with("/tmp/v41", spec.runtime, "deepseek-v4.1-1017")
+        raw["models"][0]["id"] = "deepseek-v4.1-flash"
+        with self.assertRaises(ValueError):
+            parse_model_catalog(raw)
+
     def test_mlx_only_options_are_refused(self):
         for name in ("v41_packed_kv", "v41_packed_index", "v41_candidate_index", "deepseek_ane_prefill",
                      "dspark_sequential_verification", "qwen_8bit_common_tensors"):

@@ -40,6 +40,40 @@ final class DeepSeekV41DSparkTests: XCTestCase {
     XCTAssertEqual(plan.files.first { $0.path == "dspark/experts/layer_02.bin" }?.size, 128 * DeepSeekV41Contract.expertBlobSize)
     XCTAssertEqual(plan.copies.filter { $0.destinationFile.hasPrefix("dspark/experts/") }.count, 3 * 128 * 6)
     XCTAssertEqual(plan.commonTensors.count, 1)
+    for includeDSpark in [false, true] {
+      let october = try DeepSeekV41Planner.makePlan(
+        index: index, tensors: tensors, includeDSpark: includeDSpark, kind: .deepSeekV41_1017)
+      XCTAssertEqual(october.modelKind, .deepSeekV41_1017)
+      XCTAssertEqual(october.modelID, "deepseek-ai/DeepSeek-V4.1-Flash-1017")
+      XCTAssertEqual(october.revision, "1bae0e1088993b9b82de08f59de5be5a34e42170")
+      XCTAssertEqual(october.files, includeDSpark ? plan.files : main.files)
+      XCTAssertEqual(october.copies, includeDSpark ? plan.copies : main.copies)
+      XCTAssertNoThrow(try DeepSeekV41Contract.validate(october, kind: .deepSeekV41_1017))
+      XCTAssertThrowsError(try DeepSeekV41Contract.validate(october))
+      var raw = try XCTUnwrap(JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(october)) as? [String: Any])
+      for (field, value) in [("modelID", DeepSeekV41Contract.modelID),
+                             ("revision", DeepSeekV41Contract.revision),
+                             ("modelKind", "deepseek-v4.1")] {
+        var crossed = raw
+        crossed[field] = value
+        let invalid = try JSONDecoder().decode(RepackPlan.self,
+          from: JSONSerialization.data(withJSONObject: crossed))
+        XCTAssertThrowsError(try DeepSeekV41Contract.validate(invalid, kind: .deepSeekV41_1017))
+      }
+      raw.removeValue(forKey: "copies")
+      raw.removeValue(forKey: "checkpointTensorBytes")
+      raw["files"] = october.files.map { ["path": $0.path, "size": $0.size, "sha256": String(repeating: "0", count: 64)] as [String: Any] }
+      var files = try XCTUnwrap(raw["files"] as? [[String: Any]])
+      let companions = DeepSeekV41Contract.companionPaths + (includeDSpark ? ["inference/config.json"] : [])
+      files += companions.map { ["path": $0, "size": 1, "sha256": String(repeating: "0", count: 64)] }
+      raw["files"] = files
+      let manifest = try JSONDecoder().decode(InstalledManifest.self,
+        from: JSONSerialization.data(withJSONObject: raw))
+      XCTAssertNoThrow(try ModelPackages.package(for: .deepSeekV41_1017).validate(manifest))
+      XCTAssertThrowsError(try ModelPackages.package(for: .deepSeekV41).validate(manifest))
+    }
+    XCTAssertThrowsError(try DeepSeekV41Contract.validate(main, kind: .deepSeekV41_1017))
     tensors["mtp.2.ffn.experts.127.w1.weight"] = nil
     let brokenIndex = CheckpointIndex(totalSize: 0, weightMap: Dictionary(uniqueKeysWithValues: tensors.keys.map { ($0, "fixture.safetensors") }))
     XCTAssertThrowsError(try DeepSeekV41Planner.makePlan(index: brokenIndex, tensors: tensors, includeDSpark: true))

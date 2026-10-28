@@ -3,7 +3,7 @@ import DeepSeekRepack
 
 enum AdvancedSettingImpact {
   static func key(for label: String, modelKind: ModelKind? = nil) -> String {
-    if modelKind == .deepSeekV41 && ["Compress attention cache", "Compress attention index"].contains(label) {
+    if modelKind.isDeepSeekV41 && ["Compress attention cache", "Compress attention index"].contains(label) {
       return "Save cache memory, but packing and unpacking may slow processing."
     }
     return switch label {
