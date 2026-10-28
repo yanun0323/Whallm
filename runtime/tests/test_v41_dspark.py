@@ -78,7 +78,8 @@ class V41DSparkTests(unittest.TestCase):
             root = Path(directory)
             (root / 'config.json').write_text(json.dumps(asdict(model.args)))
             installed = SimpleNamespace(root=root, model_kind='deepseek-v4.1',
-                model_id='fixture/v41', revision='fixture', format_version=3, maximum_context=32)
+                model_id='fixture/v41', revision='fixture', format_version=3, maximum_context=32,
+                is_deepseek_v41=True)
             def runtime(layer_major):
                 config = RuntimeConfig(dspark_enabled=True, layer_major_prefill_threshold=1,
                     v41_layer_major_prefill=layer_major, layer_major_prefill=layer_major,

@@ -7,6 +7,9 @@ zip_path=${2:?Usage: verify-packaged-app.sh APP_PATH ZIP_PATH}
 require_notarization=${REQUIRE_NOTARIZATION:-0}
 expected_local_build=${EXPECTED_LOCAL_BUILD:-}
 expected_sdk_version=${EXPECTED_SDK_VERSION:-}
+# Static-only mode for environments that prohibit launching the App.
+# The local packaging workflow is incomplete until launch checks also pass.
+skip_app_launch_checks=${SKIP_APP_LAUNCH_CHECKS:-0}
 verification_root=$(mktemp -d)
 trap 'rm -rf "$verification_root"' EXIT
 
@@ -149,7 +152,9 @@ launch_without_module_bundle_access() {
 verify_signature "$app_path"
 verify_localizations "$app_path"
 verify_model_packages "$app_path"
-launch_without_module_bundle_access "$app_path"
+if [[ $skip_app_launch_checks != 1 ]]; then
+  launch_without_module_bundle_access "$app_path"
+fi
 
 ditto -x -k "$zip_path" "$verification_root/extracted"
 extracted_app=$verification_root/extracted/Whallm.app
@@ -160,7 +165,14 @@ extracted_app=$verification_root/extracted/Whallm.app
 verify_signature "$extracted_app"
 verify_localizations "$extracted_app"
 verify_model_packages "$extracted_app"
-launch_without_module_bundle_access "$extracted_app"
+if [[ $skip_app_launch_checks != 1 ]]; then
+  launch_without_module_bundle_access "$extracted_app"
+fi
 
-print "Packaged App verification passed: $app_path"
-print "Extracted ZIP verification passed: $zip_path"
+if [[ $skip_app_launch_checks == 1 ]]; then
+  print "Packaged App static verification passed; launch checks skipped: $app_path"
+  print "Extracted ZIP static verification passed; launch checks skipped: $zip_path"
+else
+  print "Packaged App verification passed: $app_path"
+  print "Extracted ZIP verification passed: $zip_path"
+fi
