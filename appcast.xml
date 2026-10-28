@@ -7,46 +7,40 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         <title>Whallm</title>
         <item>
             <title>1.1.14</title>
-            <pubDate>Sat, 24 Oct 2026 21:24:42 +0800</pubDate>
-            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.14-dev.1</link>
+            <pubDate>Wed, 28 Oct 2026 10:04:52 +0800</pubDate>
+            <link>https://github.com/yanun0323/Whallm/releases/tag/v1.1.14-dev.2</link>
             <sparkle:channel>dev</sparkle:channel>
-            <sparkle:version>1.1.14d1</sparkle:version>
+            <sparkle:version>1.1.14d2</sparkle:version>
             <sparkle:shortVersionString>1.1.14</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.14-dev.1
+            <description sparkle:format="markdown"><![CDATA[# Whallm 1.1.14-dev.2
 
-Development prerelease. Changes since v1.1.13. Select **Settings → Updates → Dev** to receive dev updates; the stable channel remains on v1.1.13.
+Development prerelease. Changes since v1.1.14-dev.1. Select **Settings → Updates → Dev** to receive dev updates; the stable channel remains on v1.1.13.
 
-## DeepSeek V4.1 Native engine
+## Qwen thinking limits
 
-- DeepSeek V4.1 now uses the bundled C++ and Metal Native engine instead of MLX, including text generation, DSpark and Memory/Disk Prompt Cache.
-- Existing model files, API model ID, installation and Alias stay unchanged. DSpark experts share the main expert cache.
-- Automatic expert cache sizing uses available memory at model load, from 256 to 4,096 slots. Fixed caches must hold at least 96 experts.
-- Advanced Settings no longer offers MLX-only controls for this model. Approximate mode and incompatible MLX-specific runtime options are rejected.
-- Developer messages are encoded as system messages for DeepSeek V4.1, including tool conversations.
+- Both Qwen3.8-Flash-Next and Swift1.5-Qwen3.8-Flash-Next now support an optional thinking limit. At the limit, the engine closes the thinking block and continues answering or making tool calls within the same request.
+- In **Model → Advanced Settings**, **Max tokens** is now **Total output limit**. Enable **Limit thinking** to set **Thinking limit**. Thinking, its closing marker, answers and tool calls all count toward the total output limit.
+- Chat, Responses and Completions APIs accept `think_budget`. Omit it to use the App/catalog default, use `null` to disable it for one request, or use `0` to end an open thinking block immediately. Other models reject a non-null budget.
+- Leave at least two output tokens beyond the thinking budget, and substantially more for useful answers. For example, `think_budget: 8192` with `max_tokens: 16384` leaves up to 8,191 answer tokens after the closing marker. API output limits override the App default.
+- MTP remains available and verification stops at the thinking boundary. The closing marker is included in token usage and prompt-cache history. Requests with insufficient context space are rejected rather than silently consuming the reserved answer space.
+- The budget is off by default. Existing settings and total output limits are preserved. Built-in throughput tests ignore the thinking budget.
 
-## App and logging
+## Qwen MTP scheduling
 
-- Fix the main window layout so navigation and Logs remain visible, including at smaller window sizes.
-- Add runtime event logging and an optional **Save logs to file** setting. File logging is off by default and keeps at most 10 MB in `~/.whallm/server.log`, removing oldest lines first.
-- Debug events omit full prompts, tool results, images and API keys. Logs can still contain local paths and network addresses; review them before sharing.
-
-## API output limits
-
-- Tool-enabled requests that exhaust their output budget preserve the length-limit result rather than failing solely because thinking or tool markup is unfinished.
-- Chat keeps `finish_reason: "length"` and token usage. Responses reports `status: "incomplete"`, `incomplete_details.reason: "max_output_tokens"`, and `response.incomplete` for streaming requests.
-- Required-tool requests do not spend a second output budget after reaching the limit. Malformed completed output remains an error.
+- The shared Qwen Native engine overlaps shared-expert computation with routing and required expert reads during 2–6-row MTP verification. No new setting is needed; single-token decoding, prefill and the draft layer keep their existing schedules.
+- The change preserves the arithmetic and does not prefetch guessed experts. A prior short Swift-only M2 Max experiment observed about 2.15% faster decoding overall. This is limited evidence, not a general speed guarantee; other models, Macs and long contexts have not been validated for this release.
 
 ## Upgrade and validation limits
 
-- Quit the old App and restart with this build. No model redownload is required. DeepSeek V4.1 prompt caches from MLX are not reused; native caches rebuild on demand. Saved MLX-only tuning no longer applies.
-- This is a dev build, not a new stable release. MiMo remains a preview, and the server still handles one generation request at a time.
-- API regression tests use fixed model output; they do not establish real-model tool quality or full Pi/Codex compatibility.
-- Earlier DeepSeek V4.1 checks on M2 Max observed greedy output matching MLX. These are limited observations, not broad quality validation. Inputs longer than 16,000 tokens and M5 performance remain unvalidated; DSpark speed has not been remeasured after the latest changes.
-- No new real-model performance or quality measurements are claimed for this release. See [the usage reference](https://github.com/yanun0323/Whallm/blob/v1.1.14-dev.1/docs/usage.md) and [benchmark limitations](https://github.com/yanun0323/Whallm/blob/v1.1.14-dev.1/BENCHMARK.md).
+- Quit the old App and restart with this build. No model redownload or settings reset is required. Enable the thinking limit explicitly if wanted, and ensure client-supplied output limits leave enough room for an answer.
+- Fixed-output tests cover the 8,192-token boundary, MTP on/off, cancellation, cache continuation, image-prefill handling, API streaming and tool calls. They do not establish real-model answer or tool quality.
+- Prior short real Swift-model checks cover forced thinking transitions with MTP on/off, repeat generation and state-file round trips. M2 Max checks also compare verification logits and state against the preceding schedule. These are not broad quality validation, full Qwen FP8 or real-image validation, or an 8,192-token remote Mho session test.
+- Forcing thinking to end does not guarantee a correct or complete answer. This remains a dev build; MiMo remains a preview, and the server handles one generation request at a time.
+- See [the usage reference](https://github.com/yanun0323/Whallm/blob/v1.1.14-dev.2/docs/usage.md) for the API contract and examples.
 ]]></description>
-            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.14-dev.1/Whallm-macOS-arm64.zip" length="202306837" type="application/octet-stream" sparkle:edSignature="Ttx2NmmwqHC/4AJcVo23xw/CnTLJqaLFkzAmCKmB2HBxI4Bd6vPq7c4mDpjGHW5tWaPz3VmIHjENHJzAP996Dw=="/>
+            <enclosure url="https://github.com/yanun0323/Whallm/releases/download/v1.1.14-dev.2/Whallm-macOS-arm64.zip" length="202318291" type="application/octet-stream" sparkle:edSignature="G3HRxabJbQP96BvDkL24fIFD90lxkVVZI4XQ0cEniuVFCKZk/r+tovIH2YskWJnS//SpvqLViBXm0ukbBtFqBQ=="/>
         </item>
         <item>
             <title>1.1.13</title>
@@ -98,6 +92,6 @@ Requires Apple Silicon and macOS 15 or later. Model weights are downloaded separ
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: J6tWETtqDqUjFLOEDxbSZ8/uODVPop/QBRwwimva3iP06xJoibeWiodG2I5vwoLviO5PEJqNzC0XpunKuRwfDQ==
-length: 7870
+edSignature: WlFUWUJPC0L9kxCkfbz3iFZtzwd9Fecnv6H7BG+yD+3Fiu4Bw83EC7Z6udKSsd9mh+AmTTg9vcOOW4s8b6y0DQ==
+length: 8234
 -->
