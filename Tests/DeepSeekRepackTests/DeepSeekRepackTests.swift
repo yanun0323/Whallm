@@ -281,6 +281,48 @@ final class DeepSeekRepackTests: XCTestCase {
     XCTAssertEqual(firstRangeReads, 1)
   }
 
+  func testBatchedDownloadResumesAtEightMiBReceiptBoundaries() async throws {
+    let chunk: UInt64 = 8 * 1_024 * 1_024
+    let size = 2 * chunk + 4
+    var files = companionFiles()
+    files["shard"] = Data(repeating: 7, count: Int(size))
+    let source = FailingCheckpointSource(
+      files: files, failAt: 2 * chunk, failures: 3,
+      batchSize: 2 * chunk, concurrency: 1)
+    let plan = RepackPlan(
+      formatVersion: 1,
+      modelID: ModelContract.modelID,
+      revision: ModelContract.revision,
+      layerCount: ModelContract.layerCount,
+      expertCount: ModelContract.expertCount,
+      selectedExpertCount: ModelContract.selectedExpertCount,
+      expertBlobSize: ModelContract.expertBlobSize,
+      checkpointTensorBytes: size,
+      files: [PlannedFile(path: "common.bin", size: size)],
+      commonTensors: [InstalledTensor(
+        name: "test", dtype: "I8", shape: [Int(size)], offset: 0, length: size)],
+      expertRegions: ModelContract.expertRegions,
+      copies: [TensorCopy(
+        tensor: "test", sourceFile: "shard", sourceOffset: 0, length: size,
+        destinationFile: "common.bin", destinationOffset: 0)]
+    )
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let output = parent.appendingPathComponent("model.dsv4")
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: parent) }
+
+    do {
+      _ = try await Repacker(source: source).run(plan: plan, output: output, progress: nil)
+      XCTFail("the second source batch must fail")
+    } catch {
+      XCTAssertTrue(FileManager.default.fileExists(atPath: output.path + ".partial"))
+    }
+    _ = try await Repacker(source: source).run(plan: plan, output: output, progress: nil)
+    let firstBatchReads = await source.readCount(at: 0)
+    XCTAssertEqual(firstBatchReads, 1)
+    XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")), files["shard"])
+  }
+
   func testAuditFindsChecksumFailureAndRepairDownloadsInvalidFile() async throws {
     var files = companionFiles()
     files["shard"] = Data([1, 2, 3, 4])
@@ -820,12 +862,17 @@ private struct MemoryCheckpointSource: CheckpointSource {
 private actor FailingCheckpointSource: CheckpointSource {
   let files: [String: Data]
   let failAt: UInt64
+  let downloadBatchSize: UInt64
+  let downloadConcurrency: Int
   var failures: Int
   var reads: [UInt64: Int] = [:]
 
-  init(files: [String: Data], failAt: UInt64, failures: Int) {
+  init(files: [String: Data], failAt: UInt64, failures: Int,
+    batchSize: UInt64 = 8 * 1_024 * 1_024, concurrency: Int = 8) {
     self.files = files
     self.failAt = failAt
+    self.downloadBatchSize = batchSize
+    self.downloadConcurrency = concurrency
     self.failures = failures
   }
 

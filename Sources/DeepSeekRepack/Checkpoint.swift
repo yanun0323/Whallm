@@ -1,8 +1,15 @@
 import Foundation
 
 protocol CheckpointSource: Sendable {
+  var downloadBatchSize: UInt64 { get }
+  var downloadConcurrency: Int { get }
   func data(path: String) async throws -> Data
   func data(path: String, range: Range<UInt64>) async throws -> Data
+}
+
+extension CheckpointSource {
+  var downloadBatchSize: UInt64 { 8 * 1_024 * 1_024 }
+  var downloadConcurrency: Int { 8 }
 }
 
 struct HuggingFaceSource: CheckpointSource {

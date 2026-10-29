@@ -50,6 +50,7 @@ Both Qwen models use Whallm's own engine, written in C++ and Metal (the **Native
 
 DeepSeek V4.1 also runs on its own Native engine instead of MLX. Your download, model name, API ID and Alias stay the same. Prompt caches saved by the old MLX engine are not reused.
 
+- For checkpoint downloads and repairs, a local Hugging Face read token (`hf auth login`) enables authenticated Xet range transfers. Whallm keeps 8 MiB resume receipts and uses up to 512 MiB of temporary space for each transfer. On Macs with at least 64 GiB of RAM, it enables Xet high performance mode. Without a local token, it uses HTTP range requests.
 - **Advanced Settings** covers generation, expert cache size, read workers, Prompt Cache, warmup and DSpark.
 - **Size the expert cache automatically** is on by default. Whallm then uses the memory that is free when the model loads, up to about 72 GiB, and leaves at least 7 GiB or 15% of your Mac's memory for macOS and other apps. A fixed size must hold at least 96 experts.
 - Settings that only worked with MLX are gone, such as approximate mode, ANE projection and the MLX memory guideline. Requests that ask for approximate mode are rejected.

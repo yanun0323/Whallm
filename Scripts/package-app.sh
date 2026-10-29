@@ -68,6 +68,14 @@ for package in ("mlx", "mlx-metal"):
     if actual != expected:
         raise SystemExit(f"{package}=={actual}; packaging requires {expected}. "
                          "Install requirements.txt in the selected Python environment first.")
+for package in ("huggingface_hub", "hf-xet"):
+    required = next(line.split("==", 1)[1] for line in
+                    Path(sys.argv[1]).read_text().splitlines()
+                    if line.startswith(f"{package}=="))
+    actual = importlib.metadata.version(package)
+    if actual != required:
+        raise SystemExit(f"{package}=={actual}; packaging requires {required}. "
+                         "Install requirements.txt in the selected Python environment first.")
 PY
 
 python_version=$($python_executable -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
