@@ -402,6 +402,19 @@ final class DeepSeekRepackTests: XCTestCase {
     XCTAssertEqual(data.suffix(Int(size / 2)), Data(repeating: 2, count: Int(size / 2)))
   }
 
+  func test1017StagingBudgetAllowsOneLargeShardWithoutRequiringSpaceForTwo() throws {
+    let budget = try XCTUnwrap(StagingCapacity.budget(
+      available: 622_752_977_316, temporaryAvailable: 622_752_977_316,
+      installedBytes: 501_382_643_728, allocatedBytes: 19_698_999_296))
+    let largeShard: UInt64 = 101_537_926_640 + 64 * 1_024 * 1_024
+    let regularShard: UInt64 = 7_410_000_000 + 64 * 1_024 * 1_024
+    XCTAssertGreaterThan(budget, largeShard)
+    XCTAssertTrue(StagingCapacity.canPrefetch(
+      current: regularShard, next: regularShard, budget: budget))
+    XCTAssertFalse(StagingCapacity.canPrefetch(
+      current: largeShard, next: largeShard, budget: budget))
+  }
+
   func testAuditFindsChecksumFailureAndRepairDownloadsInvalidFile() async throws {
     var files = companionFiles()
     files["shard"] = Data([1, 2, 3, 4])

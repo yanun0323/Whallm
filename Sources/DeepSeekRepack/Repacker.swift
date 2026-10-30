@@ -77,6 +77,24 @@ private final class DownloadProgressTracker: @unchecked Sendable {
   }
 }
 
+enum StagingCapacity {
+  static let safetyMargin: UInt64 = 1 * 1_024 * 1_024 * 1_024
+
+  static func budget(
+    available: UInt64, temporaryAvailable: UInt64,
+    installedBytes: UInt64, allocatedBytes: UInt64
+  ) -> UInt64? {
+    let remaining = installedBytes > allocatedBytes ? installedBytes - allocatedBytes : 0
+    guard available > remaining else { return nil }
+    let headroom = min(available - remaining, temporaryAvailable)
+    return headroom > safetyMargin ? headroom - safetyMargin : nil
+  }
+
+  static func canPrefetch(current: UInt64, next: UInt64, budget: UInt64) -> Bool {
+    current <= budget && next <= budget - current
+  }
+}
+
 struct Repacker {
   private let source: any CheckpointSource
   private let chunkSize: UInt64 = 8 * 1_024 * 1_024
@@ -164,14 +182,20 @@ struct Repacker {
       let transferProgress = DownloadProgressTracker(
         copiedBytes: copied, downloadedBytes: downloadedBytes,
         totalBytes: plan.checkpointTensorBytes, progress: progress)
+      let sourceEnds = Dictionary(grouping: plan.copies, by: \.sourceFile).mapValues { copies in
+        copies.map { $0.sourceOffset + $0.length }.max() ?? 0
+      }
+      let shardGroups = Dictionary(grouping: batches, by: \.sourceFile)
+        .sorted { $0.key < $1.key }
+        .enumerated().map { index, entry in
+          StagedBatchGroup(
+            id: index, path: entry.key, batches: entry.value,
+            estimatedBytes: (sourceEnds[entry.key] ?? 0) + 64 * 1_024 * 1_024)
+        }
       if let staged = source as? any StagedCheckpointSource,
-        canStage(plan: plan, parent: parent)
+        let budget = stagingBudget(plan: plan, parent: parent, partial: partial),
+        shardGroups.allSatisfy({ $0.estimatedBytes <= budget })
       {
-        let shardGroups = Dictionary(grouping: batches, by: \.sourceFile)
-          .sorted { $0.key < $1.key }
-          .enumerated().map { index, entry in
-            StagedBatchGroup(id: index, path: entry.key, batches: entry.value)
-          }
         try await withThrowingTaskGroup(of: StagedGroupResult.self) { group in
           var iterator = shardGroups.makeIterator()
           if let first = iterator.next() {
@@ -182,7 +206,13 @@ struct Repacker {
             }
           }
           while let ready = try await group.next() {
-            if let next = iterator.next() {
+            let next = iterator.next()
+            let prefetch = next.map {
+              StagingCapacity.canPrefetch(
+                current: ready.group.estimatedBytes, next: $0.estimatedBytes,
+                budget: budget)
+            } ?? false
+            if prefetch, let next {
               group.addTask {
                 StagedGroupResult(group: next, bytes: try await staged.stage(path: next.path) {
                   transferProgress.received(batch: next.id, bytes: $0)
@@ -218,6 +248,13 @@ struct Repacker {
               }
             }
             await staged.release(path: ready.group.path)
+            if !prefetch, let next {
+              group.addTask {
+                StagedGroupResult(group: next, bytes: try await staged.stage(path: next.path) {
+                  transferProgress.received(batch: next.id, bytes: $0)
+                })
+              }
+            }
           }
         }
       } else {
@@ -1009,6 +1046,7 @@ struct Repacker {
     let id: Int
     let path: String
     let batches: [WorkBatch]
+    let estimatedBytes: UInt64
   }
 
   private struct StagedGroupResult: Sendable {
@@ -1016,7 +1054,7 @@ struct Repacker {
     let bytes: UInt64
   }
 
-  private func canStage(plan: RepackPlan, parent: URL) -> Bool {
+  private func stagingBudget(plan: RepackPlan, parent: URL, partial: URL) -> UInt64? {
     guard plan.expertConversions?.isEmpty ?? true,
       let available = try? parent.resourceValues(
         forKeys: [.volumeAvailableCapacityForImportantUsageKey]
@@ -1025,12 +1063,27 @@ struct Repacker {
       let temporaryAvailable = try? FileManager.default.temporaryDirectory.resourceValues(
         forKeys: [.volumeAvailableCapacityForImportantUsageKey]
       ).volumeAvailableCapacityForImportantUsage,
-      temporaryAvailable >= 0
-    else { return false }
-    let largestShard = plan.copies.map { $0.sourceOffset + $0.length }.max() ?? 0
-    let temporarySpace = 2 * (largestShard + 64 * 1_024 * 1_024)
-    return UInt64(available) >= plan.installedBytes + temporarySpace
-      && UInt64(temporaryAvailable) >= temporarySpace
+      temporaryAvailable >= 0,
+      let allocated = allocatedBytes(at: partial)
+    else { return nil }
+    return StagingCapacity.budget(
+      available: UInt64(available), temporaryAvailable: UInt64(temporaryAvailable),
+      installedBytes: plan.installedBytes, allocatedBytes: allocated)
+  }
+
+  private func allocatedBytes(at root: URL) -> UInt64? {
+    let keys: Set<URLResourceKey> = [.isRegularFileKey, .totalFileAllocatedSizeKey]
+    guard let enumerator = FileManager.default.enumerator(
+      at: root, includingPropertiesForKeys: Array(keys)) else { return nil }
+    var total: UInt64 = 0
+    for case let url as URL in enumerator {
+      guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
+      if values.isRegularFile == true {
+        guard let size = values.totalFileAllocatedSize, size >= 0 else { return nil }
+        total += UInt64(size)
+      }
+    }
+    return total
   }
 
   private func read(_ batch: WorkBatch, progress: DownloadProgressTracker) async throws -> Data {
