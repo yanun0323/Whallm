@@ -519,8 +519,7 @@ public struct DeepSeekV41Checkpoint: Sendable {
     progress: (@Sendable (RepackProgress) -> Void)? = nil
   ) async throws -> InstalledManifest {
     try DeepSeekV41Contract.validate(plan)
-    return try await Repacker(source: downloadSource).run(
-      plan: plan, output: output, progress: progress)
+    return try await Repacker(source: source).run(plan: plan, output: output, progress: progress)
   }
 
   public func repair(
@@ -530,7 +529,7 @@ public struct DeepSeekV41Checkpoint: Sendable {
   ) async throws -> InstalledManifest {
     let installed = try InstalledModel.loadManifest(at: output)
     let plan = try await makeRepackPlan(includeDSpark: installed.dspark != nil)
-    return try await Repacker(source: downloadSource).repair(
+    return try await Repacker(source: source).repair(
       plan: plan, output: output, invalidFiles: invalidFiles, progress: progress)
   }
 
@@ -539,15 +538,8 @@ public struct DeepSeekV41Checkpoint: Sendable {
     let manifest = try DeepSeekV41Contract.validate(InstalledModel.loadManifest(at: output))
     if manifest.dspark != nil { return try InstalledModel.verify(at: output) }
     let plan = try await makeRepackPlan(includeDSpark: true)
-    return try await Repacker(source: downloadSource).repair(plan: plan, output: output,
+    return try await Repacker(source: source).repair(plan: plan, output: output,
       invalidFiles: Set(plan.files.map(\.path).filter { $0.hasPrefix("dspark/") } + ["inference/config.json"]), progress: progress)
-  }
-
-  private var downloadSource: any CheckpointSource {
-    guard let huggingFace = source as? HuggingFaceSource,
-      let runtime = XetRuntime.current(), XetRuntime.hasReadToken()
-    else { return source }
-    return XetCheckpointSource(base: huggingFace, runtime: runtime)
   }
 
   private func readTensors(index: CheckpointIndex) async throws -> [String: SafeTensor] {

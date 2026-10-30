@@ -104,7 +104,14 @@ struct Repacker {
   private let conversionConcurrency = 2
 
   init(source: any CheckpointSource) {
-    self.source = source
+    if let huggingFace = source as? HuggingFaceSource,
+      huggingFace.modelID.hasPrefix("deepseek-ai/DeepSeek-V4.1-Flash"),
+      let runtime = XetRuntime.current(), XetRuntime.hasReadToken()
+    {
+      self.source = XetCheckpointSource(base: huggingFace, runtime: runtime)
+    } else {
+      self.source = source
+    }
   }
 
   func run(
