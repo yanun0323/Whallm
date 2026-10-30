@@ -77,9 +77,9 @@ final class XetCheckpointSourceTests: XCTestCase {
     guard let runtime = XetRuntime.current(), XetRuntime.hasReadToken() else {
       throw XCTSkip("The live Xet check needs Python, hf_xet, and a local HF read token")
     }
+    let checkpoint = liveCheckpoint()
     let base = HuggingFaceSource(
-      modelID: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
-      revision: "1bae0e1088993b9b82de08f59de5be5a34e42170")
+      modelID: checkpoint.modelID, revision: checkpoint.revision)
     let xet = XetCheckpointSource(base: base, runtime: runtime)
     let comparisonBytes: UInt64 = 64 * 1_024 * 1_024
     let xetBytes = ProcessInfo.processInfo.environment["WHALLM_TEST_XET_LONG"] == "1"
@@ -105,8 +105,9 @@ final class XetCheckpointSourceTests: XCTestCase {
       throw XCTSkip("The parallel Xet check needs Python, hf_xet, and a local HF read token")
     }
     let bytes: UInt64 = 512 * 1_024 * 1_024
-    let modelID = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
-    let revision = "1bae0e1088993b9b82de08f59de5be5a34e42170"
+    let checkpoint = liveCheckpoint()
+    let modelID = checkpoint.modelID
+    let revision = checkpoint.revision
     let probes = (0..<3).map { _ in TransferProgressProbe() }
     let started = Date()
     let counts = try await withThrowingTaskGroup(of: Int.self) { group in
@@ -137,9 +138,10 @@ final class XetCheckpointSourceTests: XCTestCase {
     }
     let updates = TransferProgressProbe()
     let started = Date()
+    let checkpoint = liveCheckpoint()
     let file = try await runtime.stage(
-      modelID: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
-      revision: "1bae0e1088993b9b82de08f59de5be5a34e42170",
+      modelID: checkpoint.modelID,
+      revision: checkpoint.revision,
       path: "model-00001-of-00048.safetensors", onProgress: { updates.add($0) })
     defer { try? FileManager.default.removeItem(at: file.url) }
     XCTAssertEqual(file.size, try fileSize(file.url))
@@ -150,6 +152,13 @@ final class XetCheckpointSourceTests: XCTestCase {
     print("Native Xet file: \(file.size) bytes in \(Date().timeIntervalSince(started)) "
       + "seconds; \(updates.values.count) progress updates")
   }
+}
+
+private func liveCheckpoint() -> (modelID: String, revision: String) {
+  let environment = ProcessInfo.processInfo.environment
+  return (
+    environment["WHALLM_TEST_XET_MODEL_ID"] ?? DeepSeekV41Contract.modelID,
+    environment["WHALLM_TEST_XET_REVISION"] ?? DeepSeekV41Contract.revision)
 }
 
 private final class TransferProgressProbe: @unchecked Sendable {

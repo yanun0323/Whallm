@@ -402,7 +402,7 @@ final class DeepSeekRepackTests: XCTestCase {
     XCTAssertEqual(data.suffix(Int(size / 2)), Data(repeating: 2, count: Int(size / 2)))
   }
 
-  func test1017StagingBudgetAllowsOneLargeShardWithoutRequiringSpaceForTwo() throws {
+  func testStagingBudgetAllowsOneLargeShardWithoutRequiringSpaceForTwo() throws {
     let budget = try XCTUnwrap(StagingCapacity.budget(
       available: 622_752_977_316, temporaryAvailable: 622_752_977_316,
       installedBytes: 501_382_643_728, allocatedBytes: 19_698_999_296))
