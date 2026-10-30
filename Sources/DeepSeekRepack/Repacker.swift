@@ -1,6 +1,82 @@
 import CryptoKit
 import Foundation
 
+private final class DownloadProgressTracker: @unchecked Sendable {
+  private struct Transfer {
+    var received: UInt64 = 0
+    var written: UInt64 = 0
+  }
+
+  private let lock = NSLock()
+  private let totalBytes: UInt64
+  private let progress: (@Sendable (RepackProgress) -> Void)?
+  private var copiedBytes: UInt64
+  private var downloadedBytes: UInt64
+  private var active: [Int: Transfer] = [:]
+
+  init(copiedBytes: UInt64, downloadedBytes: UInt64, totalBytes: UInt64,
+    progress: (@Sendable (RepackProgress) -> Void)?)
+  {
+    self.copiedBytes = copiedBytes
+    self.downloadedBytes = downloadedBytes
+    self.totalBytes = totalBytes
+    self.progress = progress
+  }
+
+  func received(batch: Int, bytes: UInt64) {
+    let update = lock.withLock { () -> RepackProgress? in
+      var transfer = active[batch] ?? Transfer()
+      guard bytes > transfer.received else { return nil }
+      transfer.received = bytes
+      active[batch] = transfer
+      return snapshot()
+    }
+    if let update { progress?(update) }
+  }
+
+  func wrote(batch: Int, copiedBytes: UInt64, downloadedBytes: UInt64) {
+    let update = lock.withLock {
+      var transfer = active[batch] ?? Transfer()
+      transfer.written += downloadedBytes
+      transfer.received = max(transfer.received, transfer.written)
+      active[batch] = transfer
+      self.copiedBytes += copiedBytes
+      self.downloadedBytes += downloadedBytes
+      return snapshot()
+    }
+    progress?(update)
+  }
+
+  func staged(batch: Int, downloadedBytes: UInt64) {
+    let update = lock.withLock {
+      active.removeValue(forKey: batch)
+      self.downloadedBytes += downloadedBytes
+      return snapshot()
+    }
+    progress?(update)
+  }
+
+  func copied(_ bytes: UInt64) {
+    let update = lock.withLock {
+      copiedBytes += bytes
+      return snapshot()
+    }
+    progress?(update)
+  }
+
+  func finished(batch: Int) {
+    lock.withLock { active.removeValue(forKey: batch) }
+  }
+
+  private func snapshot() -> RepackProgress {
+    let inFlight = active.values.reduce(UInt64(0)) { $0 + $1.received - $1.written }
+    return RepackProgress(
+      copiedBytes: copiedBytes,
+      downloadedBytes: downloadedBytes + inFlight,
+      totalBytes: totalBytes)
+  }
+}
+
 struct Repacker {
   private let source: any CheckpointSource
   private let chunkSize: UInt64 = 8 * 1_024 * 1_024
@@ -85,48 +161,104 @@ struct Repacker {
         downloadedBytes: downloadedBytes,
         totalBytes: plan.checkpointTensorBytes))
       let batches = makeDownloadBatches(pending, maxBytes: source.downloadBatchSize)
-      try await withThrowingTaskGroup(of: DownloadedBatch.self) { group in
-        var iterator = batches.makeIterator()
-        for _ in 0..<min(source.downloadConcurrency, batches.count) {
-          guard let batch = iterator.next() else { break }
-          group.addTask { DownloadedBatch(batch: batch, data: try await read(batch)) }
-        }
-        while let downloaded = try await group.next() {
-          for work in downloaded.batch.works {
-            try Task.checkCancellation()
-            let offset = Int(work.range.lowerBound - downloaded.batch.range.lowerBound)
-            let length = Int(work.range.count)
-            let chunk = downloaded.batch.works.count == 1
-              ? downloaded.data : Data(downloaded.data[offset..<(offset + length)])
-            let written = try write(
-              data: chunk,
-              span: work.span,
-              range: work.range,
-              handles: handles,
-              dirtyFiles: &dirtyFiles
-            )
-            copied += written.bytes
-            downloadedBytes += written.bytes
-            receipt?.completed[work.id] = written.digest
-            pendingReceiptCount += 1
-            progress?(
-              RepackProgress(
-                copiedBytes: copied,
-                downloadedBytes: downloadedBytes,
-                totalBytes: plan.checkpointTensorBytes
-              ))
-            if pendingReceiptCount == receiptBatchSize, let receipt {
-              try persist(
-                receipt: receipt,
-                handles: handles,
-                dirtyFiles: &dirtyFiles,
-                receiptURL: receiptURL
-              )
-              pendingReceiptCount = 0
+      let transferProgress = DownloadProgressTracker(
+        copiedBytes: copied, downloadedBytes: downloadedBytes,
+        totalBytes: plan.checkpointTensorBytes, progress: progress)
+      if let staged = source as? any StagedCheckpointSource,
+        canStage(plan: plan, parent: parent)
+      {
+        let shardGroups = Dictionary(grouping: batches, by: \.sourceFile)
+          .sorted { $0.key < $1.key }
+          .enumerated().map { index, entry in
+            StagedBatchGroup(id: index, path: entry.key, batches: entry.value)
+          }
+        try await withThrowingTaskGroup(of: StagedGroupResult.self) { group in
+          var iterator = shardGroups.makeIterator()
+          if let first = iterator.next() {
+            group.addTask {
+              StagedGroupResult(group: first, bytes: try await staged.stage(path: first.path) {
+                transferProgress.received(batch: first.id, bytes: $0)
+              })
             }
           }
-          if let next = iterator.next() {
-            group.addTask { DownloadedBatch(batch: next, data: try await read(next)) }
+          while let ready = try await group.next() {
+            if let next = iterator.next() {
+              group.addTask {
+                StagedGroupResult(group: next, bytes: try await staged.stage(path: next.path) {
+                  transferProgress.received(batch: next.id, bytes: $0)
+                })
+              }
+            }
+            downloadedBytes += ready.bytes
+            transferProgress.staged(batch: ready.group.id, downloadedBytes: ready.bytes)
+            for batch in ready.group.batches {
+              let data = try await read(path: batch.sourceFile, range: batch.range)
+              guard UInt64(data.count) == batch.range.count else {
+                throw RepackError.badResponse("incomplete staged checkpoint batch for \(batch.sourceFile)")
+              }
+              for work in batch.works {
+                try Task.checkCancellation()
+                let offset = Int(work.range.lowerBound - batch.range.lowerBound)
+                let length = Int(work.range.count)
+                let chunk = batch.works.count == 1
+                  ? data : Data(data[offset..<(offset + length)])
+                let written = try write(
+                  data: chunk, span: work.span, range: work.range,
+                  handles: handles, dirtyFiles: &dirtyFiles)
+                copied += written.bytes
+                receipt?.completed[work.id] = written.digest
+                pendingReceiptCount += 1
+                transferProgress.copied(written.bytes)
+                if pendingReceiptCount == receiptBatchSize, let receipt {
+                  try persist(
+                    receipt: receipt, handles: handles,
+                    dirtyFiles: &dirtyFiles, receiptURL: receiptURL)
+                  pendingReceiptCount = 0
+                }
+              }
+            }
+            await staged.release(path: ready.group.path)
+          }
+        }
+      } else {
+        try await withThrowingTaskGroup(of: DownloadedBatch.self) { group in
+          var iterator = batches.makeIterator()
+          for _ in 0..<min(source.downloadConcurrency, batches.count) {
+            guard let batch = iterator.next() else { break }
+            group.addTask {
+              DownloadedBatch(batch: batch, data: try await read(batch, progress: transferProgress))
+            }
+          }
+          while let downloaded = try await group.next() {
+            if let next = iterator.next() {
+              group.addTask {
+                DownloadedBatch(batch: next, data: try await read(next, progress: transferProgress))
+              }
+            }
+            for work in downloaded.batch.works {
+              try Task.checkCancellation()
+              let offset = Int(work.range.lowerBound - downloaded.batch.range.lowerBound)
+              let length = Int(work.range.count)
+              let chunk = downloaded.batch.works.count == 1
+                ? downloaded.data : Data(downloaded.data[offset..<(offset + length)])
+              let written = try write(
+                data: chunk, span: work.span, range: work.range,
+                handles: handles, dirtyFiles: &dirtyFiles)
+              copied += written.bytes
+              downloadedBytes += UInt64(work.range.count)
+              receipt?.completed[work.id] = written.digest
+              pendingReceiptCount += 1
+              transferProgress.wrote(
+                batch: downloaded.batch.id, copiedBytes: written.bytes,
+                downloadedBytes: UInt64(work.range.count))
+              if pendingReceiptCount == receiptBatchSize, let receipt {
+                try persist(
+                  receipt: receipt, handles: handles,
+                  dirtyFiles: &dirtyFiles, receiptURL: receiptURL)
+                pendingReceiptCount = 0
+              }
+            }
+            transferProgress.finished(batch: downloaded.batch.id)
           }
         }
       }
@@ -266,8 +398,10 @@ struct Repacker {
       )
       try fileManager.removeItem(at: receiptURL)
       try fileManager.moveItem(at: partial, to: output)
+      if let staged = source as? any StagedCheckpointSource { await staged.releaseAll() }
       return manifest
     } catch {
+      if let staged = source as? any StagedCheckpointSource { await staged.releaseAll() }
       if let receipt {
         try? persist(
           receipt: receipt,
@@ -860,6 +994,7 @@ struct Repacker {
   }
 
   private struct WorkBatch: Sendable {
+    let id: Int
     let sourceFile: String
     var range: Range<UInt64>
     var works: [WorkChunk]
@@ -870,12 +1005,56 @@ struct Repacker {
     let data: Data
   }
 
-  private func read(_ batch: WorkBatch) async throws -> Data {
-    let data = try await read(path: batch.sourceFile, range: batch.range)
-    guard UInt64(data.count) == batch.range.count else {
-      throw RepackError.badResponse("incomplete checkpoint batch for \(batch.sourceFile)")
+  private struct StagedBatchGroup: Sendable {
+    let id: Int
+    let path: String
+    let batches: [WorkBatch]
+  }
+
+  private struct StagedGroupResult: Sendable {
+    let group: StagedBatchGroup
+    let bytes: UInt64
+  }
+
+  private func canStage(plan: RepackPlan, parent: URL) -> Bool {
+    guard plan.expertConversions?.isEmpty ?? true,
+      let available = try? parent.resourceValues(
+        forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+      ).volumeAvailableCapacityForImportantUsage,
+      available >= 0,
+      let temporaryAvailable = try? FileManager.default.temporaryDirectory.resourceValues(
+        forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+      ).volumeAvailableCapacityForImportantUsage,
+      temporaryAvailable >= 0
+    else { return false }
+    let largestShard = plan.copies.map { $0.sourceOffset + $0.length }.max() ?? 0
+    let temporarySpace = 2 * (largestShard + 64 * 1_024 * 1_024)
+    return UInt64(available) >= plan.installedBytes + temporarySpace
+      && UInt64(temporaryAvailable) >= temporarySpace
+  }
+
+  private func read(_ batch: WorkBatch, progress: DownloadProgressTracker) async throws -> Data {
+    var lastError: Error?
+    for attempt in 0..<3 {
+      do {
+        let data = try await source.data(path: batch.sourceFile, range: batch.range) { bytes in
+          progress.received(batch: batch.id, bytes: bytes)
+        }
+        guard UInt64(data.count) == batch.range.count else {
+          throw RepackError.badResponse("incomplete checkpoint batch for \(batch.sourceFile)")
+        }
+        progress.received(batch: batch.id, bytes: UInt64(data.count))
+        return data
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        lastError = error
+        if attempt < 2 {
+          try await Task.sleep(for: .milliseconds(500 * (attempt + 1)))
+        }
+      }
     }
-    return data
+    throw lastError ?? RepackError.badResponse("checkpoint batch request failed")
   }
 
   private func makeDownloadBatches(_ works: [WorkChunk], maxBytes: UInt64) -> [WorkBatch] {
@@ -889,7 +1068,9 @@ struct Repacker {
         batches[lastIndex].range = batches[lastIndex].range.lowerBound..<work.range.upperBound
         batches[lastIndex].works.append(work)
       } else {
-        batches.append(WorkBatch(sourceFile: work.span.sourceFile, range: work.range, works: [work]))
+        batches.append(WorkBatch(
+          id: batches.count, sourceFile: work.span.sourceFile,
+          range: work.range, works: [work]))
       }
     }
     return batches

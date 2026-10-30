@@ -258,6 +258,7 @@ final class ModelLibrary: ObservableObject {
   private let defaults: UserDefaults
   private var operationTask: Task<Void, Never>?
   private var downloadStart: ContinuousClock.Instant?
+  private var lastReportedDownloadedBytes: UInt64 = 0
   private var partialAllocatedBytesByModel: [String: UInt64] = [:]
 
   init(defaults: UserDefaults = .standard) {
@@ -1041,9 +1042,14 @@ final class ModelLibrary: ObservableObject {
   }
 
   private func updateRepackProgress(_ progress: RepackProgress, phase: ModelOperationPhase) {
+    if let previous = operationProgress,
+      progress.copiedBytes < previous.completedBytes
+        || progress.downloadedBytes < lastReportedDownloadedBytes
+    { return }
     if operationPhase != phase { operationPhase = phase }
     let now = ContinuousClock.now
     if progress.downloadedBytes > 0, downloadStart == nil { downloadStart = now }
+    lastReportedDownloadedBytes = progress.downloadedBytes
     let speed = downloadStart.map {
       let elapsed = Self.seconds(from: $0.duration(to: now))
       return elapsed > 0 ? Double(progress.downloadedBytes) / elapsed : 0
@@ -1065,6 +1071,7 @@ final class ModelLibrary: ObservableObject {
     operationProgress = nil
     downloadModelKind = nil
     downloadStart = nil
+    lastReportedDownloadedBytes = 0
     refreshPreflight()
   }
 

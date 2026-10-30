@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import sys
+import time
 
 import hf_xet
 from huggingface_hub import get_hf_file_metadata, get_token, hf_hub_url
@@ -29,6 +30,8 @@ def main() -> int:
     )
     destination = Path(destination_text)
     written = 0
+    last_reported = 0
+    last_report_time = time.monotonic()
     try:
         with destination.open("xb") as output, group:
             info = hf_xet.XetFileInfo(metadata.xet_file_data.file_hash, file_size=metadata.size)
@@ -37,8 +40,15 @@ def main() -> int:
                 written += len(chunk)
                 if written > end - start:
                     raise ValueError("Xet returned excess bytes")
+                now = time.monotonic()
+                if written - last_reported >= 8 * 1024 * 1024 and now - last_report_time >= 0.2:
+                    print(written, flush=True)
+                    last_reported = written
+                    last_report_time = now
         if written != end - start:
             raise ValueError("Xet returned an incomplete range")
+        if written != last_reported:
+            print(written, flush=True)
     except Exception:
         destination.unlink(missing_ok=True)
         raise

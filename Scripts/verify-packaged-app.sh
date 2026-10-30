@@ -59,12 +59,13 @@ verify_model_packages() {
   local catalog=$target/Contents/Resources/ModelPackages.json
   local runtime_catalog=$target/Contents/Resources/runtime/deepseek_v4_ssd/model_support/ModelPackages.json
   local xet_helper=$target/Contents/Resources/runtime/deepseek_v4_ssd/model_support/xet_range.py
+  local xet_file_helper=$target/Contents/Resources/runtime/deepseek_v4_ssd/model_support/xet_file.py
   [[ -f $catalog && -f $runtime_catalog ]] || {
     print -u2 "Model package catalog is missing."
     exit 1
   }
-  [[ -f $xet_helper ]] || {
-    print -u2 "Xet range helper is missing."
+  [[ -f $xet_helper && -f $xet_file_helper ]] || {
+    print -u2 "Xet download helper is missing."
     exit 1
   }
   cmp "$catalog" "$runtime_catalog"
@@ -83,8 +84,8 @@ verify_model_packages() {
   PYTHONPATH="$target/Contents/Resources/runtime:$target/Contents/Resources/python/site-packages" \
   PYTHONDONTWRITEBYTECODE=1 \
     sandbox-exec -p "$profile" "$target/Contents/MacOS/python3" \
-      -c 'import ast, hf_xet, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())' \
-      "$xet_helper"
+      -c 'import ast, hf_xet, pathlib, sys; [ast.parse(pathlib.Path(path).read_text()) for path in sys.argv[1:]]' \
+      "$xet_helper" "$xet_file_helper"
 }
 
 launch_without_module_bundle_access() {

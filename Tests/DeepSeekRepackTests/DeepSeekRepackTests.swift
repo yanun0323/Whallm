@@ -323,6 +323,85 @@ final class DeepSeekRepackTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")), files["shard"])
   }
 
+  func testConcurrentBatchesReportProgressBeforeRepacking() async throws {
+    let size: UInt64 = 3 * 8 * 1_024 * 1_024
+    let source = StreamingCheckpointSource(file: Data(repeating: 0x5A, count: Int(size)))
+    let plan = RepackPlan(
+      formatVersion: 1,
+      modelID: ModelContract.modelID,
+      revision: ModelContract.revision,
+      layerCount: ModelContract.layerCount,
+      expertCount: ModelContract.expertCount,
+      selectedExpertCount: ModelContract.selectedExpertCount,
+      expertBlobSize: ModelContract.expertBlobSize,
+      checkpointTensorBytes: size,
+      files: [PlannedFile(path: "common.bin", size: size)],
+      commonTensors: [InstalledTensor(
+        name: "test", dtype: "I8", shape: [Int(size)], offset: 0, length: size)],
+      expertRegions: ModelContract.expertRegions,
+      copies: [TensorCopy(
+        tensor: "test", sourceFile: "shard", sourceOffset: 0, length: size,
+        destinationFile: "common.bin", destinationOffset: 0)]
+    )
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let output = parent.appendingPathComponent("model.dsv4")
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    let updates = RepackProgressProbe()
+
+    _ = try await Repacker(source: source).run(
+      plan: plan, output: output, progress: { updates.add($0) }, companions: [])
+    let peak = await source.peakConcurrent
+    XCTAssertGreaterThanOrEqual(peak, 2)
+    XCTAssertTrue(updates.values.contains { $0.downloadedBytes > 0 && $0.copiedBytes == 0 })
+    XCTAssertEqual(updates.values.last?.copiedBytes, size)
+    XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")).count, Int(size))
+  }
+
+  func testStagedShardsReportTransferAndReleaseFiles() async throws {
+    let size: UInt64 = 16 * 1_024 * 1_024
+    let source = StagedFixtureSource(files: [
+      "first.safetensors": Data(repeating: 1, count: Int(size / 2)),
+      "second.safetensors": Data(repeating: 2, count: Int(size / 2)),
+    ])
+    let plan = RepackPlan(
+      formatVersion: 1,
+      modelID: ModelContract.modelID,
+      revision: ModelContract.revision,
+      layerCount: ModelContract.layerCount,
+      expertCount: ModelContract.expertCount,
+      selectedExpertCount: ModelContract.selectedExpertCount,
+      expertBlobSize: ModelContract.expertBlobSize,
+      checkpointTensorBytes: size,
+      files: [PlannedFile(path: "common.bin", size: size)],
+      commonTensors: [InstalledTensor(
+        name: "test", dtype: "I8", shape: [Int(size)], offset: 0, length: size)],
+      expertRegions: ModelContract.expertRegions,
+      copies: [
+        TensorCopy(tensor: "first", sourceFile: "first.safetensors", sourceOffset: 0,
+          length: size / 2, destinationFile: "common.bin", destinationOffset: 0),
+        TensorCopy(tensor: "second", sourceFile: "second.safetensors", sourceOffset: 0,
+          length: size / 2, destinationFile: "common.bin", destinationOffset: size / 2),
+      ]
+    )
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let output = parent.appendingPathComponent("model.dsv4")
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    let updates = RepackProgressProbe()
+
+    _ = try await Repacker(source: source).run(
+      plan: plan, output: output, progress: { updates.add($0) }, companions: [])
+    let staged = await source.stagedCount
+    let released = await source.releasedCount
+    XCTAssertEqual(staged, 2)
+    XCTAssertEqual(released, 2)
+    XCTAssertTrue(updates.values.contains { $0.downloadedBytes > 0 && $0.copiedBytes == 0 })
+    let data = try Data(contentsOf: output.appendingPathComponent("common.bin"))
+    XCTAssertEqual(data.prefix(Int(size / 2)), Data(repeating: 1, count: Int(size / 2)))
+    XCTAssertEqual(data.suffix(Int(size / 2)), Data(repeating: 2, count: Int(size / 2)))
+  }
+
   func testAuditFindsChecksumFailureAndRepairDownloadsInvalidFile() async throws {
     var files = companionFiles()
     files["shard"] = Data([1, 2, 3, 4])
@@ -857,6 +936,81 @@ private struct MemoryCheckpointSource: CheckpointSource {
     }
     return Data(data[Int(range.lowerBound)..<Int(range.upperBound)])
   }
+}
+
+private actor StreamingCheckpointSource: CheckpointSource {
+  let file: Data
+  let downloadBatchSize: UInt64 = 8 * 1_024 * 1_024
+  let downloadConcurrency = 3
+  var active = 0
+  var peakConcurrent = 0
+
+  init(file: Data) { self.file = file }
+
+  func data(path: String) async throws -> Data { file }
+
+  func data(path: String, range: Range<UInt64>) async throws -> Data {
+    try await data(path: path, range: range, onProgress: { _ in })
+  }
+
+  func data(path: String, range: Range<UInt64>,
+    onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> Data
+  {
+    active += 1
+    peakConcurrent = max(peakConcurrent, active)
+    onProgress(UInt64(range.count / 2))
+    try await Task.sleep(for: .milliseconds(100))
+    onProgress(UInt64(range.count))
+    active -= 1
+    return Data(file[Int(range.lowerBound)..<Int(range.upperBound)])
+  }
+}
+
+private actor StagedFixtureSource: StagedCheckpointSource {
+  let files: [String: Data]
+  var active = Set<String>()
+  var stagedCount = 0
+  var releasedCount = 0
+
+  init(files: [String: Data]) { self.files = files }
+
+  func stage(path: String, onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> UInt64 {
+    guard let file = files[path] else { throw RepackError.badResponse("missing fixture shard") }
+    onProgress(UInt64(file.count / 2))
+    onProgress(UInt64(file.count))
+    active.insert(path)
+    stagedCount += 1
+    return UInt64(file.count)
+  }
+
+  func release(path: String) async {
+    if active.remove(path) != nil { releasedCount += 1 }
+  }
+
+  func releaseAll() async {
+    releasedCount += active.count
+    active.removeAll()
+  }
+
+  func data(path: String) async throws -> Data {
+    guard let file = files[path] else { throw RepackError.badResponse("missing fixture shard") }
+    return file
+  }
+
+  func data(path: String, range: Range<UInt64>) async throws -> Data {
+    guard active.contains(path), let file = files[path] else {
+      throw RepackError.badResponse("shard was not staged")
+    }
+    return Data(file[Int(range.lowerBound)..<Int(range.upperBound)])
+  }
+}
+
+private final class RepackProgressProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var recorded: [RepackProgress] = []
+
+  func add(_ value: RepackProgress) { lock.withLock { recorded.append(value) } }
+  var values: [RepackProgress] { lock.withLock { recorded } }
 }
 
 private actor FailingCheckpointSource: CheckpointSource {

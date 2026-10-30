@@ -5,11 +5,28 @@ protocol CheckpointSource: Sendable {
   var downloadConcurrency: Int { get }
   func data(path: String) async throws -> Data
   func data(path: String, range: Range<UInt64>) async throws -> Data
+  func data(path: String, range: Range<UInt64>,
+    onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> Data
+}
+
+/// Sources that stage one complete shard so later range reads are local.
+protocol StagedCheckpointSource: CheckpointSource {
+  func stage(path: String, onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> UInt64
+  func release(path: String) async
+  func releaseAll() async
 }
 
 extension CheckpointSource {
   var downloadBatchSize: UInt64 { 8 * 1_024 * 1_024 }
   var downloadConcurrency: Int { 8 }
+
+  func data(path: String, range: Range<UInt64>,
+    onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> Data
+  {
+    let result = try await data(path: path, range: range)
+    onProgress(UInt64(result.count))
+    return result
+  }
 }
 
 struct HuggingFaceSource: CheckpointSource {
