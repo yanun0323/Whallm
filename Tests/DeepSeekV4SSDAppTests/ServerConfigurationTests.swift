@@ -395,6 +395,8 @@ final class ServerConfigurationTests: XCTestCase {
   func testDownloadProgressHeightIncludesBottomPadding() {
     XCTAssertEqual(modelDownloadProgressExtraHeight(hasProgressFraction: false), 40)
     XCTAssertEqual(modelDownloadProgressExtraHeight(hasProgressFraction: true), 72)
+    XCTAssertEqual(
+      modelDownloadProgressExtraHeight(hasProgressFraction: true, hasReceivedBytes: true), 90)
   }
 
   @MainActor

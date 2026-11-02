@@ -1160,7 +1160,8 @@ private struct ServerView: View {
     var height = CGFloat(selectableModelKinds.count) * 62
     if modelLibrary.downloadModelKind != nil {
       height += modelDownloadProgressExtraHeight(
-        hasProgressFraction: modelLibrary.operationProgress?.fraction != nil)
+        hasProgressFraction: modelLibrary.operationProgress?.fraction != nil,
+        hasReceivedBytes: (modelLibrary.operationProgress?.receivedBytes ?? 0) > 0)
     }
     let visibleDownloadReasonCount = selectableModelKinds.filter {
       shouldShowModelDownloadReason(
@@ -1366,14 +1367,22 @@ private struct ServerView: View {
         : nil
     }
 
-    return HStack(spacing: 14) {
-      Text(completed)
-      Spacer(minLength: 12)
-      if let speed {
-        Label(speed, systemImage: "speedometer")
+    return VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 14) {
+        Text(completed)
+        Spacer(minLength: 12)
+        if let speed {
+          Label(speed, systemImage: "speedometer")
+        }
+        if let remaining {
+          Label(remaining, systemImage: "clock")
+        }
       }
-      if let remaining {
-        Label(remaining, systemImage: "clock")
+      if let receivedBytes = progress.receivedBytes, receivedBytes > 0 {
+        Text(L10n.string(
+          "Checkpoint data received: %@",
+          language: language,
+          formattedBytes(receivedBytes)))
       }
     }
     .font(.callout.monospacedDigit())
@@ -1537,8 +1546,10 @@ func modelAdvancedSettingsAreLocked(
   modelID == loadedModel || modelID == loadingModel || modelID == modelActionID
 }
 
-func modelDownloadProgressExtraHeight(hasProgressFraction: Bool) -> CGFloat {
-  hasProgressFraction ? 72 : 40
+func modelDownloadProgressExtraHeight(
+  hasProgressFraction: Bool, hasReceivedBytes: Bool = false
+) -> CGFloat {
+  hasProgressFraction ? (hasReceivedBytes ? 90 : 72) : 40
 }
 
 func modelDownloadIsDisabled(

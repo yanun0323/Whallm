@@ -375,6 +375,7 @@
 "Wait for the current model operation to finish." = "請等待目前的模型操作完成。";
 "Finish the current model download before downloading another model." = "請先完成目前的模型下載，再下載其他模型。";
 "%@ of %@" = "已完成 %@，總計 %@";
+"Checkpoint data received: %@" = "已接收的檢查點資料：%@";
 "Action required" = "需要處理";
 "Available space" = "可用空間";
 "Download" = "下載";

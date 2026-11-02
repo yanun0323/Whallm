@@ -199,6 +199,7 @@ enum ModelOperationPhase: Equatable {
 struct ModelOperationProgress: Equatable {
   let completedBytes: UInt64
   let totalBytes: UInt64
+  let receivedBytes: UInt64?
   let bytesPerSecond: Double?
   let estimatedSecondsRemaining: Double?
 
@@ -1028,6 +1029,7 @@ final class ModelLibrary: ObservableObject {
           self?.operationProgress = ModelOperationProgress(
             completedBytes: progress.checkedBytes,
             totalBytes: progress.totalBytes,
+            receivedBytes: nil,
             bytesPerSecond: nil,
             estimatedSecondsRemaining: nil
           )
@@ -1060,6 +1062,7 @@ final class ModelLibrary: ObservableObject {
     operationProgress = ModelOperationProgress(
       completedBytes: progress.copiedBytes,
       totalBytes: progress.totalBytes,
+      receivedBytes: progress.downloadedBytes,
       bytesPerSecond: speed,
       estimatedSecondsRemaining: speed.flatMap { $0 > 0 ? Double(remaining) / $0 : nil }
     )

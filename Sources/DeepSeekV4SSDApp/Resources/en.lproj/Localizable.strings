@@ -375,6 +375,7 @@
 "Wait for the current model operation to finish." = "Wait for the current model operation to finish.";
 "Finish the current model download before downloading another model." = "Finish the current model download before downloading another model.";
 "%@ of %@" = "%@ of %@";
+"Checkpoint data received: %@" = "Checkpoint data received: %@";
 "Action required" = "Action required";
 "Available space" = "Available space";
 "Download" = "Download";

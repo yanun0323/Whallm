@@ -1,12 +1,43 @@
 """Write one authenticated Xet byte range to a temporary file for Swift repacking."""
 
-import os
 from pathlib import Path
 import sys
 import time
 
 import hf_xet
 from huggingface_hub import get_hf_file_metadata, get_token, hf_hub_url
+
+
+def write_unordered_range(stream, output, expected_size: int) -> int:
+    """Assemble completed Xet chunks without waiting for earlier offsets."""
+    received = 0
+    spans = []
+    last_reported = 0
+    last_report_time = time.monotonic()
+    for offset, chunk in stream:
+        chunk_end = offset + len(chunk)
+        if not chunk or offset < 0 or chunk_end > expected_size:
+            raise ValueError("Xet returned an invalid range chunk")
+        output.seek(offset)
+        output.write(chunk)
+        spans.append((offset, chunk_end))
+        received += len(chunk)
+        now = time.monotonic()
+        if received - last_reported >= 1024 * 1024 and now - last_report_time >= 0.2:
+            print(received, flush=True)
+            last_reported = received
+            last_report_time = now
+
+    position = 0
+    for start, end in sorted(spans):
+        if start != position:
+            raise ValueError("Xet returned overlapping or missing range chunks")
+        position = end
+    if position != expected_size or received != expected_size:
+        raise ValueError("Xet returned an incomplete range")
+    if received != last_reported:
+        print(received, flush=True)
+    return received
 
 
 def main() -> int:
@@ -29,26 +60,11 @@ def main() -> int:
         token_refresh_headers={"Authorization": "Bearer " + token},
     )
     destination = Path(destination_text)
-    written = 0
-    last_reported = 0
-    last_report_time = time.monotonic()
     try:
         with destination.open("xb") as output, group:
             info = hf_xet.XetFileInfo(metadata.xet_file_data.file_hash, file_size=metadata.size)
-            for chunk in group.download_stream(info, start=start, end=end):
-                output.write(chunk)
-                written += len(chunk)
-                if written > end - start:
-                    raise ValueError("Xet returned excess bytes")
-                now = time.monotonic()
-                if written - last_reported >= 8 * 1024 * 1024 and now - last_report_time >= 0.2:
-                    print(written, flush=True)
-                    last_reported = written
-                    last_report_time = now
-        if written != end - start:
-            raise ValueError("Xet returned an incomplete range")
-        if written != last_reported:
-            print(written, flush=True)
+            write_unordered_range(
+                group.download_unordered_stream(info, start=start, end=end), output, end - start)
     except Exception:
         destination.unlink(missing_ok=True)
         raise
