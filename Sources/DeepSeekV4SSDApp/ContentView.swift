@@ -792,15 +792,19 @@ private struct ServerView: View {
           }
           .disabled(server.isActive || modelLibrary.isBusy)
           if selectedModel.modelKind.descriptor.supports("dspark"), !selectedModel.hasDSpark {
-            Button(modelLibrary.dsparkStartedAt == nil
-              ? dsparkInstallLabel(for: selectedModel.modelKind)
-              : modelLibrary.operationPhase.label) {
-              modelLibrary.startDSparkInstallation(selectedModel)
-            }
-            .disabled(server.isActive || modelLibrary.isBusy
-              || modelLibrary.plannedDSparkBytes(for: selectedModel.modelKind) == nil)
-            .task(id: selectedModel.modelKind) {
-              await modelLibrary.refreshDSparkSize(for: selectedModel.modelKind)
+            if modelLibrary.dsparkStartedAt == nil {
+              Button(dsparkInstallLabel(for: selectedModel.modelKind)) {
+                modelLibrary.startDSparkInstallation(selectedModel)
+              }
+              .disabled(server.isActive || modelLibrary.isBusy
+                || modelLibrary.plannedDSparkBytes(for: selectedModel.modelKind) == nil)
+              .task(id: selectedModel.modelKind) {
+                await modelLibrary.refreshDSparkSize(for: selectedModel.modelKind)
+              }
+            } else {
+              Label(modelLibrary.operationPhase.label, systemImage: "arrow.down.circle")
+                .font(.callout.weight(.medium))
+                .accessibilityAddTraits(.updatesFrequently)
             }
           }
           Spacer()

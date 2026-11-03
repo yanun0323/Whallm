@@ -217,6 +217,25 @@ struct ModelOperationProgress: Equatable {
   }
 }
 
+// Xet can report many small range updates per second. Keep the latest useful
+// stages visible without queuing a SwiftUI render for every network callback.
+private final class DSparkDisplayProgressGate: @unchecked Sendable {
+  private let lock = NSLock()
+  private var lastStage: RepackStage?
+  private var lastUpdate = 0.0
+
+  func accepts(_ progress: RepackProgress) -> Bool {
+    lock.withLock {
+      let now = ProcessInfo.processInfo.systemUptime
+      guard progress.stage != lastStage || progress.copiedBytes >= progress.totalBytes
+        || now - lastUpdate >= 0.2 else { return false }
+      lastStage = progress.stage
+      lastUpdate = now
+      return true
+    }
+  }
+}
+
 @MainActor
 final class ModelLibrary: ObservableObject {
   weak var logServer: ServerController?
@@ -1003,7 +1022,9 @@ final class ModelLibrary: ObservableObject {
     logServer?.recordEvent(.info, "DSpark installation started", requestID: eventID)
     defer { logServer?.recordEvent(.info, "DSpark installation finished elapsed=\(started.duration(to: .now))", requestID: eventID) }
     do {
+      let displayGate = DSparkDisplayProgressGate()
       let progress: @Sendable (RepackProgress) -> Void = { [weak self] progress in
+        guard displayGate.accepts(progress) else { return }
         Task { @MainActor in self?.updateDSparkProgress(progress) }
       }
       let metadataProgress: @Sendable (Int, Int) -> Void = { [weak self] checked, total in
