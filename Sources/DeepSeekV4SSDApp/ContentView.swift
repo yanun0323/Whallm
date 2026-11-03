@@ -791,10 +791,14 @@ private struct ServerView: View {
           }
           .disabled(server.isActive || modelLibrary.isBusy)
           if selectedModel.modelKind.descriptor.supports("dspark"), !selectedModel.hasDSpark {
-            Button(L10n.string("Install DSpark (10.12 GiB)")) {
+            Button(dsparkInstallLabel(for: selectedModel.modelKind)) {
               modelLibrary.startDSparkInstallation(selectedModel)
             }
-            .disabled(server.isActive || modelLibrary.isBusy)
+            .disabled(server.isActive || modelLibrary.isBusy
+              || modelLibrary.plannedDSparkBytes(for: selectedModel.modelKind) == nil)
+            .task(id: selectedModel.modelKind) {
+              await modelLibrary.refreshDSparkSize(for: selectedModel.modelKind)
+            }
           }
           Spacer()
         }
@@ -1199,6 +1203,18 @@ private struct ServerView: View {
   private var operationPanel: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(modelLibrary.operationPhase.label).font(.headline)
+      if let detail = modelLibrary.operationDetail {
+        Text(detail).font(.callout).foregroundStyle(.secondary)
+      }
+      if let startedAt = modelLibrary.dsparkStartedAt {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+          let elapsed = max(0, Int(context.date.timeIntervalSince(startedAt)))
+          Text(L10n.string("Elapsed: %@", language: language,
+            String(format: "%02d:%02d", elapsed / 60, elapsed % 60)))
+            .font(.callout.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+      }
       if let progress = modelLibrary.operationProgress, let fraction = progress.fraction {
         ProgressView(value: fraction)
           .accessibilityLabel(modelLibrary.operationPhase.label)
@@ -1470,6 +1486,16 @@ private struct ServerView: View {
     if bytes == 0 { return "0 KB" }
     return ByteCountFormatter.string(
       fromByteCount: Int64(clamping: bytes), countStyle: .file)
+  }
+
+  private func dsparkInstallLabel(for modelKind: ModelKind) -> String {
+    guard let bytes = modelLibrary.plannedDSparkBytes(for: modelKind) else {
+      return modelLibrary.dsparkPlanErrors[modelKind.rawValue] == nil
+        ? L10n.string("Checking DSpark size...")
+        : L10n.string("DSpark size unavailable")
+    }
+    let gib = (Double(bytes) / 1_073_741_824).formatted(.number.precision(.fractionLength(2)))
+    return L10n.string("Install DSpark (%@ GiB)", gib)
   }
 
   private func formattedDuration(_ seconds: Double) -> String {

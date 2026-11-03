@@ -177,7 +177,11 @@ enum ModelOperationPhase: Equatable {
   case verifying
   case preparingRepair
   case repairing
+  case preparingDSpark
+  case preservingDSparkModel
+  case validatingDSparkModel
   case installingDSpark
+  case finalizingDSpark
   case installingArtifact(String)
 
   var label: String {
@@ -190,7 +194,11 @@ enum ModelOperationPhase: Equatable {
     case .verifying: L10n.string("Verifying the complete model")
     case .preparingRepair: L10n.string("Preparing repair")
     case .repairing: L10n.string("Downloading damaged data again")
-    case .installingDSpark: L10n.string("Installing DSpark")
+    case .preparingDSpark: L10n.string("Reading DSpark checkpoint metadata")
+    case .preservingDSparkModel: L10n.string("Checking existing model files (1 of 2)")
+    case .validatingDSparkModel: L10n.string("Checking existing model files (2 of 2)")
+    case .installingDSpark: L10n.string("Downloading and installing DSpark")
+    case .finalizingDSpark: L10n.string("Finalizing DSpark files")
     case .installingArtifact(let label): L10n.string(label)
     }
   }
@@ -232,6 +240,8 @@ final class ModelLibrary: ObservableObject {
   @Published private(set) var isScanning = false
   @Published private(set) var operationPhase = ModelOperationPhase.idle
   @Published private(set) var operationProgress: ModelOperationProgress?
+  @Published private(set) var operationDetail: String?
+  @Published private(set) var dsparkStartedAt: Date?
   @Published private(set) var downloadModelKind: ModelKind?
   @Published private(set) var message: String?
   @Published private(set) var verificationModelPath: String?
@@ -245,6 +255,9 @@ final class ModelLibrary: ObservableObject {
   ]
   @Published private(set) var planningModelKinds: Set<String> = []
   @Published private(set) var installationPlanErrors: [String: String] = [:]
+  @Published private(set) var dsparkBytesByModel: [String: UInt64] = [:]
+  @Published private(set) var planningDSparkModelKinds: Set<String> = []
+  @Published private(set) var dsparkPlanErrors: [String: String] = [:]
   @Published private(set) var modelFolderAvailableBytes: UInt64?
   @Published private(set) var modelFolderIsWritable = false
   @Published private(set) var aliases: [ModelKind: String] = [:]
@@ -260,6 +273,7 @@ final class ModelLibrary: ObservableObject {
   private var operationTask: Task<Void, Never>?
   private var downloadStart: ContinuousClock.Instant?
   private var lastReportedDownloadedBytes: UInt64 = 0
+  private var dsparkProgressStage: RepackStage?
   private var partialAllocatedBytesByModel: [String: UInt64] = [:]
 
   init(defaults: UserDefaults = .standard) {
@@ -479,6 +493,33 @@ final class ModelLibrary: ObservableObject {
 
   func plannedInstalledBytes(for modelKind: ModelKind) -> UInt64? {
     installationBytesByModel[modelKind.rawValue]
+  }
+
+  func plannedDSparkBytes(for modelKind: ModelKind) -> UInt64? {
+    dsparkBytesByModel[modelKind.rawValue]
+  }
+
+  func refreshDSparkSize(for modelKind: ModelKind) async {
+    let key = modelKind.rawValue
+    guard modelKind.descriptor.supports("dspark"), dsparkBytesByModel[key] == nil,
+      !planningDSparkModelKinds.contains(key)
+    else { return }
+    planningDSparkModelKinds.insert(key)
+    dsparkPlanErrors.removeValue(forKey: key)
+    do {
+      let bytes: UInt64
+      if modelKind == .deepSeekV41 {
+        bytes = try await DeepSeekV41Checkpoint().dsparkInstalledBytes()
+      } else {
+        bytes = try await DeepSeekV4Checkpoint().dsparkInstalledBytes()
+      }
+      dsparkBytesByModel[key] = bytes
+    } catch is CancellationError {
+      // A model selection change cancels this metadata request.
+    } catch {
+      dsparkPlanErrors[key] = String(describing: error)
+    }
+    planningDSparkModelKinds.remove(key)
   }
 
   func isPlanningInstallation(for modelKind: ModelKind) -> Bool {
@@ -729,8 +770,11 @@ final class ModelLibrary: ObservableObject {
   func startDSparkInstallation(_ model: InstalledModelInfo) {
     guard !isBusy, !model.hasDSpark, model.modelKind.descriptor.supports("dspark") else { return }
     downloadModelKind = nil
-    operationPhase = .installingDSpark
+    operationPhase = .preparingDSpark
     operationProgress = nil
+    operationDetail = nil
+    dsparkProgressStage = nil
+    dsparkStartedAt = Date()
     downloadStart = nil
     message = nil
     operationTask = Task { [weak self] in
@@ -956,13 +1000,22 @@ final class ModelLibrary: ObservableObject {
     defer { logServer?.recordEvent(.info, "DSpark installation finished elapsed=\(started.duration(to: .now))", requestID: eventID) }
     do {
       let progress: @Sendable (RepackProgress) -> Void = { [weak self] progress in
-        Task { @MainActor in self?.updateRepackProgress(progress, phase: .installingDSpark) }
+        Task { @MainActor in self?.updateDSparkProgress(progress) }
+      }
+      let metadataProgress: @Sendable (Int, Int) -> Void = { [weak self] checked, total in
+        Task { @MainActor in
+          guard self?.operationPhase == .preparingDSpark else { return }
+          self?.operationDetail = L10n.string("%lld of %lld shard headers checked",
+            Int64(checked), Int64(total))
+        }
       }
       let manifest = try InstalledModel.loadManifest(at: url)
       if manifest.modelKind == .deepSeekV41 {
-        _ = try await DeepSeekV41Checkpoint().installDSpark(at: url, progress: progress)
+        _ = try await DeepSeekV41Checkpoint().installDSpark(at: url,
+          progress: progress, metadataProgress: metadataProgress)
       } else {
-        _ = try await DeepSeekV4Checkpoint().installDSpark(at: url, progress: progress)
+        _ = try await DeepSeekV4Checkpoint().installDSpark(at: url,
+          progress: progress, metadataProgress: metadataProgress)
       }
       try Task.checkCancellation()
       let verification = try await audit(url)
@@ -1068,10 +1121,54 @@ final class ModelLibrary: ObservableObject {
     )
   }
 
+  private func updateDSparkProgress(_ progress: RepackProgress) {
+    guard dsparkStartedAt != nil, operationPhase != .verifying,
+      operationPhase != .cancelling else { return }
+    if let current = dsparkProgressStage, progress.stage.rawValue < current.rawValue { return }
+    let stageChanged = progress.stage != dsparkProgressStage
+    if stageChanged {
+      dsparkProgressStage = progress.stage
+      operationProgress = nil
+      operationDetail = nil
+      downloadStart = nil
+      lastReportedDownloadedBytes = 0
+    } else if let previous = operationProgress,
+      progress.copiedBytes < previous.completedBytes { return }
+
+    let phase: ModelOperationPhase
+    switch progress.stage {
+    case .preservingExisting: phase = .preservingDSparkModel
+    case .validatingExisting: phase = .validatingDSparkModel
+    case .copying: phase = .installingDSpark
+    case .finalizing: phase = .finalizingDSpark
+    }
+    operationPhase = phase
+    let now = ContinuousClock.now
+    if progress.stage == .copying, progress.downloadedBytes > 0, downloadStart == nil {
+      downloadStart = now
+    }
+    let speed = downloadStart.map {
+      let elapsed = Self.seconds(from: $0.duration(to: now))
+      return elapsed > 0 ? Double(progress.downloadedBytes) / elapsed : 0
+    }
+    lastReportedDownloadedBytes = progress.downloadedBytes
+    let remaining = progress.totalBytes > progress.copiedBytes
+      ? progress.totalBytes - progress.copiedBytes : 0
+    operationProgress = ModelOperationProgress(
+      completedBytes: progress.copiedBytes,
+      totalBytes: progress.totalBytes,
+      receivedBytes: progress.stage == .copying ? progress.downloadedBytes : nil,
+      bytesPerSecond: speed,
+      estimatedSecondsRemaining: speed.flatMap { $0 > 0 ? Double(remaining) / $0 : nil })
+  }
+
   private func finishOperation() {
     operationTask = nil
     operationPhase = .idle
     operationProgress = nil
+    operationDetail = nil
+    dsparkProgressStage = nil
+    dsparkStartedAt = nil
     downloadModelKind = nil
     downloadStart = nil
     lastReportedDownloadedBytes = 0

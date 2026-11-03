@@ -248,6 +248,13 @@
 "You" = "You";
 "Install DSpark" = "Install DSpark";
 "Installing DSpark" = "Installing DSpark";
+"Reading DSpark checkpoint metadata" = "Reading DSpark checkpoint metadata";
+"Checking existing model files (1 of 2)" = "Checking existing model files (1 of 2)";
+"Checking existing model files (2 of 2)" = "Checking existing model files (2 of 2)";
+"Downloading and installing DSpark" = "Downloading and installing DSpark";
+"Finalizing DSpark files" = "Finalizing DSpark files";
+"%lld of %lld shard headers checked" = "%lld of %lld shard headers checked";
+"Elapsed: %@" = "Elapsed: %@";
 "Use DSpark" = "Use DSpark";
 "Use MTP" = "Use MTP";
 "Downloading and installing MTP" = "Downloading and installing MTP";
@@ -299,7 +306,9 @@
 "The main model will remain installed." = "The main model will remain installed.";
 "DSpark was removed." = "DSpark was removed.";
 "DSpark could not be removed. %@" = "DSpark could not be removed. %@";
-"Install DSpark (10.12 GiB)" = "Install DSpark (10.12 GiB)";
+"Install DSpark (%@ GiB)" = "Install DSpark (%@ GiB)";
+"Checking DSpark size..." = "Checking DSpark size...";
+"DSpark size unavailable" = "DSpark size unavailable";
 "Active Now" = "Active Now";
 "Average Speed" = "Average Speed";
 "Page" = "Page";

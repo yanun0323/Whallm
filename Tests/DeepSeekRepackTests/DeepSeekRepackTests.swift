@@ -164,6 +164,10 @@ final class DeepSeekRepackTests: XCTestCase {
       tensors: fixture.tensors,
       includeDSpark: true
     )
+    let dsparkBytes = try RepackPlanner.dsparkInstalledBytes(
+      tensors: fixture.tensors.filter { $0.key.hasPrefix("mtp.") })
+    XCTAssertEqual(dsparkBytes, plan.files.filter { $0.path.hasPrefix("dspark/") }
+      .reduce(UInt64(0)) { $0 + $1.size })
 
     XCTAssertEqual(plan.files.count, 48)
     XCTAssertEqual(plan.dspark?.layerCount, 3)
@@ -465,6 +469,47 @@ final class DeepSeekRepackTests: XCTestCase {
     )
     XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")), Data(1...4))
     XCTAssertTrue(try InstalledModel.audit(manifest: repaired, at: output).isValid)
+  }
+
+  func testDSparkRepairReportsExistingChecksTransferAndFinalizationSeparately() async throws {
+    var files = companionFiles()
+    files["base"] = Data([1, 2, 3, 4])
+    files["draft"] = Data([5, 6, 7, 8])
+    let source = MemoryCheckpointSource(files: files)
+    let baseCopy = TensorCopy(tensor: "base", sourceFile: "base", sourceOffset: 0,
+      length: 4, destinationFile: "common.bin", destinationOffset: 0)
+    let draftCopy = TensorCopy(tensor: "draft", sourceFile: "draft", sourceOffset: 0,
+      length: 4, destinationFile: "dspark/common.bin", destinationOffset: 0)
+    func plan(includeDraft: Bool) -> RepackPlan {
+      RepackPlan(formatVersion: 1, modelID: ModelContract.modelID,
+        revision: ModelContract.revision, layerCount: ModelContract.layerCount,
+        expertCount: ModelContract.expertCount,
+        selectedExpertCount: ModelContract.selectedExpertCount,
+        expertBlobSize: ModelContract.expertBlobSize,
+        checkpointTensorBytes: includeDraft ? 8 : 4,
+        files: [PlannedFile(path: "common.bin", size: 4)]
+          + (includeDraft ? [PlannedFile(path: "dspark/common.bin", size: 4)] : []),
+        commonTensors: [], expertRegions: ModelContract.expertRegions,
+        copies: [baseCopy] + (includeDraft ? [draftCopy] : []))
+    }
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let output = parent.appendingPathComponent("model.dsv4")
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    _ = try await Repacker(source: source).run(plan: plan(includeDraft: false),
+      output: output, progress: nil)
+
+    let updates = RepackProgressProbe()
+    _ = try await Repacker(source: source).repair(plan: plan(includeDraft: true),
+      output: output, invalidFiles: ["dspark/common.bin"],
+      progress: { updates.add($0) }, installingDSpark: true)
+    let transitions = updates.values.map(\.stage).reduce(into: [RepackStage]()) { stages, stage in
+      if stages.last != stage { stages.append(stage) }
+    }
+    XCTAssertEqual(transitions, [.preservingExisting, .validatingExisting, .copying, .finalizing])
+    XCTAssertEqual(updates.values.first { $0.stage == .copying }?.totalBytes, 4)
+    XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("dspark/common.bin")),
+      Data([5, 6, 7, 8]))
   }
 
   func testMXFP4MatchesMLXFixedVector() throws {

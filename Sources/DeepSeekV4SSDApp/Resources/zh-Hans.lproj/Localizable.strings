@@ -248,6 +248,13 @@
 "You" = "你";
 "Install DSpark" = "安装 DSpark";
 "Installing DSpark" = "正在安装 DSpark";
+"Reading DSpark checkpoint metadata" = "正在读取 DSpark 检查点元数据";
+"Checking existing model files (1 of 2)" = "正在检查已有模型文件（第 1 遍，共 2 遍）";
+"Checking existing model files (2 of 2)" = "正在检查已有模型文件（第 2 遍，共 2 遍）";
+"Downloading and installing DSpark" = "正在下载并安装 DSpark";
+"Finalizing DSpark files" = "正在完成 DSpark 文件处理";
+"%lld of %lld shard headers checked" = "已检查 %lld/%lld 个分片文件头";
+"Elapsed: %@" = "已用时间：%@";
 "Use DSpark" = "使用 DSpark";
 "Use MTP" = "使用 MTP";
 "Downloading and installing MTP" = "正在下载并安装 MTP";
@@ -299,7 +306,9 @@
 "The main model will remain installed." = "主模型会保留。";
 "DSpark was removed." = "DSpark 已移除。";
 "DSpark could not be removed. %@" = "无法移除 DSpark。%@";
-"Install DSpark (10.12 GiB)" = "安装 DSpark（10.12 GiB）";
+"Install DSpark (%@ GiB)" = "安装 DSpark（%@ GiB）";
+"Checking DSpark size..." = "正在检查 DSpark 大小…";
+"DSpark size unavailable" = "无法获取 DSpark 大小";
 "Active Now" = "当前状态";
 "Average Speed" = "平均速度";
 "Page" = "页面";

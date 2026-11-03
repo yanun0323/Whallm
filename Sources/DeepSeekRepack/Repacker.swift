@@ -118,7 +118,8 @@ struct Repacker {
     plan: RepackPlan,
     output: URL,
     progress: (@Sendable (RepackProgress) -> Void)?,
-    companions requestedCompanions: [CompanionFile]? = nil
+    companions requestedCompanions: [CompanionFile]? = nil,
+    dsparkInstallBytes: UInt64? = nil
   ) async throws -> InstalledManifest {
     let fileManager = FileManager.default
     let output = output.standardizedFileURL
@@ -152,6 +153,7 @@ struct Repacker {
       var downloadedBytes: UInt64 = 0
       var pendingReceiptCount = 0
       var pending: [WorkChunk] = []
+      var checkedChunks = 0
       for span in makeSpans(plan.copies) {
         var position = span.start
         while position < span.end {
@@ -169,26 +171,37 @@ struct Repacker {
           if completedChunkIsValid {
             copied += payloadBytes
             position = end
-            progress?(
-              RepackProgress(
-                copiedBytes: copied,
-                downloadedBytes: downloadedBytes,
-                totalBytes: plan.checkpointTensorBytes
-              ))
+            checkedChunks += 1
+            if let dsparkInstallBytes {
+              if checkedChunks % 32 == 0 {
+                progress?(RepackProgress(copiedBytes: copied, downloadedBytes: 0,
+                  totalBytes: plan.checkpointTensorBytes - dsparkInstallBytes,
+                  stage: .validatingExisting))
+              }
+            } else {
+              progress?(RepackProgress(copiedBytes: copied, downloadedBytes: downloadedBytes,
+                totalBytes: plan.checkpointTensorBytes))
+            }
           } else {
             pending.append(WorkChunk(span: span, range: position..<end, id: id))
           }
           position = end
         }
       }
-      progress?(RepackProgress(
-        copiedBytes: copied,
-        downloadedBytes: downloadedBytes,
-        totalBytes: plan.checkpointTensorBytes))
+      if let dsparkInstallBytes {
+        progress?(RepackProgress(copiedBytes: copied, downloadedBytes: 0,
+          totalBytes: plan.checkpointTensorBytes - dsparkInstallBytes,
+          stage: .validatingExisting))
+      } else {
+        progress?(RepackProgress(copiedBytes: copied, downloadedBytes: downloadedBytes,
+          totalBytes: plan.checkpointTensorBytes))
+      }
       let batches = makeDownloadBatches(pending, maxBytes: source.downloadBatchSize)
       let transferProgress = DownloadProgressTracker(
-        copiedBytes: copied, downloadedBytes: downloadedBytes,
-        totalBytes: plan.checkpointTensorBytes, progress: progress)
+        copiedBytes: dsparkInstallBytes == nil ? copied : 0,
+        downloadedBytes: downloadedBytes,
+        totalBytes: dsparkInstallBytes == nil ? plan.checkpointTensorBytes : plan.checkpointTensorBytes - copied,
+        progress: progress)
       let sourceEnds = Dictionary(grouping: plan.copies, by: \.sourceFile).mapValues { copies in
         copies.map { $0.sourceOffset + $0.length }.max() ?? 0
       }
@@ -388,13 +401,32 @@ struct Repacker {
       for handle in handles.values { try handle.close() }
       handles.removeAll()
 
+      let finalizingBytes = plan.files.reduce(UInt64(0)) { $0 + $1.size }
+      var finalizedBytes: UInt64 = 0
+      if dsparkInstallBytes != nil {
+        progress?(RepackProgress(copiedBytes: 0, downloadedBytes: 0,
+          totalBytes: finalizingBytes, stage: .finalizing))
+      }
       var installedFiles = try plan.files.map { file -> InstalledFile in
         let url = try safeFileURL(root: partial, path: file.path)
         let size = try fileSize(url)
         guard size == file.size else {
           throw RepackError.invalidPlan("installed size mismatch for \(file.path)")
         }
-        return InstalledFile(path: file.path, size: size, sha256: try sha256(url))
+        let start = finalizedBytes
+        var lastReportedBucket: UInt64 = 0
+        let digest = try sha256(url) { fileBytes in
+          if dsparkInstallBytes != nil {
+            let bucket = (start + fileBytes) / (128 * 1_024 * 1_024)
+            if bucket > lastReportedBucket || fileBytes == size {
+              lastReportedBucket = bucket
+              progress?(RepackProgress(copiedBytes: start + fileBytes, downloadedBytes: 0,
+                totalBytes: finalizingBytes, stage: .finalizing))
+            }
+          }
+        }
+        finalizedBytes += size
+        return InstalledFile(path: file.path, size: size, sha256: digest)
       }
       var companions = requestedCompanions ?? {
         ModelPackages.companions(for: plan.modelKind ?? .deepSeekV4)
@@ -463,7 +495,8 @@ struct Repacker {
     plan: RepackPlan,
     output: URL,
     invalidFiles: Set<String>,
-    progress: (@Sendable (RepackProgress) -> Void)?
+    progress: (@Sendable (RepackProgress) -> Void)?,
+    installingDSpark: Bool = false
   ) async throws -> InstalledManifest {
     let fileManager = FileManager.default
     let output = output.standardizedFileURL
@@ -494,6 +527,16 @@ struct Repacker {
       }
 
       var preparedCount = 0
+      var checkedChunks = 0
+      var checkedBytes: UInt64 = 0
+      let dsparkInstallBytes = installingDSpark
+        ? plan.copies.filter { invalidFiles.contains($0.destinationFile) }.reduce(UInt64(0)) { $0 + $1.length }
+        : nil
+      let existingBytes = plan.checkpointTensorBytes - (dsparkInstallBytes ?? 0)
+      if installingDSpark {
+        progress?(RepackProgress(copiedBytes: 0, downloadedBytes: 0,
+          totalBytes: existingBytes, stage: .preservingExisting))
+      }
       for span in makeSpans(plan.copies) {
         var position = span.start
         while position < span.end {
@@ -509,6 +552,12 @@ struct Repacker {
             let id = chunkID(sourceFile: span.sourceFile, range: range)
             receipt?.completed[id] = try autoreleasepool {
               try destinationDigest(span: span, range: range, handles: handles)
+            }
+            checkedBytes += payloadByteCount(span: span, range: range)
+            checkedChunks += 1
+            if installingDSpark && checkedChunks % 32 == 0 {
+              progress?(RepackProgress(copiedBytes: checkedBytes, downloadedBytes: 0,
+                totalBytes: existingBytes, stage: .preservingExisting))
             }
             preparedCount += 1
             if preparedCount == receiptBatchSize, let receipt {
@@ -549,6 +598,10 @@ struct Repacker {
           receiptURL: receiptURL
         )
       }
+      if installingDSpark {
+        progress?(RepackProgress(copiedBytes: checkedBytes, downloadedBytes: 0,
+          totalBytes: existingBytes, stage: .preservingExisting))
+      }
       for handle in handles.values { try handle.close() }
       handles.removeAll()
     } catch {
@@ -563,7 +616,10 @@ struct Repacker {
       for handle in handles.values { try? handle.close() }
       throw error
     }
-    return try await run(plan: plan, output: output, progress: progress)
+    return try await run(plan: plan, output: output, progress: progress,
+      dsparkInstallBytes: installingDSpark ? plan.copies.filter {
+        invalidFiles.contains($0.destinationFile)
+      }.reduce(UInt64(0)) { $0 + $1.length } : nil)
   }
 
   private struct RepackReceipt: Codable {

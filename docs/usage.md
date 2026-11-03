@@ -55,6 +55,7 @@ DeepSeek V4.1 also runs on its own Native engine instead of MLX. Your download, 
 - **Size the expert cache automatically** is on by default. Whallm then uses the memory that is free when the model loads, up to about 72 GiB, and leaves at least 7 GiB or 15% of your Mac's memory for macOS and other apps. A fixed size must hold at least 96 experts.
 - Settings that only worked with MLX are gone, such as approximate mode, ANE projection and the MLX memory guideline. Requests that ask for approximate mode are rejected.
 - **DSpark** guesses several words ahead, then checks them. Its experts share the main expert cache, so it no longer has its own cache size. With greedy sampling, DSpark does not change the text. It helps most with predictable text such as code; on other text it can be a little slower than DSpark off.
+- DSpark installation reads the existing model from disk before and after the download. The Model page shows checkpoint metadata, existing-file checks, transfer, finalization and complete verification separately; disk checks can take time without network traffic.
 - On M5 and later chips, long inputs use the GPU's Neural Accelerators. This has not been measured on an M5 yet.
 - See the [DeepSeek V4.1 observations](../BENCHMARK.md#deepseek-v41-native-observations) for measured performance and remaining validation limits.
 
