@@ -499,6 +499,22 @@ final class DeepSeekRepackTests: XCTestCase {
     _ = try await Repacker(source: source).run(plan: plan(includeDraft: false),
       output: output, progress: nil)
 
+    var unavailableFiles = files
+    unavailableFiles.removeValue(forKey: "draft")
+    do {
+      _ = try await Repacker(source: MemoryCheckpointSource(files: unavailableFiles)).repair(
+        plan: plan(includeDraft: true), output: output,
+        invalidFiles: ["dspark/common.bin"], progress: nil, installingDSpark: true)
+      XCTFail("DSpark repair should fail when the draft shard is unavailable")
+    } catch is RepackError {
+      XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
+      XCTAssertFalse(FileManager.default.fileExists(atPath: output.appendingPathExtension("partial").path))
+      XCTAssertTrue(FileManager.default.fileExists(
+        atPath: output.appendingPathComponent("repack-receipt.json").path))
+      XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")),
+        Data([1, 2, 3, 4]))
+    }
+
     let updates = RepackProgressProbe()
     _ = try await Repacker(source: source).repair(plan: plan(includeDraft: true),
       output: output, invalidFiles: ["dspark/common.bin"],
@@ -510,6 +526,8 @@ final class DeepSeekRepackTests: XCTestCase {
     XCTAssertEqual(updates.values.first { $0.stage == .copying }?.totalBytes, 4)
     XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("dspark/common.bin")),
       Data([5, 6, 7, 8]))
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: output.appendingPathComponent("repack-receipt.json").path))
   }
 
   func testMXFP4MatchesMLXFixedVector() throws {

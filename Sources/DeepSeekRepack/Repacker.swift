@@ -510,6 +510,13 @@ struct Repacker {
     }
 
     try fileManager.moveItem(at: output, to: partial)
+    func restoreInstalledModel() throws {
+      guard installingDSpark else { return }
+      guard fileManager.fileExists(atPath: partial.path),
+        !fileManager.fileExists(atPath: output.path) else { return }
+      try fileManager.moveItem(at: partial, to: output)
+    }
+    let resuming = fileManager.fileExists(atPath: receiptURL.path)
     var handles: [String: FileHandle] = [:]
     var receipt: RepackReceipt?
     var dirtyFiles = Set<String>()
@@ -517,7 +524,7 @@ struct Repacker {
       let prepared = try prepare(plan: plan, partial: partial, receiptURL: receiptURL)
       handles = prepared.handles
       receipt = prepared.receipt
-      for file in plan.files where invalidFiles.contains(file.path) {
+      for file in plan.files where invalidFiles.contains(file.path) && !resuming {
         guard let handle = handles[file.path] else {
           throw RepackError.invalidPlan("missing repair destination \(file.path)")
         }
@@ -605,6 +612,7 @@ struct Repacker {
       for handle in handles.values { try handle.close() }
       handles.removeAll()
     } catch {
+      let failure = error
       if let receipt {
         try? persist(
           receipt: receipt,
@@ -614,12 +622,27 @@ struct Repacker {
         )
       }
       for handle in handles.values { try? handle.close() }
-      throw error
+      do { try restoreInstalledModel() }
+      catch {
+        throw RepackError.invalidPlan(
+          "repair failed (\(failure)); restoring installed model failed: \(error)")
+      }
+      throw failure
     }
-    return try await run(plan: plan, output: output, progress: progress,
-      dsparkInstallBytes: installingDSpark ? plan.copies.filter {
-        invalidFiles.contains($0.destinationFile)
-      }.reduce(UInt64(0)) { $0 + $1.length } : nil)
+    do {
+      return try await run(plan: plan, output: output, progress: progress,
+        dsparkInstallBytes: installingDSpark ? plan.copies.filter {
+          invalidFiles.contains($0.destinationFile)
+        }.reduce(UInt64(0)) { $0 + $1.length } : nil)
+    } catch {
+      let failure = error
+      do { try restoreInstalledModel() }
+      catch {
+        throw RepackError.invalidPlan(
+          "repair failed (\(failure)); restoring installed model failed: \(error)")
+      }
+      throw failure
+    }
   }
 
   private struct RepackReceipt: Codable {
