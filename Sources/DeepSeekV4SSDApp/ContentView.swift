@@ -510,7 +510,8 @@ private struct ServerView: View {
                 L10n.string("Error: %@", language: language, modelActionError))
           }
 
-          if modelLibrary.isBusy && modelLibrary.downloadModelKind == nil {
+          if modelLibrary.isBusy && modelLibrary.downloadModelKind == nil
+            && modelLibrary.dsparkStartedAt == nil {
             operationPanel
           }
 
@@ -791,7 +792,9 @@ private struct ServerView: View {
           }
           .disabled(server.isActive || modelLibrary.isBusy)
           if selectedModel.modelKind.descriptor.supports("dspark"), !selectedModel.hasDSpark {
-            Button(dsparkInstallLabel(for: selectedModel.modelKind)) {
+            Button(modelLibrary.dsparkStartedAt == nil
+              ? dsparkInstallLabel(for: selectedModel.modelKind)
+              : modelLibrary.operationPhase.label) {
               modelLibrary.startDSparkInstallation(selectedModel)
             }
             .disabled(server.isActive || modelLibrary.isBusy
@@ -802,6 +805,10 @@ private struct ServerView: View {
           }
           Spacer()
         }
+      }
+
+      if modelLibrary.dsparkStartedAt != nil {
+        operationContent
       }
 
       Divider()
@@ -1201,6 +1208,10 @@ private struct ServerView: View {
   }
 
   private var operationPanel: some View {
+    operationContent.appCard()
+  }
+
+  private var operationContent: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(modelLibrary.operationPhase.label).font(.headline)
       if let detail = modelLibrary.operationDetail {
@@ -1227,7 +1238,6 @@ private struct ServerView: View {
       Button(L10n.string("Stop Current Operation")) { modelLibrary.cancelOperation() }
         .disabled(modelLibrary.operationPhase == .cancelling)
     }
-    .appCard()
   }
 
   private var damagedModelsPanel: some View {
