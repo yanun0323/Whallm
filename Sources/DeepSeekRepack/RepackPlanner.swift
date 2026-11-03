@@ -1,6 +1,25 @@
 import Foundation
 
 enum RepackPlanner {
+  static func dsparkInstalledBytes(tensors: [String: SafeTensor]) throws -> UInt64 {
+    try validateExperts(
+      expected: expectedDSparkExperts(),
+      actual: tensors.keys.filter(isDSparkExpert),
+      label: "DSpark routed expert"
+    )
+    var copies: [TensorCopy] = []
+    let common = appendCommonTensors(
+      tensors.values.filter { $0.name.hasPrefix("mtp.") && !isDSparkExpert($0.name) },
+      destination: "dspark/common.bin", copies: &copies)
+    guard !common.tensors.isEmpty else {
+      throw RepackError.invalidPlan("DSpark has no common tensors")
+    }
+    try appendExperts(expectedDSparkExperts(), tensors: tensors, path: dsparkLayerPath,
+      label: "DSpark routed expert", copies: &copies)
+    return common.size + UInt64(ModelContract.dsparkLayerCount * ModelContract.expertCount)
+      * ModelContract.expertBlobSize
+  }
+
   static func makePlan(
     index: CheckpointIndex,
     tensors: [String: SafeTensor],

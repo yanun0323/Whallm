@@ -35,6 +35,11 @@ final class DeepSeekV41DSparkTests: XCTestCase {
     XCTAssertFalse(main.copies.contains { $0.tensor.hasPrefix("mtp.") })
     let plan = try DeepSeekV41Planner.makePlan(index: index, tensors: tensors, includeDSpark: true)
     try DeepSeekV41Contract.validate(plan)
+    let dsparkLayout = try DeepSeekV41Planner.makeDSparkLayout(
+      tensors: tensors.filter { $0.key.hasPrefix("mtp.") })
+    XCTAssertEqual(dsparkLayout.files, plan.files.filter { $0.path.hasPrefix("dspark/") })
+    XCTAssertEqual(dsparkLayout.copies, plan.copies.filter { $0.destinationFile.hasPrefix("dspark/") })
+    XCTAssertEqual(dsparkLayout.descriptor, plan.dspark)
     XCTAssertEqual(plan.dspark?.targetLayerIDs, [37, 38, 39])
     XCTAssertEqual(plan.dspark?.commonTensors.count, 97)
     XCTAssertEqual(plan.files.first { $0.path == "dspark/experts/layer_02.bin" }?.size, 128 * DeepSeekV41Contract.expertBlobSize)

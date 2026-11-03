@@ -791,10 +791,14 @@ private struct ServerView: View {
           }
           .disabled(server.isActive || modelLibrary.isBusy)
           if selectedModel.modelKind.descriptor.supports("dspark"), !selectedModel.hasDSpark {
-            Button(L10n.string("Install DSpark (10.12 GiB)")) {
+            Button(dsparkInstallLabel(for: selectedModel.modelKind)) {
               modelLibrary.startDSparkInstallation(selectedModel)
             }
-            .disabled(server.isActive || modelLibrary.isBusy)
+            .disabled(server.isActive || modelLibrary.isBusy
+              || modelLibrary.plannedDSparkBytes(for: selectedModel.modelKind) == nil)
+            .task(id: selectedModel.modelKind) {
+              await modelLibrary.refreshDSparkSize(for: selectedModel.modelKind)
+            }
           }
           Spacer()
         }
@@ -1461,6 +1465,16 @@ private struct ServerView: View {
     if bytes == 0 { return "0 KB" }
     return ByteCountFormatter.string(
       fromByteCount: Int64(clamping: bytes), countStyle: .file)
+  }
+
+  private func dsparkInstallLabel(for modelKind: ModelKind) -> String {
+    guard let bytes = modelLibrary.plannedDSparkBytes(for: modelKind) else {
+      return modelLibrary.dsparkPlanErrors[modelKind.rawValue] == nil
+        ? L10n.string("Checking DSpark size...")
+        : L10n.string("DSpark size unavailable")
+    }
+    let gib = (Double(bytes) / 1_073_741_824).formatted(.number.precision(.fractionLength(2)))
+    return L10n.string("Install DSpark (%@ GiB)", gib)
   }
 
   private func formattedDuration(_ seconds: Double) -> String {

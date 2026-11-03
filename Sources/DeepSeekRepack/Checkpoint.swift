@@ -125,14 +125,7 @@ public struct DeepSeekV4Checkpoint: Sendable {
     try ModelContract.validate(config)
 
     if includeDSpark {
-      let dsparkData = try await source.data(path: "inference/config.json")
-      let dsparkConfig: DSparkConfig
-      do {
-        dsparkConfig = try JSONDecoder().decode(DSparkConfig.self, from: dsparkData)
-      } catch {
-        throw RepackError.incompatibleModel("cannot decode DSpark config: \(error)")
-      }
-      try ModelContract.validate(dsparkConfig)
+      try await validateDSparkConfig()
     }
 
     let indexData = try await source.data(path: "model.safetensors.index.json")
@@ -143,6 +136,24 @@ public struct DeepSeekV4Checkpoint: Sendable {
       tensors: tensors,
       includeDSpark: includeDSpark
     )
+  }
+
+  /// Reads only checkpoint metadata and the MTP shard headers.
+  public func dsparkInstalledBytes() async throws -> UInt64 {
+    try await validateDSparkConfig()
+    let index = try CheckpointIndex.decode(try await source.data(path: "model.safetensors.index.json"))
+    let mtp = index.weightMap.filter { $0.key.hasPrefix("mtp.") }
+    guard !mtp.isEmpty else { throw RepackError.incompatibleModel("checkpoint has no DSpark tensors") }
+    let tensors = try await readTensors(index: CheckpointIndex(totalSize: 0, weightMap: mtp))
+    return try RepackPlanner.dsparkInstalledBytes(tensors: tensors)
+  }
+
+  private func validateDSparkConfig() async throws {
+    let data = try await source.data(path: "inference/config.json")
+    let config: DSparkConfig
+    do { config = try JSONDecoder().decode(DSparkConfig.self, from: data) }
+    catch { throw RepackError.incompatibleModel("cannot decode DSpark config: \(error)") }
+    try ModelContract.validate(config)
   }
 
   public func repack(
