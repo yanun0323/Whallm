@@ -792,27 +792,34 @@ private struct ServerView: View {
           }
           .disabled(server.isActive || modelLibrary.isBusy)
           if selectedModel.modelKind.descriptor.supports("dspark"), !selectedModel.hasDSpark {
-            if modelLibrary.dsparkStartedAt == nil {
-              Button(dsparkInstallLabel(for: selectedModel.modelKind)) {
+            Button {
+              if modelLibrary.dsparkStartedAt != nil {
+                modelLibrary.cancelOperation()
+              } else {
                 modelLibrary.startDSparkInstallation(selectedModel)
               }
-              .disabled(server.isActive || modelLibrary.isBusy
+            } label: {
+              Text(modelLibrary.dsparkStartedAt == nil
+                ? dsparkInstallLabel(for: selectedModel.modelKind)
+                : dsparkOperationButtonLabel)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.bordered)
+            .tint(modelLibrary.dsparkStartedAt == nil ? .accentColor : .gray)
+            .disabled(modelLibrary.dsparkStartedAt == nil
+              ? (server.isActive || modelLibrary.isBusy
                 || modelLibrary.plannedDSparkBytes(for: selectedModel.modelKind) == nil)
-              .task(id: selectedModel.modelKind) {
-                await modelLibrary.refreshDSparkSize(for: selectedModel.modelKind)
-              }
-            } else {
-              Label(modelLibrary.operationPhase.label, systemImage: "arrow.down.circle")
-                .font(.callout.weight(.medium))
-                .accessibilityAddTraits(.updatesFrequently)
+              : modelLibrary.operationPhase == .cancelling)
+            .help(modelLibrary.dsparkStartedAt == nil
+              ? L10n.string("Install DSpark", language: language)
+              : L10n.string("Click to stop DSpark installation", language: language))
+            .task(id: selectedModel.modelKind) {
+              await modelLibrary.refreshDSparkSize(for: selectedModel.modelKind)
             }
           }
           Spacer()
         }
-      }
-
-      if modelLibrary.dsparkStartedAt != nil {
-        operationContent
       }
 
       Divider()
@@ -949,14 +956,15 @@ private struct ServerView: View {
           ? "Loading" : (isModelLoaded(modelKind) ? "Loaded" : "Installed"),
         language: language
       )
-      Text(
-        L10n.string(
-          shouldShowMTPDownloadButton(model) ? "%@ · %@ · MTP download available" : "%@ · %@",
-          language: language,
-          status,
-          formattedBytes(model.size)
-        )
-      )
+      let companionStatus: String? = model.hasDSpark
+        ? L10n.string(isModelLoaded(modelKind) && server.performance.dsparkEnabled
+          ? "DSpark active" : "DSpark installed", language: language)
+        : nil
+      let details = [status, formattedBytes(model.size)]
+        + (shouldShowMTPDownloadButton(model)
+          ? [L10n.string("MTP download available", language: language)] : [])
+        + (companionStatus.map { [$0] } ?? [])
+      Text(details.joined(separator: " · "))
       .font(.callout)
       .foregroundStyle(.secondary)
     } else if modelLibrary.isPlanningInstallation(for: modelKind) {
@@ -1510,6 +1518,41 @@ private struct ServerView: View {
     }
     let gib = (Double(bytes) / 1_073_741_824).formatted(.number.precision(.fractionLength(2)))
     return L10n.string("Install DSpark (%@ GiB)", gib)
+  }
+
+  private var dsparkOperationButtonLabel: String {
+    let phase = modelLibrary.operationPhase
+    if phase == .cancelling { return L10n.string("Stopping DSpark…", language: language) }
+    if phase == .preparingDSpark {
+      return modelLibrary.operationDetail
+        ?? L10n.string("Checking headers…", language: language)
+    }
+    guard let progress = modelLibrary.operationProgress else { return phase.label }
+    let completed = formattedGigabytes(progress.completedBytes)
+    let total = formattedGigabytes(progress.totalBytes)
+    switch phase {
+    case .preservingDSparkModel:
+      return L10n.string("Checking model files (1/2 · %@/%@)", language: language,
+        completed, total)
+    case .validatingDSparkModel:
+      return L10n.string("Checking model files (2/2 · %@/%@)", language: language,
+        completed, total)
+    case .installingDSpark:
+      let received = formattedGigabytes(progress.receivedBytes ?? progress.completedBytes)
+      return L10n.string("Downloading DSpark (%@ received · %@/%@ installed)",
+        language: language, received, completed, total)
+    case .finalizingDSpark:
+      return L10n.string("Finalizing DSpark (%@/%@)", language: language,
+        completed, total)
+    case .verifying:
+      return L10n.string("Verifying model (%@/%@)", language: language,
+        completed, total)
+    default: return phase.label
+    }
+  }
+
+  private func formattedGigabytes(_ bytes: UInt64) -> String {
+    String(format: "%.1f GB", Double(bytes) / 1_000_000_000)
   }
 
   private func formattedDuration(_ seconds: Double) -> String {

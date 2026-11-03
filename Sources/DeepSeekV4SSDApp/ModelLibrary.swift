@@ -1030,7 +1030,7 @@ final class ModelLibrary: ObservableObject {
       let metadataProgress: @Sendable (Int, Int) -> Void = { [weak self] checked, total in
         Task { @MainActor in
           guard self?.operationPhase == .preparingDSpark else { return }
-          self?.operationDetail = L10n.string("%lld of %lld shard headers checked",
+          self?.operationDetail = L10n.string("Checking headers (%lld/%lld)",
             Int64(checked), Int64(total))
         }
       }
