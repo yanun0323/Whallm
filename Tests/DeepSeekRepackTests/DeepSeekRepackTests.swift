@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import XCTest
 
 @testable import DeepSeekRepack
@@ -493,7 +494,7 @@ final class DeepSeekRepackTests: XCTestCase {
         copies: [baseCopy] + (includeDraft ? [draftCopy] : []))
     }
     let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let output = parent.appendingPathComponent("model.dsv4")
+    let output = parent.appendingPathComponent(ModelKind.deepSeekV4.descriptor.directoryName)
     try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
     defer { try? FileManager.default.removeItem(at: parent) }
     _ = try await Repacker(source: source).run(plan: plan(includeDraft: false),
@@ -511,6 +512,8 @@ final class DeepSeekRepackTests: XCTestCase {
       XCTAssertFalse(FileManager.default.fileExists(atPath: output.appendingPathExtension("partial").path))
       XCTAssertTrue(FileManager.default.fileExists(
         atPath: output.appendingPathComponent("repack-receipt.json").path))
+      XCTAssertFalse(FileManager.default.fileExists(
+        atPath: output.appendingPathComponent(".dspark-install.lock").path))
       XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")),
         Data([1, 2, 3, 4]))
     }
@@ -528,6 +531,34 @@ final class DeepSeekRepackTests: XCTestCase {
       Data([5, 6, 7, 8]))
     XCTAssertFalse(FileManager.default.fileExists(
       atPath: output.appendingPathComponent("repack-receipt.json").path))
+    let marker = output.appendingPathComponent(".dspark-install.lock")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    try Data().write(to: marker)
+    let partial = output.appendingPathExtension("partial")
+    try FileManager.default.moveItem(at: output, to: partial)
+    let descriptor = ModelKind.deepSeekV4.descriptor
+    XCTAssertTrue(descriptor.supports("dspark"))
+    let interruptedManifest = try JSONDecoder().decode(InstalledManifest.self,
+      from: Data(contentsOf: partial.appendingPathComponent("manifest.json")))
+    XCTAssertEqual(interruptedManifest.modelID, descriptor.checkpointModelID)
+    XCTAssertEqual(interruptedManifest.revision, descriptor.checkpointRevision)
+    for file in interruptedManifest.files {
+      XCTAssertEqual(try FileManager.default.attributesOfItem(
+        atPath: partial.appendingPathComponent(file.path).path)[.size] as? UInt64, file.size)
+    }
+    let activeLock = try FileHandle(forUpdating: partial.appendingPathComponent(".dspark-install.lock"))
+    XCTAssertEqual(flock(activeLock.fileDescriptor, LOCK_EX | LOCK_NB), 0)
+    XCTAssertTrue(InstalledModel.restoreInterruptedDSparkInstallations(in: parent).isEmpty)
+    _ = flock(activeLock.fileDescriptor, LOCK_UN)
+    try activeLock.close()
+    let availableLock = try FileHandle(forUpdating: partial.appendingPathComponent(".dspark-install.lock"))
+    XCTAssertEqual(flock(availableLock.fileDescriptor, LOCK_EX | LOCK_NB), 0)
+    _ = flock(availableLock.fileDescriptor, LOCK_UN)
+    try availableLock.close()
+    XCTAssertEqual(InstalledModel.restoreInterruptedDSparkInstallations(in: parent), [output])
+    XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: partial.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
   }
 
   func testMXFP4MatchesMLXFixedVector() throws {

@@ -253,6 +253,7 @@
 "Checking existing model files (2 of 2)" = "Checking existing model files (2 of 2)";
 "Downloading and installing DSpark" = "Downloading and installing DSpark";
 "Finalizing DSpark files" = "Finalizing DSpark files";
+"Restored the main model after an interrupted DSpark installation." = "Restored the main model after an interrupted DSpark installation.";
 "%lld of %lld shard headers checked" = "%lld of %lld shard headers checked";
 "Elapsed: %@" = "Elapsed: %@";
 "Use DSpark" = "Use DSpark";

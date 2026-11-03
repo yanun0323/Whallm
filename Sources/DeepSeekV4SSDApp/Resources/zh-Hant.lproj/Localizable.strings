@@ -253,6 +253,7 @@
 "Checking existing model files (2 of 2)" = "正在檢查現有模型檔案（第 2 遍，共 2 遍）";
 "Downloading and installing DSpark" = "正在下載並安裝 DSpark";
 "Finalizing DSpark files" = "正在完成 DSpark 檔案處理";
+"Restored the main model after an interrupted DSpark installation." = "DSpark 安裝中斷後，已還原主模型。";
 "%lld of %lld shard headers checked" = "已檢查 %lld/%lld 個分片檔案標頭";
 "Elapsed: %@" = "已用時間：%@";
 "Use DSpark" = "使用 DSpark";

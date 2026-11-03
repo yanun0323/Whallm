@@ -1,5 +1,8 @@
 import CryptoKit
+import Darwin
 import Foundation
+
+private let dsparkInstallLockFilename = ".dspark-install.lock"
 
 private final class DownloadProgressTracker: @unchecked Sendable {
   private struct Transfer {
@@ -509,6 +512,31 @@ struct Repacker {
       throw RepackError.invalidPlan("partial repair already exists: \(partial.path)")
     }
 
+    let dsparkLock: FileHandle?
+    if installingDSpark {
+      let lockURL = output.appendingPathComponent(dsparkInstallLockFilename)
+      if !fileManager.fileExists(atPath: lockURL.path),
+        !fileManager.createFile(atPath: lockURL.path, contents: nil) {
+        throw RepackError.invalidPlan("cannot create DSpark installation lock")
+      }
+      let handle = try FileHandle(forUpdating: lockURL)
+      guard flock(handle.fileDescriptor, LOCK_EX | LOCK_NB) == 0 else {
+        try handle.close()
+        throw RepackError.invalidPlan("another DSpark installation is active")
+      }
+      dsparkLock = handle
+    } else {
+      dsparkLock = nil
+    }
+    defer {
+      if let dsparkLock {
+        _ = flock(dsparkLock.fileDescriptor, LOCK_UN)
+        try? dsparkLock.close()
+        if fileManager.fileExists(atPath: output.path) {
+          try? fileManager.removeItem(at: output.appendingPathComponent(dsparkInstallLockFilename))
+        }
+      }
+    }
     try fileManager.moveItem(at: output, to: partial)
     func restoreInstalledModel() throws {
       guard installingDSpark else { return }
@@ -1244,6 +1272,41 @@ struct Repacker {
 }
 
 public enum InstalledModel {
+  /// A terminated DSpark install may leave the intact main model under .partial.
+  /// The lock prevents recovery while another Whallm process is still installing it.
+  public static func restoreInterruptedDSparkInstallations(in root: URL) -> [URL] {
+    let fileManager = FileManager.default
+    var restored: [URL] = []
+    for descriptor in ModelPackages.descriptors where descriptor.supports("dspark") {
+      let output = root.appendingPathComponent(descriptor.directoryName)
+      let partial = output.appendingPathExtension("partial")
+      let lockURL = partial.appendingPathComponent(dsparkInstallLockFilename)
+      guard !fileManager.fileExists(atPath: output.path),
+        fileManager.fileExists(atPath: lockURL.path),
+        let lock = try? FileHandle(forUpdating: lockURL) else { continue }
+      defer { try? lock.close() }
+      guard flock(lock.fileDescriptor, LOCK_EX | LOCK_NB) == 0 else { continue }
+      defer { _ = flock(lock.fileDescriptor, LOCK_UN) }
+      guard let manifestData = try? Data(contentsOf: partial.appendingPathComponent("manifest.json")),
+        let manifest = try? JSONDecoder().decode(InstalledManifest.self, from: manifestData),
+        manifest.modelID == descriptor.checkpointModelID,
+        manifest.revision == descriptor.checkpointRevision,
+        manifest.files.allSatisfy({ file in
+          guard let url = try? safeFileURL(root: partial, path: file.path),
+            let size = try? fileSize(url) else { return false }
+          return size == file.size
+        }) else { continue }
+      do {
+        try fileManager.moveItem(at: partial, to: output)
+        try? fileManager.removeItem(at: output.appendingPathComponent(dsparkInstallLockFilename))
+        restored.append(output)
+      } catch {
+        continue
+      }
+    }
+    return restored
+  }
+
   public static func removeDSpark(at root: URL) throws -> InstalledManifest {
     let root = root.standardizedFileURL
     let current = try loadManifest(at: root)

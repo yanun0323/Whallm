@@ -634,6 +634,7 @@ final class ModelLibrary: ObservableObject {
     message = nil
     do {
       try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+      let restored = isBusy ? [] : InstalledModel.restoreInterruptedDSparkInstallations(in: rootURL)
       let root = rootURL
       let result = await Task.detached(priority: .utility) {
         InstalledModelDiscovery.find(in: root)
@@ -642,6 +643,9 @@ final class ModelLibrary: ObservableObject {
       invalidModelURLs = result.invalidModelURLs
       refreshPreflight()
       await refreshSelectedPlan()
+      if !restored.isEmpty {
+        message = L10n.string("Restored the main model after an interrupted DSpark installation.")
+      }
     } catch {
       models = []
       invalidModelURLs = []
