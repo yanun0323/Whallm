@@ -52,10 +52,18 @@ DeepSeek V4.1 also runs on its own Native engine instead of MLX. Your download, 
 
 - **Advanced Settings** covers generation, expert cache size, read workers, Prompt Cache, warmup and DSpark.
 - **Size the expert cache automatically** is on by default. Whallm then uses the memory that is free when the model loads, up to about 72 GiB, and leaves at least 7 GiB or 15% of your Mac's memory for macOS and other apps. A fixed size must hold at least 96 experts.
-- Settings that only worked with MLX are gone, such as approximate mode, ANE projection and the MLX memory guideline. Requests that ask for approximate mode are rejected.
+- Settings that only worked with MLX are gone, such as approximate mode and the MLX memory guideline. Requests that ask for approximate mode are rejected.
 - **DSpark** guesses several words ahead, then checks them. Its experts share the main expert cache, so it no longer has its own cache size. With greedy sampling, DSpark does not change the text. It helps most with predictable text such as code; on other text it can be a little slower than DSpark off.
 - On M5 and later chips, long inputs use the GPU's Neural Accelerators. This has not been measured on an M5 yet.
 - See the [DeepSeek V4.1 observations](../BENCHMARK.md#deepseek-v41-native-observations) for measured performance and remaining validation limits.
+
+### Experimental ANE prefill for Native models
+
+DeepSeek V4.1, Qwen3.8 and Swift1.5 can send part of their query projection to the Apple Neural Engine during prefill. The share is **0 by default**, so the GPU runs everything. For DeepSeek V4.1, turn on **Use ANE for prefill** and set **ANE Prefill share** above 0. For Qwen3.8 and Swift1.5, set the share above 0. A share of 0.25 assigns a quarter of the projection's output channels to ANE. The rest run on the GPU at the same time.
+
+The existing DeepSeek V4 Flash MLX option remains separate. The Native feature works only on full 1,024-token prefill chunks; short prompts, final partial chunks, token generation and speculative verification continue on the GPU. ANE weights compile when the model loads and use extra unified memory. The memory estimate and automatic expert-cache size account for them. Changing the share requires reloading the model and creates a separate prompt-cache contract.
+
+Whallm shows ANE activation or a GPU fallback in **Logs**. If the ANE bridge is missing or cannot compile, the model uses its original GPU path. If an ANE evaluation fails, Whallm disables ANE for that load and stops reusing prompt caches. The bridge uses a private Apple framework, so a future macOS version may break it. It was exercised on an M1 Max; performance and numerical differences depend on the model and workload. See [ANE validation](../BENCHMARK.md#experimental-native-ane-prefill) before assuming a speedup.
 
 ## Features
 

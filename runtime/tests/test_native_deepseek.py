@@ -174,10 +174,11 @@ class CatalogTests(unittest.TestCase):
         opened.assert_called_once_with("/tmp/v41", spec.runtime, KIND)
 
     def test_mlx_only_options_are_refused(self):
-        for name in ("v41_packed_kv", "v41_packed_index", "v41_candidate_index", "deepseek_ane_prefill",
+        for name in ("v41_packed_kv", "v41_packed_index", "v41_candidate_index",
                      "dspark_sequential_verification", "qwen_8bit_common_tensors"):
             with self.subTest(name=name), self.assertRaises(Exception):
                 parse_model_catalog(self.raw(**{name: True}))
+        parse_model_catalog(self.raw(deepseek_ane_prefill=True, ane_prefill_ratio=.25))
         # MLX tuning that does not change the numbers is accepted and unused.
         parse_model_catalog(self.raw(layer_major_prefill=False, v41_layer_major_prefill=False,
                                      batched_expert_prefill=False, read_workers=4))

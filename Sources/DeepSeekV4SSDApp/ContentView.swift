@@ -1892,7 +1892,7 @@ struct ModelAdvancedView: View {
               doubleField(
                 "ANE Prefill share",
                 hint:
-                  "Share of query projection output channels assigned to ANE. Use 0 for GPU only and 1 for ANE only. The default and recommended value is 0.",
+                  "Share of query projection output channels assigned to ANE on full prefill chunks. Use 0 for GPU only. The default is 0. See Logs for activation or fallback.",
                 value: anePrefillRatio
               )
             }
@@ -1956,7 +1956,7 @@ struct ModelAdvancedView: View {
             if modelKind.descriptor.supports("deepseekANEPrefill") {
               Divider()
               toggleField("Use ANE for prefill",
-                hint: "Shares query projection work with ANE. Falls back to GPU when unavailable. May change rounding.",
+                hint: "Also set ANE Prefill share above 0. Falls back to GPU when unavailable. May change rounding; see Logs for status.",
                 value: optionalToggle(\.deepSeekANEPrefill, defaultValue: false))
 
             }

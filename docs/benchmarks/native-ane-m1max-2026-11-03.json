@@ -1,0 +1,424 @@
+{
+  "title": "Native ANE prefill, DeepSeek V4.1 1017 installed weights",
+  "date": "2026-11-03",
+  "platform": {
+    "chip": "Apple M1 Max",
+    "unified_memory_gib": 64,
+    "macos": "27.2"
+  },
+  "upstream_base_sha": "ded828ba91e00527a5067eb9a2f2adfc818f9541",
+  "model": {
+    "kind": "deepseek-v4.1",
+    "weights": "locally installed deepseek-v4.1-flash-1017.dsv4",
+    "fixture_manifest_sha256": "6ebb30f4d98148578e9c46aea36dc345a6a48f2f16434085d0defc677b28a8b9",
+    "manifest_kind_only_adapted_for_upstream_branch": true
+  },
+  "input": {
+    "tokens": 1024,
+    "prompt_sha256": "44afaf054ce99bb92e75c65b34b1daa290dbd9f0ef4c8d5e308644ecd4162eb2",
+    "expert_slots": 256,
+    "greedy_tokens_requested": 2,
+    "decode_tokens_timed": 1,
+    "token_map": "existing installed-model token map",
+    "read_workers": "engine default"
+  },
+  "method": "Sequential 1K shares 0/25/50/100% then 100/50/25/0%; 3K shares 0/25/25/0%; identical weights, token IDs, token map and expert slots within each prompt; warm but variable macOS file cache.",
+  "command_template": ".build/deepseek-native/wd-cli MODEL @PROMPT --token-map TOKEN_MAP --greedy 2 --slots 256 --ane-share SHARE --logits OUTPUT",
+  "real_projection_comparison": {
+    "share": 0.25,
+    "layers": 40,
+    "maximum_layer_max_abs": 0.0163612,
+    "rms_min": 0.000349077,
+    "rms_max": 0.000534432
+  },
+  "runs": [
+    {
+      "share": 0,
+      "pass": 1,
+      "load_seconds": 1.87,
+      "prefill_seconds": 31.59,
+      "prefill_tokens_per_second": 32.4,
+      "decode_one_token_seconds": 0.696,
+      "expert_read_seconds_cumulative": 26.265,
+      "gpu_seconds_cumulative": 10.513,
+      "ane_active": false,
+      "ane_channels": 0,
+      "ane_calls": 0,
+      "ane_fallbacks": 0,
+      "ane_evaluate_seconds_cumulative": 0.0,
+      "maximum_resident_bytes": null,
+      "greedy_tokens": [
+        47,
+        8835
+      ],
+      "logits_vs_first_gpu_pass": {
+        "count": 129280,
+        "max_abs": 0.0,
+        "rms": 0.0,
+        "all_finite": true
+      }
+    },
+    {
+      "share": 0.25,
+      "pass": 1,
+      "load_seconds": 8.83,
+      "prefill_seconds": 31.199,
+      "prefill_tokens_per_second": 32.8,
+      "decode_one_token_seconds": 0.22,
+      "expert_read_seconds_cumulative": 26.328,
+      "gpu_seconds_cumulative": 10.327,
+      "ane_active": true,
+      "ane_channels": 8192,
+      "ane_calls": 40,
+      "ane_fallbacks": 0,
+      "ane_evaluate_seconds_cumulative": 0.533508,
+      "maximum_resident_bytes": null,
+      "greedy_tokens": [
+        47,
+        8835
+      ],
+      "logits_vs_first_gpu_pass": {
+        "count": 129280,
+        "max_abs": 1.1725349426269531,
+        "rms": 0.2207426114730823,
+        "all_finite": true
+      }
+    },
+    {
+      "share": 0.5,
+      "pass": 1,
+      "load_seconds": 12.99,
+      "prefill_seconds": 31.553,
+      "prefill_tokens_per_second": 32.5,
+      "decode_one_token_seconds": 0.206,
+      "expert_read_seconds_cumulative": 25.95,
+      "gpu_seconds_cumulative": 10.164,
+      "ane_active": true,
+      "ane_channels": 16384,
+      "ane_calls": 40,
+      "ane_fallbacks": 0,
+      "ane_evaluate_seconds_cumulative": 0.927298,
+      "maximum_resident_bytes": null,
+      "greedy_tokens": [
+        47,
+        8835
+      ],
+      "logits_vs_first_gpu_pass": {
+        "count": 129280,
+        "max_abs": 1.2541179656982422,
+        "rms": 0.24598687151031312,
+        "all_finite": true
+      }
+    },
+    {
+      "share": 1,
+      "pass": 1,
+      "load_seconds": 23.32,
+      "prefill_seconds": 31.914,
+      "prefill_tokens_per_second": 32.1,
+      "decode_one_token_seconds": 0.213,
+      "expert_read_seconds_cumulative": 24.252,
+      "gpu_seconds_cumulative": 10.119,
+      "ane_active": true,
+      "ane_channels": 32768,
+      "ane_calls": 40,
+      "ane_fallbacks": 0,
+      "ane_evaluate_seconds_cumulative": 1.552111,
+      "maximum_resident_bytes": null,
+      "greedy_tokens": [
+        47,
+        8835
+      ],
+      "logits_vs_first_gpu_pass": {
+        "count": 129280,
+        "max_abs": 1.675635814666748,
+        "rms": 0.3078665231925102,
+        "all_finite": true
+      }
+    },
+    {
+      "share": 1,
+      "pass": 2,
+      "load_seconds": 22.66,
+      "prefill_seconds": 32.371,
+      "prefill_tokens_per_second": 31.6,
+      "decode_one_token_seconds": 0.212,
+      "expert_read_seconds_cumulative": 24.704,
+      "gpu_seconds_cumulative": 10.099,
+      "ane_active": true,
+      "ane_channels": 32768,
+      "ane_calls": 40,
+      "ane_fallbacks": 0,
+      "ane_evaluate_seconds_cumulative": 1.564208,
+      "maximum_resident_bytes": 20392935424,
+      "greedy_tokens": [
+        47,
+        8835
+      ],
+      "logits_vs_first_gpu_pass": {
+        "count": 129280,
+        "max_abs": 1.675635814666748,
+        "rms": 0.3078665231925102,
+        "all_finite": true
+      }
+    },
+    {
+      "share": 0.5,
+      "pass": 2,
+      "load_seconds": 12.68,
+      "prefill_seconds": 31.997,
+      "prefill_tokens_per_second": 32.0,
+      "decode_one_token_seconds": 0.209,
+      "expert_read_seconds_cumulative": 26.211,
+      "gpu_seconds_cumulative": 10.176,
+      "ane_active": true,
+      "ane_channels": 16384,
+      "ane_calls": 40,
+      "ane_fallbacks": 0,
+      "ane_evaluate_seconds_cumulative": 0.904517,
+      "maximum_resident_bytes": 18866241536,
+      "greedy_tokens": [
+        47,
+        8835
+      ],
+      "logits_vs_first_gpu_pass": {
+        "count": 129280,
+        "max_abs": 1.2541179656982422,
+        "rms": 0.24598687151031312,
+        "all_finite": true
+      }
+    },
+    {
+      "share": 0.25,
+      "pass": 2,
+      "load_seconds": 8.01,
+      "prefill_seconds": 31.971,
+      "prefill_tokens_per_second": 32.0,
+      "decode_one_token_seconds": 0.209,
+      "expert_read_seconds_cumulative": 26.992,
+      "gpu_seconds_cumulative": 10.396,
+      "ane_active": true,
+      "ane_channels": 8192,
+      "ane_calls": 40,
+      "ane_fallbacks": 0,
+      "ane_evaluate_seconds_cumulative": 0.53378,
+      "maximum_resident_bytes": 18102829056,
+      "greedy_tokens": [
+        47,
+        8835
+      ],
+      "logits_vs_first_gpu_pass": {
+        "count": 129280,
+        "max_abs": 1.1725349426269531,
+        "rms": 0.2207426114730823,
+        "all_finite": true
+      }
+    },
+    {
+      "share": 0,
+      "pass": 2,
+      "load_seconds": 1.86,
+      "prefill_seconds": 32.067,
+      "prefill_tokens_per_second": 31.9,
+      "decode_one_token_seconds": 0.21,
+      "expert_read_seconds_cumulative": 27.593,
+      "gpu_seconds_cumulative": 10.662,
+      "ane_active": false,
+      "ane_channels": 0,
+      "ane_calls": 0,
+      "ane_fallbacks": 0,
+      "ane_evaluate_seconds_cumulative": 0.0,
+      "maximum_resident_bytes": 17223745536,
+      "greedy_tokens": [
+        47,
+        8835
+      ],
+      "logits_vs_first_gpu_pass": {
+        "count": 129280,
+        "max_abs": 0.0,
+        "rms": 0.0,
+        "all_finite": true
+      }
+    }
+  ],
+  "limitations": [
+    "Only installed 1017 checkpoint available for full-model execution.",
+    "Fixture changes only manifest modelKind for upstream V4.1 engine; weights unchanged.",
+    "Expert streaming and varying file cache dominate these 1K and 3K workloads.",
+    "One timed decode token per run is not a stable TPOT estimate.",
+    "No Qwen3.8 or Swift1.5 weights installed; native hooks tested with synthetic weights and hardware bridge checks only.",
+    "GPU projection time, ANE conversion/merge time and true overlap are not separately measured.",
+    "16K/128K contexts and DSpark/MTP full-model combinations not run."
+  ],
+  "long_prompt": {
+    "tokens": 3000,
+    "prompt_sha256": "c60916b053e9d4dc5b82693ae5d209ac43bace15befc28e89b9b8f360e02b4b8",
+    "order": "0%, 25%, 25%, 0%",
+    "greedy_tokens_requested": 2,
+    "decode_tokens_timed": 1,
+    "expert_slots": 256,
+    "runs": [
+      {
+        "share": 0,
+        "pass": 1,
+        "load_seconds": 1.91,
+        "prefill_seconds": 38.28,
+        "prefill_tokens_per_second": 78.4,
+        "decode_one_token_seconds": 0.627,
+        "expert_read_seconds_cumulative": 24.366,
+        "gpu_seconds_cumulative": 24.656,
+        "ane_active": false,
+        "ane_channels": 0,
+        "ane_calls": 0,
+        "ane_fallbacks": 0,
+        "ane_evaluate_seconds_cumulative": 0.0,
+        "maximum_resident_bytes": 17429905408,
+        "greedy_tokens": [
+          27574,
+          26
+        ],
+        "logits_vs_first_gpu_pass": {
+          "count": 129280,
+          "max_abs": 0.0,
+          "rms": 0.0,
+          "all_finite": true
+        }
+      },
+      {
+        "share": 0.25,
+        "pass": 1,
+        "load_seconds": 8.49,
+        "prefill_seconds": 37.93,
+        "prefill_tokens_per_second": 79.1,
+        "decode_one_token_seconds": 0.244,
+        "expert_read_seconds_cumulative": 24.232,
+        "gpu_seconds_cumulative": 24.428,
+        "ane_active": true,
+        "ane_channels": 8192,
+        "ane_calls": 80,
+        "ane_fallbacks": 0,
+        "ane_evaluate_seconds_cumulative": 0.634183,
+        "maximum_resident_bytes": 18270797824,
+        "greedy_tokens": [
+          27574,
+          26
+        ],
+        "logits_vs_first_gpu_pass": {
+          "count": 129280,
+          "max_abs": 4.014418244361877,
+          "rms": 0.6200995074380855,
+          "all_finite": true
+        }
+      },
+      {
+        "share": 0.25,
+        "pass": 2,
+        "load_seconds": 8.19,
+        "prefill_seconds": 37.806,
+        "prefill_tokens_per_second": 79.4,
+        "decode_one_token_seconds": 0.207,
+        "expert_read_seconds_cumulative": 24.124,
+        "gpu_seconds_cumulative": 24.419,
+        "ane_active": true,
+        "ane_channels": 8192,
+        "ane_calls": 80,
+        "ane_fallbacks": 0,
+        "ane_evaluate_seconds_cumulative": 0.626988,
+        "maximum_resident_bytes": 18270797824,
+        "greedy_tokens": [
+          27574,
+          26
+        ],
+        "logits_vs_first_gpu_pass": {
+          "count": 129280,
+          "max_abs": 4.014418244361877,
+          "rms": 0.6200995074380855,
+          "all_finite": true
+        }
+      },
+      {
+        "share": 0,
+        "pass": 2,
+        "load_seconds": 1.89,
+        "prefill_seconds": 37.133,
+        "prefill_tokens_per_second": 80.8,
+        "decode_one_token_seconds": 0.205,
+        "expert_read_seconds_cumulative": 24.243,
+        "gpu_seconds_cumulative": 24.653,
+        "ane_active": false,
+        "ane_channels": 0,
+        "ane_calls": 0,
+        "ane_fallbacks": 0,
+        "ane_evaluate_seconds_cumulative": 0.0,
+        "maximum_resident_bytes": 17429676032,
+        "greedy_tokens": [
+          27574,
+          26
+        ],
+        "logits_vs_first_gpu_pass": {
+          "count": 129280,
+          "max_abs": 0.0,
+          "rms": 0.0,
+          "all_finite": true
+        }
+      }
+    ]
+  },
+  "long_prompt_generation_check": {
+    "tokens_requested": 24,
+    "gpu_tokens": [
+      27574,
+      26,
+      47,
+      18,
+      1760,
+      7633,
+      28,
+      764,
+      20,
+      65,
+      15525,
+      14,
+      223,
+      6970,
+      3031,
+      19469,
+      28,
+      1051,
+      36036,
+      3872,
+      361,
+      20319,
+      223,
+      837
+    ],
+    "ane_25_percent_tokens": [
+      27574,
+      26,
+      47,
+      18,
+      1760,
+      7633,
+      28,
+      764,
+      20,
+      65,
+      15525,
+      14,
+      223,
+      6970,
+      3031,
+      19469,
+      28,
+      1051,
+      36036,
+      3872,
+      361,
+      20319,
+      223,
+      837
+    ],
+    "same": true,
+    "note": "One GPU and one 25% ANE run on the 3000-token prompt; no beam or sampling quality assessment."
+  }
+}

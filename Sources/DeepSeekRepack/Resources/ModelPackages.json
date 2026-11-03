@@ -68,7 +68,8 @@
       "features": [
         "nativeEngine",
         "promptCache",
-        "dspark"
+        "dspark",
+        "deepseekANEPrefill"
       ],
       "editableSettings": [],
       "defaults": {
@@ -106,7 +107,8 @@
         "promptCache",
         "mtp",
         "adaptiveSampling",
-        "imageInput"
+        "imageInput",
+        "anePrefill"
       ],
       "editableSettings": [
         "sampling"
@@ -194,7 +196,8 @@
         "promptCache",
         "mtp",
         "adaptiveSampling",
-        "imageInput"
+        "imageInput",
+        "anePrefill"
       ],
       "editableSettings": [
         "sampling"

@@ -514,9 +514,9 @@
 "Reduce decoder prefill work" = "减少解码器的输入计算";
 "Processes the decoder tail needed to rebuild its attention windows." = "只处理解码器重建注意力窗口所需的尾部输入。";
 "Use ANE for prefill" = "使用 ANE 处理输入";
-"Shares query projection work with ANE. Falls back to GPU when unavailable. May change rounding." = "由 ANE 分担查询投影计算；无法使用时改用 GPU。可能改变数值舍入结果。";
+"Also set ANE Prefill share above 0. Falls back to GPU when unavailable. May change rounding; see Logs for status." = "同时将 ANE 预填充比例设为大于 0。不可用时回退到 GPU。结果可能因舍入而变化；可在日志中查看状态。";
 "Off uses all selected experts. On computes one fewer expert and may reduce quality. Unavailable with DSpark or MTP." = "关闭时使用全部选定专家。开启后少算一个专家，可能降低质量。不能与 DSpark 或 MTP 同时使用。";
-"Share of query projection output channels assigned to ANE. Use 0 for GPU only and 1 for ANE only. The default and recommended value is 0." = "由 ANE 计算的查询投影输出比例。0 只使用 GPU，1 只使用 ANE，默认值与建议值为 0。";
+"Share of query projection output channels assigned to ANE on full prefill chunks. Use 0 for GPU only. The default is 0. See Logs for activation or fallback." = "在完整预填充块中分配给 ANE 的查询投影输出通道比例。设为 0 则仅使用 GPU；默认值为 0。可在日志中查看启用或回退状态。";
 
 "Route-aware" = "路由感知";
 "Route-aware cache remembers expert usage and adjusts memory across layers." = "路由感知缓存会记住专家使用记录，并调整各层的内存分配。";

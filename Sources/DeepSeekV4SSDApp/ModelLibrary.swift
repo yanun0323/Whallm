@@ -378,7 +378,8 @@ final class ModelLibrary: ObservableObject {
           qwenGroupedExperts: settings.qwenGroupedExperts == true && !flashWaves,
           expertEvictionPolicy: settings.routeAwareExpertCache == true ? "route" : (settings.recentExpertCache == true ? "lru" : "lfu"),
           anePrefill: modelKind.descriptor.supports("anePrefill"),
-          anePrefillRatio: settings.anePrefillRatio ?? 0,
+          anePrefillRatio: modelKind.usesNativeEngine && !modelKind.isQwen && settings.deepSeekANEPrefill != true
+            ? 0 : settings.anePrefillRatio ?? 0,
           fp4IndexCache: true,
           mtpEnabled: settings.mtpEnabled == true && model.hasMTP,
           mtpSlots: settings.mtpSlots ?? 32,

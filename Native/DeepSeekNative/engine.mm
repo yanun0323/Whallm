@@ -18,6 +18,7 @@
 #include <unordered_map>
 
 #include "engine.h"
+#include "../ANEBridge/NativeANE.h"
 
 extern const char* const kWhallmDeepSeekKernels;        // kernels.metal, embedded at build time
 extern const char* const kWhallmDeepSeekTensorKernels;  // kernels_tensorops.metal
@@ -770,7 +771,9 @@ class EngineImpl : public Engine {
     open_engram(root, config, manifest);
     if (options_.dspark) open_dspark(root, manifest);
 
-    slots_ = options_.slots > 0 ? options_.slots : automatic_slots(gpu_.allocated_bytes);
+    prepare_ane();
+
+    slots_ = options_.slots > 0 ? options_.slots : automatic_slots(gpu_.allocated_bytes + (ane_ ? ane_->reserved_bytes() : 0));
     arena_.reset(new ExpertArena(gpu_, slots_));
     for (int l = 0; l < LAYERS; ++l) {
       char name[64];
@@ -853,7 +856,7 @@ class EngineImpl : public Engine {
              slots_, gpu_.tensor_ops ? "tensorops " : "", gpu_.wait_seconds, gpu_.gpu_seconds, gpu_.flushes, gpu_.dispatches, arena_->hits, arena_->misses,
              arena_->streamed, arena_->seeded, arena_->read_seconds, engram_seconds_, route_seconds_, select_seconds_,
              arena_->page_cache_bytes / 1e9);
-    return text + gpu_.profile();
+    return std::string(text) + gpu_.profile() + (ane_ ? " " + ane_->stats() : " ane_active=0");
   }
 
   const float* eval(const int32_t* tokens, int count, int logit_rows) override {
@@ -1222,6 +1225,33 @@ class EngineImpl : public Engine {
     return std::max(MIN_AUTOMATIC_SLOTS, std::min(MAX_AUTOMATIC_SLOTS, slots));
   }
 
+  void prepare_ane() {
+    ane_.reset(new whallm_ane::ProjectionSet(options_.ane_ratio, Q_RANK, HEADS * HEAD_DIM, LAYERS));
+    if (!ane_->requested() || !ane_->diagnostic().empty()) return;
+    const int rows = ane_->channels(), first = ane_->gpu_channels();
+    std::vector<uint16_t> converted((size_t)rows * Q_RANK);
+    for (int layer = 0; layer < LAYERS; ++layer) {
+      const Fp8& matrix = layers_[layer].wq_b;
+      const uint8_t* weights = (const uint8_t*)matrix.w.contents();
+      const uint8_t* scales = (const uint8_t*)matrix.s.contents();
+      for (int out = 0; out < rows; ++out) {
+        const int source_row = first + out;
+        for (int in = 0; in < Q_RANK; ++in) {
+          uint8_t byte = weights[(size_t)source_row * Q_RANK + in];
+          uint16_t bits = (uint16_t)(((byte & 0x80) << 8) | ((byte & 0x7f) << 7));
+          float value = std::ldexp(whallm_ane::half_value(bits),
+              (int)scales[(size_t)(source_row / 32) * (Q_RANK / 32) + in / 32] - 119);
+          if (!std::isfinite(value)) { ane_->disable("non-finite DeepSeek ANE weight"); return; }
+          uint16_t half = whallm_ane::half_bits(value);
+          if ((half & 0x7c00u) == 0x7c00u) { ane_->disable("DeepSeek ANE weight overflows FP16"); return; }
+          converted[(size_t)out * Q_RANK + in] = half;
+        }
+      }
+      if (!ane_->add(layer, converted.data(), converted.size())) return;
+    }
+    if (ane_->finish()) contract_ += "|ane=" + std::to_string(ane_->channels());
+  }
+
   void check_cancel() {
     if (cancel_ && cancel_()) throw Cancelled();
   }
@@ -1570,7 +1600,49 @@ class EngineImpl : public Engine {
     norm(x, lw.w->vec(lw.attn_norm), x, T, 1, H, H);
     linear(x, lw.wq_a, s_.qr, T);
     norm(s_.qr, lw.w->vec(lw.q_norm), s_.qr, T, 1, Q_RANK, Q_RANK);
-    linear(s_.qr, lw.wq_b, s_.q, T);
+    if (ane_ && ane_->active() && T == 1024) {
+      // q_norm must finish before its shared-memory output can enter the ANE bridge.
+      gpu_.flush();
+      int gpu_channels = ane_->gpu_channels();
+      if (gpu_channels) {
+        Fp8 front = lw.wq_b;
+        front.O = gpu_channels;
+        linear(s_.qr, front, s_.q, T, 0, HEADS * HEAD_DIM);
+        gpu_.commit();  // let the GPU remainder overlap the synchronous ANE call
+      }
+      bool ok = ane_->evaluate(layer, (const float*)s_.qr.contents());
+      gpu_.flush();
+      if (ok) {
+        if (const char* compare = getenv("WHALLM_ANE_COMPARE"); compare && strcmp(compare, "1") == 0) {
+          linear(s_.qr, lw.wq_b, s_.q, T);
+          gpu_.flush();
+          const float* gpu_output = (const float*)s_.q.contents();
+          const uint16_t* ane_output = ane_->output();
+          double squared = 0;
+          float maximum = 0;
+          for (int row = 0; row < T; ++row)
+            for (int col = 0; col < ane_->channels(); ++col) {
+              float delta = gpu_output[(size_t)row * HEADS * HEAD_DIM + gpu_channels + col] -
+                  whallm_ane::half_value(ane_output[(size_t)row * ane_->channels() + col]);
+              maximum = std::max(maximum, std::abs(delta));
+              squared += (double)delta * delta;
+            }
+          fprintf(stderr, "ANE wq_b layer %d max_abs %.6g rms %.6g\n", layer, maximum,
+                  std::sqrt(squared / ((size_t)T * ane_->channels())));
+        }
+        float* output = (float*)s_.q.contents();
+        const uint16_t* suffix = ane_->output();
+        for (int row = 0; row < T; ++row)
+          for (int col = 0; col < ane_->channels(); ++col)
+            output[(size_t)row * HEADS * HEAD_DIM + gpu_channels + col] =
+                whallm_ane::half_value(suffix[(size_t)row * ane_->channels() + col]);
+      } else {
+        contract_ += "|ane-fallback";
+        linear(s_.qr, lw.wq_b, s_.q, T);
+      }
+    } else {
+      linear(s_.qr, lw.wq_b, s_.q, T);
+    }
     rope(s_.q, T, HEADS, HEAD_DIM, HEADS * HEAD_DIM, p0, 1, false, yarn);
     linear(x, lw.wkv, s_.kv, T);
     norm(s_.kv, lw.w->vec(lw.kv_norm), s_.kv, T, 1, HEAD_DIM, HEAD_DIM);
@@ -2234,6 +2306,7 @@ class EngineImpl : public Engine {
 
   Options options_;
   Gpu gpu_;
+  std::unique_ptr<whallm_ane::ProjectionSet> ane_;
   std::unique_ptr<Weights> common_;
   std::vector<LayerW> layers_;
   std::vector<LayerState> state_;

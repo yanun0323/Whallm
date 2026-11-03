@@ -88,7 +88,8 @@ def _library():
         P, I32, F = ctypes.c_void_p, ctypes.c_int32, ctypes.POINTER(ctypes.c_float)
         tokens = ctypes.POINTER(ctypes.c_int32)
         signatures = {
-            "wq_open": (P, [ctypes.c_char_p, ctypes.POINTER(_Options), ctypes.c_char_p, ctypes.c_size_t]),
+            "wq_open_v2": (P, [ctypes.c_char_p, ctypes.POINTER(_Options), ctypes.c_float,
+                               ctypes.c_char_p, ctypes.c_size_t]),
             "wq_close": (None, [P]),
             "wq_error": (ctypes.c_char_p, [P]),
             "wq_set_cancel": (None, [P, _CANCEL, P]),
@@ -114,7 +115,10 @@ def _library():
             "wq_state_bytes": (ctypes.c_uint64, [P]),
         }
         for name, (result, arguments) in signatures.items():
-            function = getattr(lib, name)
+            try:
+                function = getattr(lib, name)
+            except AttributeError as error:
+                raise RuntimeError(f"Native Qwen library at {path} has an older ABI; rebuild it") from error
             function.restype = result
             function.argtypes = arguments
         _library_value = lib
@@ -159,12 +163,12 @@ class NativeEngine:
     """The engine's C interface. After any failure the engine is reset to no tokens."""
 
     def __init__(self, root: Path, *, slots: int, read_threads: int, mtp: bool, eight_bit: bool,
-                 vision_catalog: Path | None):
+                 vision_catalog: Path | None, ane_ratio: float = 0):
         self._lib = _library()
         options = _Options(slots, read_threads, 1 if mtp else 0, 1 if eight_bit else 0,
                            str(vision_catalog).encode() if vision_catalog else None)
         error = ctypes.create_string_buffer(4096)
-        handle = self._lib.wq_open(str(root).encode(), ctypes.byref(options), error, len(error))
+        handle = self._lib.wq_open_v2(str(root).encode(), ctypes.byref(options), ane_ratio, error, len(error))
         if not handle:
             raise RuntimeError(f"The native Qwen engine could not open the model: {error.value.decode(errors='replace')}")
         self._handle = handle
@@ -172,7 +176,10 @@ class NativeEngine:
         self._lib.wq_set_cancel(handle, self._cancel, None)
         self.vocab = int(self._lib.wq_vocab(handle))
         self.has_mtp = bool(self._lib.wq_has_mtp(handle))
-        self.contract = self._lib.wq_contract(handle).decode()
+
+    @property
+    def contract(self) -> str:
+        return self._lib.wq_contract(self._handle).decode()
 
     @staticmethod
     def _cancelled(_context) -> int:
@@ -466,7 +473,8 @@ class NativeQwenRuntime(ChatInterface):
         self.engine = NativeEngine(
             installed.root, slots=slots, read_threads=max(1, int(config.read_workers)),
             mtp=bool(config.mtp_enabled and installed.mtp is not None),
-            eight_bit=bool(config.qwen_8bit_common_tensors), vision_catalog=catalog_path())
+            eight_bit=bool(config.qwen_8bit_common_tensors), vision_catalog=catalog_path(),
+            ane_ratio=float(config.ane_prefill_ratio) if config.ane_prefill else 0)
         try:
             self.expert_cache = NativeExpertCounters(self.engine, installed.expert_blob_size)
             # Report the cache size the engine chose; Throughput shows it as Slots.
@@ -481,6 +489,7 @@ class NativeQwenRuntime(ChatInterface):
             self.tokenizer = AutoTokenizer.from_pretrained(installed.root / "tokenizer", trust_remote_code=True)
             self._entries: list[_CacheEntry] = []
             self._persist_later: list[NativeState] = []
+            self._ane_fallback_seen = False
             self._directory = self._open_prompt_cache_directory()
             self._vision_verified = False
         except BaseException:
@@ -687,6 +696,16 @@ class NativeQwenRuntime(ChatInterface):
     # ------------------------------------------------------------------ prompt cache
 
     def _cache_enabled(self) -> bool:
+        if "|ane-fallback" in getattr(self.engine, "contract", ""):
+            if not self._ane_fallback_seen:
+                for entry in self._entries:
+                    entry.state.close()
+                self._entries.clear()
+                self._persist_later.clear()
+                self._directory = None
+                self._ane_fallback_seen = True
+                logger.warning("ANE evaluation failed; prompt cache disabled for this model instance")
+            return False
         return int(getattr(self.config, "prompt_cache_entries", 0)) > 0
 
     def _continue_from_cache(self, tokens: list[int]) -> int:
@@ -728,6 +747,9 @@ class NativeQwenRuntime(ChatInterface):
         return best_length
 
     def _store(self, state: NativeState, *, persist: bool) -> _CacheEntry | None:
+        if not self._cache_enabled():
+            state.close()
+            return None
         if not state.tokens:
             state.close()
             return None

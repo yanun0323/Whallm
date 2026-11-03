@@ -52,6 +52,7 @@ struct Options {
   // Store projections with at least 256 outputs as 8-bit (64-value groups), as the
   // MLX engine's "8-bit resident weights" does. Output tokens can change.
   bool eight_bit = false;
+  float ane_ratio = 0;    // share of QSA q_proj output channels on ANE; zero keeps GPU path
   std::string dump_dir;   // debug: write every layer input of single-token calls here
   // The vision catalog (QwenVision.json) that lists the tensors of vision/common.bin.
   // Needed only for image input.

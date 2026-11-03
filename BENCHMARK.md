@@ -1,5 +1,22 @@
 # Benchmark
 
+## Experimental Native ANE prefill
+
+The [machine-readable run record](docs/benchmarks/native-ane-m1max-2026-11-03.json) contains twelve full-model runs on an M1 Max with 64 GiB and macOS 27.2. The installed DeepSeek V4.1 1017 weights were used unchanged; only the fixture manifest's `modelKind` was adapted so the independent upstream V4.1 branch could open them. The 1,024-token runs used the same token IDs, token map, 256 expert slots, two greedy output tokens and native CLI. Shares ran in the order 0/25/50/100%, then 100/50/25/0%, with the macOS file cache left warm but variable.
+
+| ANE share | Active ANE channels / calls | Prefill seconds, two runs | Median tok/s | Load seconds, two runs | Peak RSS, second run | Max full-model logit difference vs GPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0% | 0 / 0 | 31.590, 32.067 | 32.2 | 1.87, 1.86 | 16.04 GiB | 0 |
+| 25% | 8,192 / 40 | 31.199, 31.971 | 32.4 | 8.83, 8.01 | 16.86 GiB | 1.1725 |
+| 50% | 16,384 / 40 | 31.553, 31.997 | 32.2 | 12.99, 12.68 | 17.57 GiB | 1.2541 |
+| 100% | 32,768 / 40 | 31.914, 32.371 | 31.9 | 23.32, 22.66 | 18.99 GiB | 1.6756 |
+
+Every ANE run reported zero fallbacks and the same first two greedy tokens (`47 8835`). All 129,280 final logits were finite. At 25% share, comparing each of the 40 real `wq_b` projections directly with its GPU result gave a worst layer maximum absolute difference of 0.0163612 and layer RMS errors from 0.000349077 to 0.000534432. Full-model logits differ more because rounding accumulates through later layers. This checks numerical behavior on this prompt; it does not establish generation quality across prompts.
+
+The repository's 3,000-token Code prompt was also run in the order 0/25/25/0%, with the same 256 slots and two greedy output tokens. GPU-only prefill took 38.280 and 37.133 s (median 37.707 s); 25% ANE took 37.930 and 37.806 s (median 37.868 s). The ANE path used 80 projections, had zero fallbacks, and produced the same first two tokens (`27574 26`). Its final-logit difference had maximum absolute error 4.0144 and RMS 0.6201 over 129,280 logits; both passes produced identical logits. A separate 24-token greedy continuation matched GPU-only exactly on this prompt. The higher full-model difference after three attention chunks still warrants broader quality checks.
+
+The ANE path shows **no demonstrated end-to-end prefill speedup** in either prompt. Expert reads took roughly 24–27 seconds per run and dominate elapsed prefill time. More ANE share increased model load time and memory. One timed decode token per run cannot support a reliable decode comparison. The current counters do not isolate GPU projection time, ANE staging/merge, or actual GPU/ANE overlap; TTFT and OS memory pressure were not separately recorded. Longer 4K/16K/128K contexts, DSpark, and installed Qwen3.8/Swift1.5 model runs remain to be measured. The Qwen-family hooks did pass synthetic conversion and hardware bridge checks, but no matching model weights were installed here. These limits prevent a speedup claim for any model family.
+
 User-provided v1.1.13 Swift1.5 Native measurements are listed first. Qwen results from v1.1.12 and earlier used the previous MLX engine and remain historical reference observations. The datasets are not controlled comparisons between engines or versions.
 
 ## v1.1.13: Swift1.5 · Native engine

@@ -16,6 +16,8 @@
 #include <unordered_map>
 
 #include "engine.h"
+#include "../ANEBridge/NativeANE.h"
+#include "ANEWeights.h"
 
 extern const char* const kWhallmQwenKernels;        // kernels.metal, embedded at build time
 extern const char* const kWhallmQwenTensorKernels;  // kernels_tensorops.metal
@@ -79,6 +81,7 @@ struct Buf {
   id<MTLBuffer> buffer = nil;
   size_t offset = 0;
   Buf at(size_t bytes) const { return {buffer, offset + bytes}; }
+  void* contents() const { return (char*)buffer.contents + offset; }
 };
 
 // ------------------------------------------------------------------ kernel parameter blocks (match kernels.metal)
@@ -885,6 +888,7 @@ class EngineImpl : public Engine {
       bool linear = [types[layer] isEqualToString:@"linear_attention"];
       layers_.push_back(layer_weights(*common_, base + "layers." + std::to_string(layer), linear, layer == 1));
     }
+    prepare_ane();
     mixer_ = hyper(*common_, base + "hyper_connection_mixer", false);
     embed_ = (const uint16_t*)common_->bytes(base + "embed_tokens.weight");
     lm_head_ = common_->matrix("lm_head.weight", VOCAB, H);
@@ -894,7 +898,7 @@ class EngineImpl : public Engine {
     common_->seal();
     ngram_.reset(new NGramStore(root + "/ngram.bin", manifest[@"ngram"], common_->scalar(scale), multipliers));
 
-    slots_ = options.slots > 0 ? options.slots : automatic_slots(gpu_.allocated_bytes);
+    slots_ = options.slots > 0 ? options.slots : automatic_slots(gpu_.allocated_bytes + (ane_ ? ane_->reserved_bytes() : 0));
     arena_.reset(new ExpertArena(gpu_, slots_));
     for (int layer = 0; layer < LAYERS; ++layer) {
       char name[64];
@@ -975,7 +979,7 @@ class EngineImpl : public Engine {
     char text[256];
     snprintf(text, sizeof(text), "slots %d %swait %.3fs gpu %.3fs flushes %ld dispatches %ld expert hits %ld misses %ld seeded %ld read %.3fs",
              slots_, gpu_.tensor_ops ? "tensorops " : "", gpu_.wait_seconds, gpu_.gpu_seconds, gpu_.flushes, gpu_.dispatches, arena_->hits, arena_->misses, arena_->seeded, arena_->read_seconds);
-    return text + gpu_.profile();
+    return std::string(text) + gpu_.profile() + (ane_ ? " " + ane_->stats() : " ane_active=0");
   }
   int vocab() const override { return VOCAB; }
 
@@ -1348,6 +1352,33 @@ class EngineImpl : public Engine {
     double budget = std::min(0.6 * (double)ram - (double)resident - later, (double)available - keep - later);
     int slots = (int)std::max(0.0, budget / (double)BLOB);
     return std::max(MIN_AUTOMATIC_SLOTS, std::min(MAX_AUTOMATIC_SLOTS, slots));
+  }
+
+  void prepare_ane() {
+    const int qsa_layers = (int)std::count_if(layers_.begin(), layers_.end(),
+                                             [](const LayerW& layer) { return !layer.linear; });
+    ane_layer_.assign(LAYERS, -1);
+    ane_.reset(new whallm_ane::ProjectionSet(options_.ane_ratio, H, HEADS * HEAD_DIM * 2, qsa_layers));
+    if (!ane_->requested() || !ane_->diagnostic().empty()) return;
+    int ordinal = 0;
+    const int rows = ane_->channels(), first = ane_->gpu_channels();
+    std::vector<uint16_t> converted;
+    for (int layer = 0; layer < LAYERS; ++layer) {
+      if (layers_[layer].linear) continue;
+      const Mat& matrix = layers_[layer].q;
+      if (matrix.I != H || matrix.O != HEADS * HEAD_DIM * 2) {
+        ane_->disable("unexpected QSA q_proj shape"); return;
+      }
+      const uint16_t* bf16 = matrix.q8 ? nullptr : (const uint16_t*)matrix.w.contents();
+      const uint8_t* q8 = matrix.q8 ? (const uint8_t*)matrix.w.contents() : nullptr;
+      const float* sb = matrix.q8 ? (const float*)matrix.sb.contents() : nullptr;
+      try { wq_ane::extract_rows(bf16, q8, sb, H, first, rows, converted); }
+      catch (const std::exception& error) { ane_->disable(error.what()); return; }
+      if (!ane_->add(ordinal, converted.data(), converted.size())) return;
+      ane_layer_[layer] = ordinal++;
+    }
+    if (ordinal != qsa_layers) { ane_->disable("QSA layer mapping is incomplete"); return; }
+    if (ane_->finish()) contract_ += "|ane=" + std::to_string(ane_->channels());
   }
 
   // The image encoder of one encode_image() call. Its weights (about 0.9 GB) are
@@ -1816,10 +1847,11 @@ class EngineImpl : public Engine {
   // -------------------------------------------------------------- building blocks
   // y[T, O] = x[T, I] . w[O, I]. Buffers passed here hold rows up to the next multiple of 16.
   // Several products of the same x in a row pass `reuse` after the first call.
-  void linear(Buf x, const Mat& m, Buf y, int T, int I, int O, bool reuse = false) {
-    LinearP rows{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)I, (uint32_t)O};
+  void linear(Buf x, const Mat& m, Buf y, int T, int I, int O, bool reuse = false, int output_stride = 0) {
+    int stride = output_stride ? output_stride : O;
+    LinearP rows{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)I, (uint32_t)stride};
     if (m.q8) {
-      linear_q8(x, m, y, T, I, O);
+      linear_q8(x, m, y, T, I, O, stride);
       return;
     }
     Buf w = m.w;
@@ -1854,17 +1886,17 @@ class EngineImpl : public Engine {
     if (gpu_.tensor_ops && T >= TENSOR_OPS_ROWS && I % 64 == 0 && T <= s_.rows) {
       // BF16 rows for the accelerators; the scratch holds the widest product (W inputs).
       gpu_.run("to_bf16_rows", {x, s_.bf16_rows}, TopsCopyP{(uint32_t)T, (uint32_t)I, (uint32_t)I}, I, T);
-      gpu_.run_groups("tops_gemm_bf16", {s_.bf16_rows, w, y}, TopsGemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)O},
+      gpu_.run_groups("tops_gemm_bf16", {s_.bf16_rows, w, y}, TopsGemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)stride},
                       MTLSizeMake((O + 63) / 64, (T + 63) / 64, 1), MTLSizeMake(128, 1, 1));
       return;
     }
     if (gpu_.simdgroup_matrices && T >= STAGED_GEMM_ROWS && O % 64 == 0 && I % 16 == 0 && !gpu_.no_staged) {
-      gpu_.run_groups("gemm_bf16_tg", {x, w, y}, GemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)O},
+      gpu_.run_groups("gemm_bf16_tg", {x, w, y}, GemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)stride},
                       MTLSizeMake(O / 64, (T + 63) / 64, 1), MTLSizeMake(128, 1, 1));
       return;
     }
     if (gpu_.simdgroup_matrices) {
-      gpu_.run("gemm_bf16_sg", {x, w, y}, GemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)O}, 32, O / 32, (T + 15) / 16,
+      gpu_.run("gemm_bf16_sg", {x, w, y}, GemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)stride}, 32, O / 32, (T + 15) / 16,
                MTLSizeMake(32, 4, 1));
       return;
     }
@@ -1874,12 +1906,12 @@ class EngineImpl : public Engine {
     }
     uint32_t blocks = (uint32_t)(T + 7) / 8;
     if (!reuse) gpu_.run("pack_rows8", {x, s_.packed}, PackP{(uint32_t)T, (uint32_t)I, (uint32_t)I, blocks}, I, blocks);
-    gpu_.run("gemm_bf16", {s_.packed, w, y}, GemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)O}, (O + 3) / 4, blocks);
+    gpu_.run("gemm_bf16", {s_.packed, w, y}, GemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)stride}, (O + 3) / 4, blocks);
   }
   // linear() for 8-bit weights: the same choice of kernels, with the weights
   // dequantized where they are read.
-  void linear_q8(Buf x, const Mat& m, Buf y, int T, int I, int O) {
-    LinearP rows{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)I, (uint32_t)O};
+  void linear_q8(Buf x, const Mat& m, Buf y, int T, int I, int O, int stride) {
+    LinearP rows{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)I, (uint32_t)stride};
     if (T < GEMM_ROWS || !gpu_.simdgroup_matrices || O % 32 != 0) {
       if (T < GEMM_ROWS && O < 2048 && I >= 1024) {
         int splits = std::min(I / 512, (2048 + O - 1) / O);
@@ -1902,7 +1934,7 @@ class EngineImpl : public Engine {
       }
       return;
     }
-    gpu_.run("gemm_q8_sg", {x, m.w, m.sb, y}, GemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)O}, 32, O / 32, (T + 15) / 16,
+    gpu_.run("gemm_q8_sg", {x, m.w, m.sb, y}, GemmP{(uint32_t)T, (uint32_t)I, (uint32_t)O, (uint32_t)stride}, 32, O / 32, (T + 15) / 16,
              MTLSizeMake(32, 4, 1));
   }
 
@@ -1931,7 +1963,7 @@ class EngineImpl : public Engine {
     if (lw.ple) ple(w, lw, tokens, T, before);
     hyper_mix(w, lw.attention, T);
     if (lw.linear) delta_net(w, lw, *linear_state, logging_ ? log : nullptr, T);
-    else attention(w, lw, *attention_state, T);
+    else attention(w, lw, *attention_state, T, file);
     hyper_inject(T);
     hyper_mix(w, lw.feed_forward, T);
     experts(lw, file, T, whole_layer);
@@ -1983,11 +2015,53 @@ class EngineImpl : public Engine {
     state.capacity = capacity;
   }
 
-  void attention(const Weights& w, const LayerW& lw, AttentionState& state, int T) {
+  void attention(const Weights& w, const LayerW& lw, AttentionState& state, int T, int file) {
     const float ln_theta = std::log(1e7f);
     int pos0 = state.count;
     grow(state, pos0 + T);
-    linear(s_.mixed, lw.q, s_.q_proj, T, H, HEADS * HEAD_DIM * 2);
+    int ane_layer = file >= 0 && file < LAYERS ? ane_layer_[file] : -1;
+    if (ane_ && ane_->active() && ane_layer >= 0 && T == 1024) {
+      gpu_.flush();
+      int gpu_channels = ane_->gpu_channels();
+      if (gpu_channels) {
+        Mat front = lw.q;
+        front.O = gpu_channels;
+        linear(s_.mixed, front, s_.q_proj, T, H, gpu_channels, false, HEADS * HEAD_DIM * 2);
+        gpu_.commit();
+      }
+      bool ok = ane_->evaluate(ane_layer, (const float*)s_.mixed.contents());
+      gpu_.flush();
+      if (ok) {
+        if (const char* compare = getenv("WHALLM_ANE_COMPARE"); compare && strcmp(compare, "1") == 0) {
+          linear(s_.mixed, lw.q, s_.q_proj, T, H, HEADS * HEAD_DIM * 2);
+          gpu_.flush();
+          const float* gpu_output = (const float*)s_.q_proj.contents();
+          const uint16_t* ane_output = ane_->output();
+          double squared = 0;
+          float maximum = 0;
+          for (int row = 0; row < T; ++row)
+            for (int col = 0; col < ane_->channels(); ++col) {
+              float delta = gpu_output[(size_t)row * HEADS * HEAD_DIM * 2 + gpu_channels + col] -
+                  whallm_ane::half_value(ane_output[(size_t)row * ane_->channels() + col]);
+              maximum = std::max(maximum, std::abs(delta));
+              squared += (double)delta * delta;
+            }
+          fprintf(stderr, "ANE q_proj layer %d max_abs %.6g rms %.6g\n", file, maximum,
+                  std::sqrt(squared / ((size_t)T * ane_->channels())));
+        }
+        float* output = (float*)s_.q_proj.contents();
+        const uint16_t* suffix = ane_->output();
+        for (int row = 0; row < T; ++row)
+          for (int col = 0; col < ane_->channels(); ++col)
+            output[(size_t)row * HEADS * HEAD_DIM * 2 + gpu_channels + col] =
+                whallm_ane::half_value(suffix[(size_t)row * ane_->channels() + col]);
+      } else {
+        contract_ += "|ane-fallback";
+        linear(s_.mixed, lw.q, s_.q_proj, T, H, HEADS * HEAD_DIM * 2);
+      }
+    } else {
+      linear(s_.mixed, lw.q, s_.q_proj, T, H, HEADS * HEAD_DIM * 2);
+    }
     linear(s_.mixed, lw.k, s_.k_proj, T, H, KV_HEADS * HEAD_DIM, true);
     linear(s_.mixed, lw.v, s_.v_proj, T, H, KV_HEADS * HEAD_DIM, true);
     linear(s_.mixed, lw.index, s_.index_proj, T, H, (INDEX_HEADS + 1) * INDEX_DIM, true);
@@ -2283,6 +2357,8 @@ class EngineImpl : public Engine {
 
   Options options_;
   Gpu gpu_;
+  std::unique_ptr<whallm_ane::ProjectionSet> ane_;
+  std::vector<int> ane_layer_;
   std::unique_ptr<Weights> common_;
   std::vector<LayerW> layers_;
   HyperW mixer_;

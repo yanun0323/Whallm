@@ -40,9 +40,10 @@ int guarded(wq_engine* e, Body body) {
 
 extern "C" {
 
-wq_engine* wq_open(const char* model_dir, const wq_options* options, char* error, size_t error_size) {
+wq_engine* wq_open_v2(const char* model_dir, const wq_options* options, float ane_ratio, char* error, size_t error_size) {
   try {
     wq::Options o;
+    o.ane_ratio = ane_ratio;
     if (options != nullptr) {
       o.slots = options->slots;
       if (options->read_threads > 0) o.read_threads = options->read_threads;
@@ -60,6 +61,10 @@ wq_engine* wq_open(const char* model_dir, const wq_options* options, char* error
     }
     return nullptr;
   }
+}
+
+wq_engine* wq_open(const char* model_dir, const wq_options* options, char* error, size_t error_size) {
+  return wq_open_v2(model_dir, options, 0, error, error_size);
 }
 
 void wq_close(wq_engine* e) { delete e; }

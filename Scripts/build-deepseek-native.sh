@@ -29,7 +29,7 @@ xcrun --sdk macosx clang++ \
   -Wall -Wextra -Wno-unused-parameter \
   -install_name @rpath/libWhallmDeepSeekNative.dylib \
   -I "$source_dir" \
-  "$source_dir/engine.mm" "$source_dir/capi.mm" "$work/kernels.cpp" \
+  "$source_dir/engine.mm" "$source_dir/capi.mm" "$project_root/Native/ANEBridge/NativeANE.cpp" "$work/kernels.cpp" \
   -framework Metal \
   -framework Foundation \
   -o "$output"

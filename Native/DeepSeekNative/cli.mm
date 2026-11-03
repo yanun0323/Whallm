@@ -110,7 +110,7 @@ static bool read_file(const std::string& path, std::string& text) {
 int main(int argc, char** argv) {
   if (argc < 3) {
     fprintf(stderr,
-            "usage: wd-cli MODEL_DIR TOKENS --token-map FILE [--greedy N] [--chunk N] [--rows N] [--slots N] [--no-seed]\n"
+            "usage: wd-cli MODEL_DIR TOKENS --token-map FILE [--greedy N] [--chunk N] [--rows N] [--slots N] [--ane-share X] [--no-seed]\n"
             "              [--dump DIR] [--logits FILE] [--state-check N [--state-file PATH]] [--dspark [--threshold X]]\n"
             "  TOKENS       comma-separated token IDs, or @FILE holding them\n"
             "  --token-map  int32 compressed Engram id per vocabulary id (Scripts/deepseek_v41_reference.py)\n"
@@ -134,6 +134,12 @@ int main(int argc, char** argv) {
     else if (flag == "--chunk") { chunk = atoi(value); ++i; }
     else if (flag == "--rows") { options.chunk = atoi(value); ++i; }
     else if (flag == "--slots") { options.slots = atoi(value); ++i; }
+    else if (flag == "--ane-share") {
+      char* end = nullptr;
+      options.ane_ratio = strtof(value, &end);
+      if (end == value || *end) { fprintf(stderr, "invalid ANE share: %s\n", value); return 2; }
+      ++i;
+    }
     else if (flag == "--threads") { options.read_threads = atoi(value); ++i; }
     else if (flag == "--no-seed") { options.seed = false; }
     else if (flag == "--dspark") { dspark = true; options.dspark = true; }
