@@ -75,14 +75,13 @@ class CommonTensorTests(unittest.TestCase):
                         if rows <= 16 else x @ weight.T)
             self.assertTrue(mx.array_equal(packed(x), expected).item(), rows)
 
-    def test_setting_is_off_by_default_qwen_only_boolean_and_not_with_ane_prefill(self):
+    def test_setting_is_off_by_default_and_native_ane_can_use_it(self):
         self.assertFalse(RuntimeConfig().qwen_8bit_common_tensors)
         config = RuntimeConfig(qwen_8bit_common_tensors=True)
         validate_runtime_config(config)
         for kind in ("qwen3.8-flash-next", "swift1.5-qwen3.8-flash-next"):
             get_support(kind).validate_config(config)
-            with self.assertRaises(ValueError):
-                get_support(kind).validate_config(replace(config, ane_prefill_ratio=0.5))
+            get_support(kind).validate_config(replace(config, ane_prefill_ratio=0.5))
         for kind in ("deepseek-v4", "deepseek-v4.1"):
             with self.assertRaises(ValueError):
                 get_support(kind).validate_config(config)

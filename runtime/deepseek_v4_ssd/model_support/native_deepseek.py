@@ -6,16 +6,24 @@ refused rather than ignored.
 """
 from __future__ import annotations
 
+import math
 from .deepseek_v41 import DeepSeekV41Support
 
 # MLX V4.1 options without a native counterpart that change outputs or memory use.
 _UNSUPPORTED = ("v41_packed_kv", "v41_packed_index", "v41_candidate_index", "v41_ced_prefill",
-                "deepseek_ane_prefill", "dspark_sequential_verification", "mtp_enabled")
+                "dspark_sequential_verification", "mtp_enabled")
 
 
 class NativeDeepSeekV41Support(DeepSeekV41Support):
     def validate_config(self, config) -> None:
         super().validate_config(config)
+        ratio = getattr(config, "ane_prefill_ratio", 0)
+        enabled = getattr(config, "deepseek_ane_prefill", False)
+        if type(enabled) is not bool or isinstance(ratio, bool) \
+                or not isinstance(ratio, (int, float)) or not math.isfinite(ratio) or not 0 <= ratio <= 1:
+            raise ValueError("ANE prefill requires a boolean switch and a finite share from 0 to 1")
+        if not enabled and ratio > 0:
+            raise ValueError("ANE prefill share requires deepseek_ane_prefill=true")
         for name in _UNSUPPORTED:
             if getattr(config, name, False):
                 raise ValueError(f"{name} is not supported by the native DeepSeek engine")

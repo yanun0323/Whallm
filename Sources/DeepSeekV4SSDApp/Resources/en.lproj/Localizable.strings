@@ -514,9 +514,9 @@
 "Reduce decoder prefill work" = "Reduce decoder prefill work";
 "Processes the decoder tail needed to rebuild its attention windows." = "Processes the decoder tail needed to rebuild its attention windows.";
 "Use ANE for prefill" = "Use ANE for prefill";
-"Shares query projection work with ANE. Falls back to GPU when unavailable. May change rounding." = "Shares query projection work with ANE. Falls back to GPU when unavailable. May change rounding.";
+"Also set ANE Prefill share above 0. Falls back to GPU when unavailable. May change rounding; see Logs for status." = "Also set ANE Prefill share above 0. Falls back to GPU when unavailable. May change rounding; see Logs for status.";
 "Off uses all selected experts. On computes one fewer expert and may reduce quality. Unavailable with DSpark or MTP." = "Off uses all selected experts. On computes one fewer expert and may reduce quality. Unavailable with DSpark or MTP.";
-"Share of query projection output channels assigned to ANE. Use 0 for GPU only and 1 for ANE only. The default and recommended value is 0." = "Share of query projection output channels assigned to ANE. Use 0 for GPU only and 1 for ANE only. The default and recommended value is 0.";
+"Share of query projection output channels assigned to ANE on full prefill chunks. Use 0 for GPU only. The default is 0. See Logs for activation or fallback." = "Share of query projection output channels assigned to ANE on full prefill chunks. Use 0 for GPU only. The default is 0. See Logs for activation or fallback.";
 
 "Route-aware" = "Route-aware";
 "Route-aware cache remembers expert usage and adjusts memory across layers." = "Route-aware cache remembers expert usage and adjusts memory across layers.";

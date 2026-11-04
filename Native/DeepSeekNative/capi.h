@@ -39,6 +39,9 @@ typedef int (*wd_cancel_fn)(void* context);
 
 /* NULL on failure, with a message in error[0 .. error_size). */
 WD_EXPORT wd_engine* wd_open(const char* model_dir, const wd_options* options, char* error, size_t error_size);
+/* Versioned entry point: old wd_open keeps its original options layout and GPU behavior. */
+WD_EXPORT wd_engine* wd_open_v2(const char* model_dir, const wd_options* options, float ane_ratio,
+                               char* error, size_t error_size);
 WD_EXPORT void wd_close(wd_engine* engine);
 WD_EXPORT const char* wd_error(const wd_engine* engine);
 WD_EXPORT void wd_set_cancel(wd_engine* engine, wd_cancel_fn check, void* context);

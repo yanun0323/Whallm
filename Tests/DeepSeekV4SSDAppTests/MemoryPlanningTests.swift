@@ -81,6 +81,9 @@ final class MemoryPlanningTests: XCTestCase {
     let cached = try estimate()
     s.promptCacheMode = .disk
     XCTAssertEqual(try estimate().total, cached.total)
+    s.anePrefillRatio = 0.25
+    XCTAssertGreaterThan(try estimate().model, cached.model)
+    s.anePrefillRatio = 0
     // Removed MLX controls must not change the native memory estimate.
     s.packedKVCache = true
     s.packedIndexCache = true
@@ -305,6 +308,12 @@ final class MemoryPlanningTests: XCTestCase {
     XCTAssertEqual(plain.decoding.model, common + 1_000 * Double(blob), accuracy: 1)
     // 3 ratio-2 layers at 32,768 rows and one ratio-1 layer at 65,536 rows.
     XCTAssertEqual(plain.decoding.conversation, (3 * 32_768 + 65_536) * 1_280, accuracy: 1)
+    s.deepSeekANEPrefill = true
+    s.anePrefillRatio = 0.25
+    let withANE = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 65_536))
+    XCTAssertGreaterThan(withANE.decoding.model, plain.decoding.model)
+    s.deepSeekANEPrefill = false
+    s.anePrefillRatio = 0
     s.dsparkEnabled = true
     let dspark = try XCTUnwrap(p.estimate(s, mtpAvailable: false, dsparkAvailable: true, contextTokens: 65_536))
     XCTAssertEqual(dspark.decoding.model - plain.decoding.model, 700_000_000, accuracy: 1)

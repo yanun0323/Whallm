@@ -429,8 +429,10 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
       settings.applyQwenFixedTuning()
     }
     if native {
-      settings.anePrefillRatio = 0
-      settings.deepSeekANEPrefill = false
+      if !descriptor.supports("anePrefill") && !descriptor.supports("deepseekANEPrefill") {
+        settings.anePrefillRatio = 0
+      }
+      if !descriptor.supports("deepseekANEPrefill") { settings.deepSeekANEPrefill = false }
       settings.packedKVCache = false
       settings.packedIndexCache = false
       settings.candidateIndex = false

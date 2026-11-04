@@ -23,7 +23,7 @@ DEFAULTS = {
 }
 
 
-def validate_flash_config(config) -> None:
+def validate_flash_config(config, *, native_ane: bool = False) -> None:
     packed = getattr(config, "qwen_packed_gdn_prefill", False)
     if type(packed) is not bool:
         raise ValueError("qwen_packed_gdn_prefill must be a boolean")
@@ -69,7 +69,7 @@ def validate_flash_config(config) -> None:
     if type(common) is not bool:
         raise ValueError("qwen_8bit_common_tensors must be a boolean")
     # Qwen ANE Prefill compiles the BF16 q_proj weights it finds at load.
-    if common and getattr(config, "ane_prefill", False) and getattr(config, "ane_prefill_ratio", 0) > 0:
+    if not native_ane and common and getattr(config, "ane_prefill", False) and getattr(config, "ane_prefill_ratio", 0) > 0:
         raise ValueError("qwen_8bit_common_tensors does not support ANE Prefill")
     threshold = getattr(config, "qwen_qsa_dense_threshold", 0)
     if type(threshold) is not int or not 0 <= threshold <= 262_144:

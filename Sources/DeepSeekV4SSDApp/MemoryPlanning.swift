@@ -164,8 +164,10 @@ struct MemoryPlanningProfile {
     let output = contextTokens == nil ? s.defaultMaxTokens : outputTokens
     let maximum = manifest.maximumContext ?? Int(number("max_position_embeddings", 1_048_576))
     if kind.usesNativeEngine {
+      let aneRatio = s.anePrefillRatio ?? 0
       guard input > 0, output >= 0, (contextTokens != nil || output > 0), input <= maximum,
-        output <= maximum - input, s.promptCacheMemoryGiB >= 1, s.promptCacheEntries >= 1 else { return nil }
+        output <= maximum - input, s.promptCacheMemoryGiB >= 1, s.promptCacheEntries >= 1,
+        aneRatio.isFinite, (0...1).contains(aneRatio) else { return nil }
       return kind.isQwen ? nativeEstimate(s, mtpAvailable: mtpAvailable, input: input, output: output)
         : nativeDeepSeekEstimate(s, dsparkAvailable: dsparkAvailable, input: input, output: output)
     }
@@ -422,7 +424,14 @@ struct MemoryPlanningProfile {
     let main = resident(manifest.commonTensors, fileBytes: file("common.bin"))
     let mtp = s.mtpEnabled == true && mtpAvailable && manifest.mtp != nil
     let draft = mtp ? resident(manifest.mtp?.commonTensors ?? [], fileBytes: file("mtp/common.bin")) : (bytes: 0.0, dense: 0.0)
-    let weights = main.bytes + draft.bytes
+    let qsaLayers = Double((config["layer_types"] as? [String])?.filter { $0 == "full_attention" }.count ?? 12)
+    let ratio = s.anePrefillRatio ?? 0
+    let channels = kind.descriptor.supports("anePrefill")
+      ? min(12_288, (ratio * 12_288 / 256).rounded() * 256) : 0
+    let ane = channels > 0
+      ? qsaLayers * (channels * 2_560 * 2 + 1_024 * (2_560 + channels) * 2)
+        + 1_024 * (2_560 + channels) * 2 : 0
+    let weights = main.bytes + draft.bytes + ane
     let physical = Double(ProcessInfo.processInfo.physicalMemory)
     let slots: Double
     if s.expertCacheAutomatic != false {
@@ -440,7 +449,7 @@ struct MemoryPlanningProfile {
     let tokens = Double(input + output)
     var capacity = 4_096.0
     while capacity < tokens { capacity *= 2 }
-    let fullLayers = Double((config["layer_types"] as? [String])?.filter { $0 == "full_attention" }.count ?? 12)
+    let fullLayers = qsaLayers
     let perToken = 2 * number("num_key_value_heads", 2) * number("head_dim", 256) * 2
       + number("indexer_head_dim", 128) * 2 + number("indexer_head_dim", 128)
     let attention = (fullLayers + (mtp ? 1 : 0)) * capacity * perToken
@@ -461,7 +470,8 @@ struct MemoryPlanningProfile {
     let layerBuffers = input > 512 ? 2 * Double(manifest.expertCount) * blob : 0
     // 8-bit: long products use a BF16 copy of one layer's projections.
     let denseLayer = eightBit ? (main.dense + draft.dense) / Double(max(1, manifest.layerCount)) : 0
-    let loading = MemoryStageEstimate(model: weights + experts, conversation: 0, auxiliary: 0, temporary: 0)
+    let loading = MemoryStageEstimate(model: weights + experts, conversation: 0, auxiliary: 0,
+      temporary: channels * 2_560 * 2)
     let prefill = MemoryStageEstimate(model: weights + experts, conversation: state + retained,
       auxiliary: 0, temporary: scratch + layerBuffers + denseLayer)
     let decoding = MemoryStageEstimate(model: weights + experts, conversation: state + retained,
@@ -480,7 +490,13 @@ struct MemoryPlanningProfile {
     func file(_ name: String) -> Double { Double(manifest.files.first { $0.path == name }?.size ?? 0) }
     guard blob > 0, file("common.bin") > 0 else { return nil }
     let dspark = s.dsparkEnabled && dsparkAvailable && manifest.dspark != nil
-    let weights = file("common.bin") + (dspark ? file("dspark/common.bin") : 0)
+    let ratio = s.deepSeekANEPrefill == true ? (s.anePrefillRatio ?? 0) : 0
+    let channels = kind.descriptor.supports("deepseekANEPrefill")
+      ? min(32_768, (ratio * 32_768 / 256).rounded() * 256) : 0
+    let ane = channels > 0
+      ? 40 * (channels * 1_280 * 2 + 1_024 * (1_280 + channels) * 2)
+        + 1_024 * (1_280 + channels) * 2 : 0
+    let weights = file("common.bin") + (dspark ? file("dspark/common.bin") : 0) + ane
     // Long prompts stream experts through four waves of 32 (staging).
     let staging = 4 * 32 * blob
     let physical = Double(ProcessInfo.processInfo.physicalMemory)
@@ -515,7 +531,8 @@ struct MemoryPlanningProfile {
     let chunkRows = min(Double(input), 1_024)
     let scratch = passRows * 150_000 + chunkRows * 650_000 + chunkRows * min(tokens, 1_048_576) * 6
       + (passRows / 2 + 512) * 60_000 + (input >= 16 ? staging : 0)
-    let loading = MemoryStageEstimate(model: weights + experts, conversation: 0, auxiliary: 0, temporary: 0)
+    let loading = MemoryStageEstimate(model: weights + experts, conversation: 0, auxiliary: 0,
+      temporary: channels * 1_280 * 2)
     let prefill = MemoryStageEstimate(model: weights + experts, conversation: state + retained,
       auxiliary: 0, temporary: scratch)
     let decoding = MemoryStageEstimate(model: weights + experts, conversation: state + retained,

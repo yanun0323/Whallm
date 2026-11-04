@@ -574,7 +574,7 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertFalse(restoredQwen.bf16KVCache)
     XCTAssertTrue(restoredQwen.mtpEnabled == true)
     XCTAssertEqual(restoredQwen.mtpSlots, 512)
-    XCTAssertEqual(restoredQwen.anePrefillRatio, 0, "fixed for Qwen")
+    XCTAssertEqual(restoredQwen.anePrefillRatio, 0.5, "native ANE share is retained")
     XCTAssertFalse(restoredQwen.dsparkEnabled)
     XCTAssertEqual(restoredQwen.layerMajorPrefillThreshold, 1_024)
   }
@@ -842,10 +842,10 @@ final class ServerConfigurationTests: XCTestCase {
     XCTAssertEqual(models[1]["model_kind"] as? String, "deepseek-v4.1")
     let qwenRuntime = try XCTUnwrap(models[2]["runtime"] as? [String: Any])
     XCTAssertNil(qwenRuntime["qwen_grouped_decode"])
-    XCTAssertEqual(qwenRuntime["ane_prefill"] as? Bool, false)
+    XCTAssertEqual(qwenRuntime["ane_prefill"] as? Bool, true)
     XCTAssertNil(qwenRuntime["qwen_short_block"])
     XCTAssertEqual(qwenRuntime["qwen_grouped_experts"] as? Bool, false)
-    XCTAssertEqual(qwenRuntime["ane_prefill_ratio"] as? Double, 0, "fixed for Qwen")
+    XCTAssertEqual(qwenRuntime["ane_prefill_ratio"] as? Double, 0.5, "saved native ANE share")
     XCTAssertEqual(models[0]["model_kind"] as? String, "deepseek-v4")
     XCTAssertTrue(models[0]["warmup_prompt_path"] is NSNull)
   }
@@ -853,7 +853,7 @@ final class ServerConfigurationTests: XCTestCase {
   /// DeepSeek V4.1 runs on the native engine (2026-10-16). Switches saved for its MLX
   /// runtime never reach the native one, which refuses them; DSpark does.
   @MainActor
-  func testNativeDeepSeekDropsMLXSettingsAndKeepsDSpark() throws {
+  func testNativeDeepSeekDropsUnsupportedMLXSettingsAndKeepsANEAndDSpark() throws {
     XCTAssertTrue(ModelKind.deepSeekV41.usesNativeEngine)
     XCTAssertFalse(ModelKind.deepSeekV41.descriptor.supports("approximation"))
     var settings = ModelAdvancedSettings.defaults(for: .deepSeekV41)
@@ -867,6 +867,7 @@ final class ServerConfigurationTests: XCTestCase {
     settings.nextLayerPrefetch = true
     settings.batchedExpertPrefill = true
     settings.deepSeekANEPrefill = true
+    settings.anePrefillRatio = 0.25
     settings.approximationEnabled = true
     settings.qwen8BitCommonTensors = true
     settings.dsparkEnabled = true
@@ -876,11 +877,13 @@ final class ServerConfigurationTests: XCTestCase {
     let sent: [(String, Bool?)] = [("v41LayerMajorPrefill", runtime.v41LayerMajorPrefill), ("v41PackedKV", runtime.v41PackedKV),
                           ("v41PackedIndex", runtime.v41PackedIndex), ("v41CandidateIndex", runtime.v41CandidateIndex),
                           ("v41CEDPrefill", runtime.v41CEDPrefill), ("v41NextLayerPrefetch", runtime.v41NextLayerPrefetch),
-                          ("deepseekANEPrefill", runtime.deepseekANEPrefill), ("qwen8BitCommonTensors", runtime.qwen8BitCommonTensors),
+                          ("qwen8BitCommonTensors", runtime.qwen8BitCommonTensors),
                           ("mtpEnabled", runtime.mtpEnabled)]
     for (name, value) in sent {
       XCTAssertNotEqual(value, true, name)
     }
+    XCTAssertTrue(runtime.deepseekANEPrefill)
+    XCTAssertEqual(runtime.anePrefillRatio, 0.25)
     XCTAssertTrue(runtime.dsparkEnabled)
     XCTAssertTrue(runtime.nativeAutomaticExpertCache)
     // New and reset V4.1 settings keep drafts from confidence 0.75; V4 (MLX) keeps 0.6.

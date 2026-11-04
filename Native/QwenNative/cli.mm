@@ -57,7 +57,7 @@ static std::vector<int32_t> generate(wq::Engine& engine, const float* logits, in
 int main(int argc, char** argv) {
   if (argc < 3) {
     fprintf(stderr,
-            "usage: wq-cli MODEL_DIR TOKENS [--greedy N] [--mtp N] [--8bit] [--no-seed] [--chunk N] [--rows N] [--slots N] [--dump DIR] [--logits FILE]\n"
+            "usage: wq-cli MODEL_DIR TOKENS [--greedy N] [--mtp N] [--8bit] [--no-seed] [--chunk N] [--rows N] [--slots N] [--ane-share X] [--dump DIR] [--logits FILE]\n"
             "  TOKENS   comma-separated token IDs, or @FILE holding them\n"
             "  --chunk  tokens per eval call for the prompt (default 1)\n"
             "  --rows   prompt rows processed together inside one layer (default 1024)\n"
@@ -84,6 +84,12 @@ int main(int argc, char** argv) {
     if (flag == "--greedy") { greedy = atoi(value); ++i; }
     else if (flag == "--chunk") { chunk = atoi(value); ++i; }
     else if (flag == "--slots") { options.slots = atoi(value); ++i; }
+    else if (flag == "--ane-share") {
+      char* end = nullptr;
+      options.ane_ratio = strtof(value, &end);
+      if (end == value || *end) { fprintf(stderr, "invalid ANE share: %s\n", value); return 2; }
+      ++i;
+    }
     else if (flag == "--rows") { options.chunk = atoi(value); ++i; }
     else if (flag == "--mtp") { mtp = atoi(value); ++i; }
     else if (flag == "--no-seed") { options.seed = false; }

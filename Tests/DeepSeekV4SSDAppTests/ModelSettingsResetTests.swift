@@ -104,9 +104,10 @@ final class ModelSettingsResetTests: XCTestCase {
       XCTAssertEqual(saved.readyExpertDecode, kind.descriptor.supports("readyExpertDecode"))
       XCTAssertEqual(saved.batchedExpertPrefill, kind.descriptor.supports("batchedExpertPrefill"))
       XCTAssertEqual(saved.expertCacheGiB, 8.25)
-      // Both Qwen models hide these controls and fix their values (2026-10-09).
+      // ANE share is retained for the native models that expose it.
       let fixed = kind.usesQwenEngine || kind.usesNativeEngine
-      XCTAssertEqual(saved.anePrefillRatio, fixed ? 0 : 0.5)
+      let supportsANE = kind.descriptor.supports("anePrefill") || kind.descriptor.supports("deepseekANEPrefill")
+      XCTAssertEqual(saved.anePrefillRatio, supportsANE ? 0.5 : fixed ? 0 : 0.5)
       XCTAssertEqual(saved.packedKVCache, !fixed)
       XCTAssertEqual(saved.packedIndexCache, !fixed)
       XCTAssertEqual(saved.approximationEnabled, kind.descriptor.supports("approximation"))

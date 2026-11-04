@@ -40,9 +40,10 @@ int guarded(wd_engine* e, Body body) {
 
 extern "C" {
 
-wd_engine* wd_open(const char* model_dir, const wd_options* options, char* error, size_t error_size) {
+wd_engine* wd_open_v2(const char* model_dir, const wd_options* options, float ane_ratio, char* error, size_t error_size) {
   try {
     wd::Options o;
+    o.ane_ratio = ane_ratio;
     if (options != nullptr) {
       o.slots = options->slots;
       if (options->read_threads > 0) o.read_threads = options->read_threads;
@@ -63,6 +64,10 @@ wd_engine* wd_open(const char* model_dir, const wd_options* options, char* error
     }
     return nullptr;
   }
+}
+
+wd_engine* wd_open(const char* model_dir, const wd_options* options, char* error, size_t error_size) {
+  return wd_open_v2(model_dir, options, 0, error, error_size);
 }
 
 void wd_close(wd_engine* e) { delete e; }

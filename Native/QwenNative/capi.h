@@ -39,6 +39,9 @@ typedef int (*wq_cancel_fn)(void* context);
 
 /* NULL on failure, with a message in error[0 .. error_size). */
 WQ_EXPORT wq_engine* wq_open(const char* model_dir, const wq_options* options, char* error, size_t error_size);
+/* Versioned entry point: old wq_open retains its options layout and GPU behavior. */
+WQ_EXPORT wq_engine* wq_open_v2(const char* model_dir, const wq_options* options, float ane_ratio,
+                               char* error, size_t error_size);
 WQ_EXPORT void wq_close(wq_engine* engine);
 WQ_EXPORT const char* wq_error(const wq_engine* engine);
 WQ_EXPORT void wq_set_cancel(wq_engine* engine, wq_cancel_fn check, void* context);

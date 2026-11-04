@@ -39,6 +39,7 @@ struct Options {
   int chunk = 1024;      // prompt rows whose attention runs together inside one layer
   bool seed = true;      // after a long prompt, keep the experts it used most in the cache
   bool dspark = false;   // load the DSpark draft layers (the installed model must have them)
+  float ane_ratio = 0;   // share of wq_b output channels on ANE; zero keeps the GPU path
   // Compressed Engram token id of every vocabulary id. The tokenizer defines it
   // (see Scripts/deepseek_v41_reference.py); the engine checks its size and range.
   std::vector<int32_t> token_map;

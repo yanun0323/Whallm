@@ -6,13 +6,21 @@ their defaults here, except 8-bit resident weights, which the native engine also
 """
 from __future__ import annotations
 
+import math
 from ..qwen_flash_config import DEFAULTS, validate_flash_config
 from .qwen import QwenSupport
 
 
 class NativeQwenSupport(QwenSupport):
     def validate_config(self, config) -> None:
-        validate_flash_config(config)
+        validate_flash_config(config, native_ane=True)
+        ratio = getattr(config, "ane_prefill_ratio", 0)
+        enabled = getattr(config, "ane_prefill", True)
+        if type(enabled) is not bool or isinstance(ratio, bool) or not isinstance(ratio, (int, float)) \
+                or not math.isfinite(ratio) or not 0 <= ratio <= 1:
+            raise ValueError("ANE prefill requires a boolean switch and a finite share from 0 to 1")
+        if not enabled and ratio > 0:
+            raise ValueError("ANE prefill share requires ane_prefill=true")
         for name, default in DEFAULTS.items():
             if name != "qwen_8bit_common_tensors" and getattr(config, name, default) != default:
                 raise ValueError(f"{name} is not used by the native Qwen engine")

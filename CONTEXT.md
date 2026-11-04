@@ -33,8 +33,9 @@ DeepSeek V4.1 use a native engine under their original model identities.
   and state operations needed to support one model kind.
 - **native engine**: A C++ and Metal inference engine that does not use MLX. The Qwen
   engine is `Native/QwenNative` (`libWhallmQwenNative.dylib`); the DeepSeek V4.1
-  engine is `Native/DeepSeekNative` (`libWhallmDeepSeekNative.dylib`). The MLX runtime
-  is the other engine.
+  engine is `Native/DeepSeekNative` (`libWhallmDeepSeekNative.dylib`). An optional
+  ANE bridge can run part of their dense query projection during prefill. The MLX
+  runtime is the other engine.
 - **automatic expert cache**: A native engine's expert cache sized at load from the
   memory free at that moment: at most 8,192 slots for Qwen and 256 to 4,096 for
   DeepSeek V4.1.
@@ -84,7 +85,7 @@ native prompt cache files are not compatible with MLX prompt caches.
 The Python server keeps one interface for both engines. `NativeQwenRuntime`
 (`runtime/deepseek_v4_ssd/native_qwen.py`) samples tokens, runs MTP rounds and keeps
 the prompt cache; the engine returns logits. The App sends MLX-only runtime options at
-their defaults for these kinds, and the runtime rejects any other value. New or reset
+their defaults for these kinds, except ANE prefill, and the runtime rejects any other value. New or reset
 settings use the automatic expert cache, MTP and 8-bit resident weights.
 
 DeepSeek V4.1 (`deepseek-v4.1-flash`) also uses a native engine, with its installation,
@@ -92,8 +93,14 @@ Alias and DSpark files unchanged; its saved MLX-only settings no longer apply. `
 (`runtime/deepseek_v4_ssd/native_deepseek.py`) shares the Qwen runtime's sampling,
 prompt cache and text streaming, and runs DSpark rounds. DSpark's routed experts share
 the main expert cache. Its prompt cache states include the DSpark context. Approximate
-mode and the MLX V4.1 options (packed caches, candidate index, CED, ANE prefill) are
-refused; MLX tuning that does not change outputs is ignored.
+mode and the MLX V4.1 options (packed caches, candidate index, CED) are
+refused; MLX tuning that does not change outputs is ignored. ANE prefill is an
+optional native projection path, off by default. Both native engines use the shared
+`Native/ANEBridge/NativeANE.cpp` adapter and the existing `WhallmANE` bridge.
+Only 1,024-row prefill chunks use ANE; other chunks, decode and verification use GPU.
+The enabled ANE channel count enters each native prompt-cache contract. A bridge
+failure at load gives the ordinary GPU contract. An evaluation failure disables
+ANE and prompt-cache reuse for that model instance.
 
 ## Prompt cache compatibility and memory
 

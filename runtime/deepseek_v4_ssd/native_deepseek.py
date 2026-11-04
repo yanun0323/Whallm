@@ -71,7 +71,8 @@ def _library():
         P, I32, F = ctypes.c_void_p, ctypes.c_int32, ctypes.POINTER(ctypes.c_float)
         tokens = ctypes.POINTER(ctypes.c_int32)
         signatures = {
-            "wd_open": (P, [ctypes.c_char_p, ctypes.POINTER(_Options), ctypes.c_char_p, ctypes.c_size_t]),
+            "wd_open_v2": (P, [ctypes.c_char_p, ctypes.POINTER(_Options), ctypes.c_float,
+                               ctypes.c_char_p, ctypes.c_size_t]),
             "wd_close": (None, [P]),
             "wd_error": (ctypes.c_char_p, [P]),
             "wd_set_cancel": (None, [P, _CANCEL, P]),
@@ -98,7 +99,10 @@ def _library():
             "wd_state_bytes": (ctypes.c_uint64, [P]),
         }
         for name, (result, arguments) in signatures.items():
-            function = getattr(lib, name)
+            try:
+                function = getattr(lib, name)
+            except AttributeError as error:
+                raise RuntimeError(f"Native DeepSeek library at {path} has an older ABI; rebuild it") from error
             function.restype = result
             function.argtypes = arguments
         _library_value = lib
@@ -151,13 +155,14 @@ class NativeState:
 class NativeEngine:
     """The engine's C interface. After any failure the engine is reset to no tokens."""
 
-    def __init__(self, root: Path, *, slots: int, read_threads: int, dspark: bool, mapping: np.ndarray):
+    def __init__(self, root: Path, *, slots: int, read_threads: int, dspark: bool, mapping: np.ndarray,
+                 ane_ratio: float = 0):
         self._lib = _library()
         self._map = mapping  # the engine copies it; kept for the call
         options = _Options(slots, read_threads, 0, mapping.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
                            len(mapping), 1 if dspark else 0)
         error = ctypes.create_string_buffer(4096)
-        handle = self._lib.wd_open(str(root).encode(), ctypes.byref(options), error, len(error))
+        handle = self._lib.wd_open_v2(str(root).encode(), ctypes.byref(options), ane_ratio, error, len(error))
         if not handle:
             raise RuntimeError(f"The native DeepSeek engine could not open the model: {error.value.decode(errors='replace')}")
         self._handle = handle
@@ -166,7 +171,10 @@ class NativeEngine:
         self.vocab = int(self._lib.wd_vocab(handle))
         self.has_dspark = bool(self._lib.wd_has_dspark(handle))
         self.draft_block = int(self._lib.wd_draft_block(handle))
-        self.contract = self._lib.wd_contract(handle).decode()
+
+    @property
+    def contract(self) -> str:
+        return self._lib.wd_contract(self._handle).decode()
 
     has_mtp = False
 
@@ -297,13 +305,15 @@ class NativeDeepSeekRuntime(NativeQwenRuntime):
         slots = 0 if config.native_automatic_expert_cache else self._configured_slots(installed, config)
         dspark = bool(config.dspark_enabled and installed.has_dspark)
         self.engine = NativeEngine(installed.root, slots=slots, read_threads=max(1, int(config.read_workers)),
-                                   dspark=dspark, mapping=token_map(str(installed.root)))
+                                   dspark=dspark, mapping=token_map(str(installed.root)),
+                                   ane_ratio=float(config.ane_prefill_ratio) if config.deepseek_ane_prefill else 0)
         try:
             self.expert_cache = NativeExpertCounters(self.engine, installed.expert_blob_size)
             self.config = replace(config, slots=int(self.engine.counters().slots), dspark_enabled=dspark)
             self.tokenizer = AutoTokenizer.from_pretrained(installed.root / "tokenizer", trust_remote_code=True)
             self._entries = []
             self._persist_later = []
+            self._ane_fallback_seen = False
             self._directory = self._open_prompt_cache_directory()
             self._vision_verified = False
         except BaseException:
