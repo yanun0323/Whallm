@@ -8,6 +8,7 @@ final class ThroughputTests: XCTestCase {
   func testGenerationLengthIncludes512AndPreservesDefault() {
     XCTAssertEqual(ThroughputSession.generationLengths, [128, 512, 1024, 4096])
     let session = ThroughputSession()
+    XCTAssertFalse(session.compareCacheReuse)
     XCTAssertEqual(session.generationLength, 128)
     session.generationLength = 512
     XCTAssertEqual(session.generationLength, 512)
@@ -42,6 +43,49 @@ final class ThroughputTests: XCTestCase {
     XCTAssertEqual(events, ["run 1024", "run 4096", "unload"])
     XCTAssertEqual(session.results.map(\.contextTokens), [1024, 4096])
     XCTAssertEqual(session.phase, "Benchmark complete")
+  }
+
+  @MainActor
+  func testCacheComparisonRunsAdjacentPairsBeforeUnloadingAndExportsCounters() async throws {
+    let session = ThroughputSession()
+    session.model = "test-model"
+    session.contextLengths = [4096, 1024]
+    session.compareCacheReuse = true
+    var calls: [Int] = []
+    let finished = expectation(description: "unloaded after both pairs")
+    session.start(prepare: {}, run: { length, _ in
+      calls.append(length)
+      var result = try Self.result(length)
+      result.diagnostics = ThroughputDiagnostics(
+        schemaVersion: 1, runtimeConfigJson: "{}", configSha256: "config",
+        sourceFilesSha256: "source", throughFirstToken: nil, afterFirstToken: nil,
+        requestTotal: ["hits": Double(calls.count), "misses": 2,
+                       "bytes_read": 1_073_741_824, "wait_seconds": 0.25],
+        initialResidentExperts: calls.count - 1, finalResidentExperts: calls.count,
+        processDiskBytesRead: nil, decodeCacheEvalSeconds: nil, notes: "synthetic")
+      return result
+    }, unload: {
+      XCTAssertEqual(calls, [1024, 1024, 4096, 4096])
+      finished.fulfill()
+    })
+    await fulfillment(of: [finished], timeout: 2)
+    await Self.waitForFinish(session)
+    XCTAssertEqual(session.results.map(\.trial), [.first, .repeatRun, .first, .repeatRun])
+    XCTAssertEqual(Set(session.results.map(\.id)).count, 4)
+    XCTAssertEqual(session.results.map(\.diagnostics?.requestTotal?["hits"]), [1, 2, 3, 4])
+    let text = try ThroughputOutputFormat.plainText.render(session.results)
+    XCTAssertTrue(text.contains("Cache hits / misses"))
+    XCTAssertTrue(text.contains("Residents (start / end)"))
+    XCTAssertTrue(text.contains("0 / 1"))
+    XCTAssertTrue(text.contains("First"))
+    XCTAssertTrue(text.contains("Repeat"))
+    XCTAssertTrue(try ThroughputOutputFormat.markdown.render(session.results).contains("| Repeat |"))
+    let json = try ThroughputOutputFormat.json.render(session.results)
+    XCTAssertTrue(json.contains("\"trial\" : \"repeat\""))
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    let restored = try decoder.decode([ThroughputResult].self, from: Data(json.utf8))
+    XCTAssertEqual(restored.map(\.trial), session.results.map(\.trial))
   }
 
   @MainActor
@@ -261,6 +305,8 @@ final class ThroughputTests: XCTestCase {
     XCTAssertEqual(L10n.string("Run Benchmark", language: .english), "Run Benchmark")
     XCTAssertEqual(L10n.string("Run Benchmark", language: .traditionalChinese), "執行測試")
     XCTAssertEqual(L10n.string("Run Benchmark", language: .simplifiedChinese), "运行测试")
+    XCTAssertEqual(L10n.string("Compare cache reuse", language: .traditionalChinese), "比較快取重用")
+    XCTAssertEqual(L10n.string("Compare cache reuse", language: .simplifiedChinese), "比较缓存复用")
     let samplingHint = "Throughput uses temperature 0 and seed 42. Other model settings still apply. Fixed sampling does not guarantee identical output across acceleration settings."
     for language in [AppLanguage.traditionalChinese, .simplifiedChinese] {
       XCTAssertNotEqual(L10n.string(samplingHint, language: language), samplingHint)

@@ -463,6 +463,18 @@ Results depend on SSD speed, prompt length, cache state and settings.
 
 ## Current Throughput sampling
 
+The optional **Compare cache reuse** switch repeats each selected input length
+immediately, with the same model kept loaded across both requests. The result
+table and text/Markdown/JSON exports label the runs `First` and `Repeat` and
+report each request's total time, prefill and generation rates, expert cache
+hits/misses, logical expert payload read, and expert wait time. Prompt cache
+reuse remains disabled, so repeated inputs are processed again. Selecting one
+input length gives the clearest pair; with multiple lengths, earlier pairs may
+warm caches for later ones. `First` does not imply cold OS or expert caches.
+The diagnostic counters are per request; logical expert bytes are not physical
+SSD traffic. A change in timing alone cannot identify which cache caused it.
+The App flags pairs whose output token count or token hash differs.
+
 Throughput fixes **`temperature=0` and `seed=42`** for every trial, regardless
 of saved model temperature, Qwen adaptive temperature, or sampling values sent
 to the benchmark endpoint. Chat and other generation endpoints are unchanged.
