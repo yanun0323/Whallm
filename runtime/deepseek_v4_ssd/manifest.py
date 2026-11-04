@@ -138,7 +138,8 @@ class InstalledModel:
 
     @property
     def is_deepseek_v41(self) -> bool:
-        return self.model_kind == "deepseek-v4.1"
+        from .model_support.catalog import DEEPSEEK_V41_MODEL_KINDS
+        return self.model_kind in DEEPSEEK_V41_MODEL_KINDS
 
     @property
     def has_mtp(self) -> bool:
@@ -151,6 +152,7 @@ class InstalledModel:
             raw = json.load(file)
 
         from .model_support import support_for_manifest
+        from .model_support.catalog import DEEPSEEK_V41_MODEL_KINDS
         contract = support_for_manifest(raw).manifest_contract(raw)
 
         files = {item["path"]: item["size"] for item in raw.get("files", [])}
@@ -217,7 +219,7 @@ class InstalledModel:
             )
             for layer in range(3):
                 path = f"dspark/experts/layer_{layer:02d}.bin"
-                dspark_layer_size = 128 * contract["expert_blob_size"] if contract["model_kind"] == "deepseek-v4.1" else expected_layer_size
+                dspark_layer_size = 128 * contract["expert_blob_size"] if contract["model_kind"] in DEEPSEEK_V41_MODEL_KINDS else expected_layer_size
                 if files[path] != dspark_layer_size:
                     raise ValueError(f"installed DSpark expert layer has an invalid size: {path}")
 

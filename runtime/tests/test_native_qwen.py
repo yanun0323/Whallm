@@ -272,7 +272,7 @@ class CatalogTest(unittest.TestCase):
 
     def test_removed_preview_ids_are_not_registered(self):
         from deepseek_v4_ssd.model_support.catalog import DESCRIPTORS
-        self.assertEqual(len(DESCRIPTORS), 5)
+        self.assertEqual(len(DESCRIPTORS), 6)
         for kind in (NATIVE, QWEN_NATIVE):
             with self.assertRaises(ValueError):
                 get_support(kind + "-native")

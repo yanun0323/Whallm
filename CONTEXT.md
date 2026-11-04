@@ -1,7 +1,7 @@
 # Project context
 
 This project builds a memory-bounded Apple Silicon runtime for
-`DeepSeek-V4-Flash-0731`, `DeepSeek-V4.1-Flash`, `Qwen3.8-Flash-Next`,
+`DeepSeek-V4-Flash-0731`, `DeepSeek-V4.1-Flash`, `DeepSeek-V4.1-Flash-1017`, `Qwen3.8-Flash-Next`,
 `MiMo-V2.6-Flash-RL`, and `Swift1.5-Qwen3.8-Flash-Next`. Qwen3.8, Swift1.5 and
 DeepSeek V4.1 use a native engine under their original model identities.
 
@@ -110,3 +110,17 @@ budget. It also allows for two in-flight ordinary snapshots before eviction.
 A reused prefix can make the first snapshot nearly full-sized, even when
 layer-major prefill is enabled. These are conservative capacity estimates, not
 measured peaks or a process-wide memory limit.
+
+## DeepSeek V4.1 checkpoint identities
+
+The September and 1017 checkpoints are separate model kinds sharing the native
+DeepSeek engine and the format-3 layout. `deepseek-v4.1-1017` pins
+`deepseek-ai/DeepSeek-V4.1-Flash-1017` at
+`1bae0e1088993b9b82de08f59de5be5a34e42170`. It has its own installation directory,
+API model ID, settings and Alias. Plans, repair and DSpark installation must keep
+the selected checkpoint identity. Native state contracts and disk cache directories
+already include the checkpoint model ID and revision.
+
+1017 has a different `encoding/encoding.py`; each kind requires its own SHA-256.
+The September native golden tokens are not a reference for 1017. The metadata
+checks do not establish numerical correctness or performance for the new weights.

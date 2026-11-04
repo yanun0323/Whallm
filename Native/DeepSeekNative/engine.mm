@@ -1140,7 +1140,11 @@ class EngineImpl : public Engine {
     NSArray* engram = config[@"engram_layer_ids"];
     if (engram.count != 2 || [engram[0] intValue] != ENGRAM_LAYER_IDS[0] || [engram[1] intValue] != ENGRAM_LAYER_IDS[1])
       fail("unsupported model: engram_layer_ids");
-    if (![manifest[@"modelKind"] isEqualToString:@"deepseek-v4.1"] || [manifest[@"expertBlobSize"] unsignedLongLongValue] != BLOB ||
+    const bool september = [manifest[@"modelKind"] isEqualToString:@"deepseek-v4.1"];
+    const bool october = [manifest[@"modelKind"] isEqualToString:@"deepseek-v4.1-1017"] &&
+        [manifest[@"modelID"] isEqualToString:@"deepseek-ai/DeepSeek-V4.1-Flash-1017"] &&
+        [manifest[@"revision"] isEqualToString:@"1bae0e1088993b9b82de08f59de5be5a34e42170"];
+    if ((!september && !october) || [manifest[@"expertBlobSize"] unsignedLongLongValue] != BLOB ||
         [manifest[@"expertCount"] intValue] != EXPERTS || [manifest[@"layerCount"] intValue] != LAYERS)
       fail("unsupported model: expert blob layout");
     const uint32_t offsets[6] = {W1, W1_SCALE, W2, W2_SCALE, W3, W3_SCALE};

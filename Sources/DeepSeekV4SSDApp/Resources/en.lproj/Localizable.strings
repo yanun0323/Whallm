@@ -299,7 +299,9 @@
 "The main model will remain installed." = "The main model will remain installed.";
 "DSpark was removed." = "DSpark was removed.";
 "DSpark could not be removed. %@" = "DSpark could not be removed. %@";
-"Install DSpark (10.12 GiB)" = "Install DSpark (10.12 GiB)";
+"Install DSpark (%@ GiB)" = "Install DSpark (%@ GiB)";
+"Checking DSpark size..." = "Checking DSpark size...";
+"DSpark size unavailable" = "DSpark size unavailable";
 "Active Now" = "Active Now";
 "Average Speed" = "Average Speed";
 "Page" = "Page";

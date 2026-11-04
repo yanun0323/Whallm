@@ -8,6 +8,8 @@ final class ModelPackageTests: XCTestCase {
     let expected = [
       (ModelKind.deepSeekV4, ModelContract.modelID, ModelContract.revision),
       (.deepSeekV41, DeepSeekV41Contract.modelID, DeepSeekV41Contract.revision),
+      (.deepSeekV41_1017, "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "1bae0e1088993b9b82de08f59de5be5a34e42170"),
       (.qwen3_8FlashNext, QwenContract.modelID, QwenContract.revision),
       (.mimoV26FlashRL, MiMoContract.modelID, MiMoContract.revision),
       (.swift1_5Qwen3_8FlashNext, "ukisai/Swift1.5-Qwen3.8-Flash-Next",

@@ -7,6 +7,17 @@
 set -eu
 cd "$(dirname "$0")"
 model=${1:?usage: check.sh MODEL_DIR}
+# These goldens belong to the September weights, not every V4.1 checkpoint.
+../../.venv/bin/python -I - "$model" <<'PYTHON'
+import json
+import sys
+from pathlib import Path
+manifest = json.loads((Path(sys.argv[1]).expanduser() / "manifest.json").read_text())
+if (manifest.get("modelID"), manifest.get("revision")) != (
+    "deepseek-ai/DeepSeek-V4.1-Flash", "dba1be0a40aa45a94ad051997016db3960a90277"
+):
+    sys.exit("These golden tokens require the September V4.1 checkpoint; use a checkpoint-specific reference for 1017.")
+PYTHON
 ./build.sh
 cli=../../.build/deepseek-native/wd-cli
 work=$(mktemp -d -t wd-check)

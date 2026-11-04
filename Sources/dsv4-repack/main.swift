@@ -21,6 +21,17 @@ struct CLI {
     case "inspect":
       let plan = try await makePlan(model: modelSelection(in: arguments))
       printSummary(plan)
+    case "inspect-dspark":
+      let model = try modelSelection(in: arguments)
+      let bytes: UInt64
+      if model.isDeepSeekV41 {
+        bytes = try await DeepSeekV41Checkpoint(kind: model).dsparkInstalledBytes()
+      } else if model == .deepSeekV4 {
+        bytes = try await DeepSeekV4Checkpoint().dsparkInstalledBytes()
+      } else {
+        throw RepackError.incompatibleModel("the selected model has no DSpark module")
+      }
+      print("DSpark installed bytes: \(bytes)")
     case "plan":
       let output = try value(after: "--output", in: arguments)
       let plan = try await makePlan(model: modelSelection(in: arguments))
@@ -60,8 +71,8 @@ struct CLI {
       let url = URL(fileURLWithPath: model)
       let installed = try InstalledModel.loadManifest(at: url)
       let manifest: InstalledManifest
-      if installed.modelKind == .deepSeekV41 {
-        manifest = try await DeepSeekV41Checkpoint().installDSpark(at: url) { printer.update($0) }
+      if let kind = installed.modelKind, kind.isDeepSeekV41 {
+        manifest = try await DeepSeekV41Checkpoint(kind: kind).installDSpark(at: url) { printer.update($0) }
       } else {
         manifest = try await DeepSeekV4Checkpoint().installDSpark(at: url) { printer.update($0) }
       }
@@ -104,6 +115,7 @@ struct CLI {
     switch value {
     case "deepseek-v4", "deepseek-v4-flash-0731": return .deepSeekV4
     case "deepseek-v4.1", "deepseek-v4.1-flash", "deepseek-flash": return .deepSeekV41
+    case "deepseek-v4.1-1017", "deepseek-v4.1-flash-1017": return .deepSeekV41_1017
     case "qwen3.8-flash-next": return .qwen3_8FlashNext
     default: throw RepackError.invalidPlan("unknown model \(value)")
     }
@@ -158,9 +170,10 @@ struct CLI {
     print(
       """
       Usage:
-        dsv4-repack inspect [--model deepseek-v4.1|qwen3.8-flash-next]
-        dsv4-repack plan [--model deepseek-v4.1|qwen3.8-flash-next] --output plan.json
-        dsv4-repack repack [--model deepseek-v4.1|qwen3.8-flash-next] --output MODEL.dsv4 [--plan plan.json]
+        dsv4-repack inspect [--model deepseek-v4.1|deepseek-v4.1-1017|qwen3.8-flash-next]
+        dsv4-repack inspect-dspark [--model deepseek-v4|deepseek-v4.1|deepseek-v4.1-1017]
+        dsv4-repack plan [--model deepseek-v4.1|deepseek-v4.1-1017|qwen3.8-flash-next] --output plan.json
+        dsv4-repack repack [--model deepseek-v4.1|deepseek-v4.1-1017|qwen3.8-flash-next] --output MODEL.dsv4 [--plan plan.json]
         dsv4-repack verify --model deepseek-v4-flash-0731.dsv4
         dsv4-repack install-dspark --model deepseek-v4-flash-0731.dsv4
         dsv4-repack install-mtp --model qwen3.8-flash-next.dsv4

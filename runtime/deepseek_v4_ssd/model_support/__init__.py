@@ -14,6 +14,7 @@ def support_types():
     return {
         "deepseek-v4": DeepSeekV4Support,
         "deepseek-v4.1": NativeDeepSeekV41Support,
+        "deepseek-v4.1-1017": NativeDeepSeekV41Support,
         "qwen3.8-flash-next": NativeQwenSupport,
         "mimo-v2.6-flash-rl": MiMoSupport,
         "swift1.5-qwen3.8-flash-next": NativeQwenSupport,

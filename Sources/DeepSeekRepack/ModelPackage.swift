@@ -93,6 +93,7 @@ public enum ModelPackages {
   private static let builtins: [String: any ModelPackage] = [
     "deepseek-v4": DeepSeekV4Package(),
     "deepseek-v4.1": DeepSeekV41Package(),
+    "deepseek-v4.1-1017": DeepSeekV41Package(kind: .deepSeekV41_1017),
     "qwen3.8-flash-next": QwenPackage(),
     "mimo-v2.6-flash-rl": MiMoPackage(),
     "swift1.5-qwen3.8-flash-next": SwiftQwenPackage(),

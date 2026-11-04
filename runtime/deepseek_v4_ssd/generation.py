@@ -1543,7 +1543,7 @@ class ModelRuntime(ChatInterface):
                 try:
                     if dspark is not None:
                         dspark_prefilled = reused_tokens
-                        if use_layer_major and self.installed.model_kind == "deepseek-v4.1":
+                        if use_layer_major and self.installed.is_deepseek_v41:
                             from .model_support.deepseek_v41 import _deepseek_v41_layer_major_prefill
                             if reused_tokens == 0:
                                 dspark.reset_cache()

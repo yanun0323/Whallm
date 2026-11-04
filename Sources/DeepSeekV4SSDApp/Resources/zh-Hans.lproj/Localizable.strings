@@ -299,7 +299,9 @@
 "The main model will remain installed." = "主模型会保留。";
 "DSpark was removed." = "DSpark 已移除。";
 "DSpark could not be removed. %@" = "无法移除 DSpark。%@";
-"Install DSpark (10.12 GiB)" = "安装 DSpark（10.12 GiB）";
+"Install DSpark (%@ GiB)" = "安装 DSpark（%@ GiB）";
+"Checking DSpark size..." = "正在检查 DSpark 大小…";
+"DSpark size unavailable" = "无法获取 DSpark 大小";
 "Active Now" = "当前状态";
 "Average Speed" = "平均速度";
 "Page" = "页面";

@@ -239,11 +239,16 @@ final class ModelLibrary: ObservableObject {
     ModelKind.deepSeekV4.rawValue: 166_878_580_480,
     // Pinned V4.1 revision dba1be0: repack plan installed weight bytes.
     ModelKind.deepSeekV41.rawValue: 501_382_643_728,
+    // Pinned 1017 revision 1bae0e1: verified with dsv4-repack inspect on 2026-10-28.
+    ModelKind.deepSeekV41_1017.rawValue: 501_382_643_728,
     ModelKind.qwen3_8FlashNext.rawValue: 125_291_490_955 + QwenVisionArtifact.installedBytes,
     ModelKind.swift1_5Qwen3_8FlashNext.rawValue: SwiftQwenInstalledModelArtifact.installedBytes,
   ]
   @Published private(set) var planningModelKinds: Set<String> = []
   @Published private(set) var installationPlanErrors: [String: String] = [:]
+  @Published private(set) var dsparkBytesByModel: [String: UInt64] = [:]
+  @Published private(set) var planningDSparkModelKinds: Set<String> = []
+  @Published private(set) var dsparkPlanErrors: [String: String] = [:]
   @Published private(set) var modelFolderAvailableBytes: UInt64?
   @Published private(set) var modelFolderIsWritable = false
   @Published private(set) var aliases: [ModelKind: String] = [:]
@@ -416,13 +421,13 @@ final class ModelLibrary: ObservableObject {
           qwenQSASelectedKernel: modelKind.usesQwenEngine,
           qwenMTPDraftTokens: modelKind.usesQwenEngine ? settings.effectiveQwenMTPDraftTokens : 2,
           qwenMTPZeroAcceptanceLimit: modelKind.usesQwenEngine ? settings.effectiveQwenMTPZeroAcceptanceLimit : 32,
-          v41PackedKV: modelKind == .deepSeekV41 && settings.packedKVCache == true,
-          v41PackedIndex: modelKind == .deepSeekV41 && settings.packedIndexCache == true,
-          v41CandidateIndex: modelKind == .deepSeekV41 && settings.candidateIndex == true,
-          v41CEDPrefill: modelKind == .deepSeekV41 && settings.cedPrefill == true && settings.layerMajorPrefill && !settings.dsparkEnabled,
-          v41NextLayerPrefetch: modelKind == .deepSeekV41 && settings.nextLayerPrefetch == true && settings.layerMajorPrefill && settings.batchedExpertPrefill != false,
+          v41PackedKV: modelKind.isDeepSeekV41 && settings.packedKVCache == true,
+          v41PackedIndex: modelKind.isDeepSeekV41 && settings.packedIndexCache == true,
+          v41CandidateIndex: modelKind.isDeepSeekV41 && settings.candidateIndex == true,
+          v41CEDPrefill: modelKind.isDeepSeekV41 && settings.cedPrefill == true && settings.layerMajorPrefill && !settings.dsparkEnabled,
+          v41NextLayerPrefetch: modelKind.isDeepSeekV41 && settings.nextLayerPrefetch == true && settings.layerMajorPrefill && settings.batchedExpertPrefill != false,
           deepseekANEPrefill: !modelKind.usesQwenEngine && settings.deepSeekANEPrefill == true,
-          v41LayerMajorPrefill: modelKind == .deepSeekV41 && settings.layerMajorPrefill,
+          v41LayerMajorPrefill: modelKind.isDeepSeekV41 && settings.layerMajorPrefill,
           nativeAutomaticExpertCache: modelKind.usesNativeEngine && settings.expertCacheAutomatic == true
         ),
         defaults: ModelCatalog.Entry.Defaults(
@@ -477,6 +482,33 @@ final class ModelLibrary: ObservableObject {
 
   func plannedInstalledBytes(for modelKind: ModelKind) -> UInt64? {
     installationBytesByModel[modelKind.rawValue]
+  }
+
+  func plannedDSparkBytes(for modelKind: ModelKind) -> UInt64? {
+    dsparkBytesByModel[modelKind.rawValue]
+  }
+
+  func refreshDSparkSize(for modelKind: ModelKind) async {
+    let key = modelKind.rawValue
+    guard modelKind.descriptor.supports("dspark"), dsparkBytesByModel[key] == nil,
+      !planningDSparkModelKinds.contains(key)
+    else { return }
+    planningDSparkModelKinds.insert(key)
+    dsparkPlanErrors.removeValue(forKey: key)
+    do {
+      let bytes: UInt64
+      if modelKind.isDeepSeekV41 {
+        bytes = try await DeepSeekV41Checkpoint(kind: modelKind).dsparkInstalledBytes()
+      } else {
+        bytes = try await DeepSeekV4Checkpoint().dsparkInstalledBytes()
+      }
+      dsparkBytesByModel[key] = bytes
+    } catch is CancellationError {
+      // A model selection change cancels this metadata request.
+    } catch {
+      dsparkPlanErrors[key] = String(describing: error)
+    }
+    planningDSparkModelKinds.remove(key)
   }
 
   func isPlanningInstallation(for modelKind: ModelKind) -> Bool {
@@ -957,8 +989,8 @@ final class ModelLibrary: ObservableObject {
         Task { @MainActor in self?.updateRepackProgress(progress, phase: .installingDSpark) }
       }
       let manifest = try InstalledModel.loadManifest(at: url)
-      if manifest.modelKind == .deepSeekV41 {
-        _ = try await DeepSeekV41Checkpoint().installDSpark(at: url, progress: progress)
+      if let kind = manifest.modelKind, kind.isDeepSeekV41 {
+        _ = try await DeepSeekV41Checkpoint(kind: kind).installDSpark(at: url, progress: progress)
       } else {
         _ = try await DeepSeekV4Checkpoint().installDSpark(at: url, progress: progress)
       }

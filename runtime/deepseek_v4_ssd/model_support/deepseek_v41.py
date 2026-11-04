@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import mlx.core as mx
 from ..cancellation import check_cancelled
 from ..expert_layout import FusedMXFP4Layout
 from .base import ModelSupport
@@ -15,7 +14,7 @@ class DeepSeekV41Support(ModelSupport):
         return "DeepSeek V4.1"
 
     def manifest_contract(self, raw):
-        return _deepseek_v41_contract(raw)
+        return _deepseek_v41_contract(raw, self.descriptor)
 
     def load(self, installed, config, raw_config, weights, read_limiter):
         from ..deepseek_v41_ssd import load
@@ -28,8 +27,9 @@ class DeepSeekV41Support(ModelSupport):
             model, tokens, cache, step_size, expert_cache, config)
 
     def open_codec(self, root, tokenizer):
-        from ..tool_codec import V41_ENCODER_SHA256, DeepSeekV41ToolCodec
-        return DeepSeekV41ToolCodec.from_encoder(root / "encoding/encoding.py", V41_ENCODER_SHA256)
+        from ..tool_codec import V41_ENCODER_SHA256, V41_1017_ENCODER_SHA256, DeepSeekV41ToolCodec
+        digest = V41_1017_ENCODER_SHA256 if self.descriptor.kind == "deepseek-v4.1-1017" else V41_ENCODER_SHA256
+        return DeepSeekV41ToolCodec.from_encoder(root / "encoding/encoding.py", digest)
 
     def make_tool_stream_parser(self, thinking_mode):
         from ..tool_codec import DeepSeekV41ToolStreamParser
@@ -58,15 +58,19 @@ class DeepSeekV41Support(ModelSupport):
             raise ValueError("DeepSeek V4.1 requires one saved model cache")
         target.restore_persistence_state(state[0])
 
-def _deepseek_v41_contract(raw: dict) -> dict:
-    from ..manifest import (DEEPSEEK_V41_MODEL_ID, DEEPSEEK_V41_REVISION, DEEPSEEK_V41_EXPERT_REGIONS)
+def _deepseek_v41_contract(raw: dict, descriptor=None) -> dict:
+    from .catalog import BY_KIND, DEEPSEEK_V41_MODEL_KINDS
+    from ..manifest import DEEPSEEK_V41_EXPERT_REGIONS
+    if descriptor is None:
+        descriptor = BY_KIND["deepseek-v4.1"]
     layer_count = 40
     expert_count = 384
     expert_blob_size = 18_800_640
     expected = (
-        raw.get("modelKind") == "deepseek-v4.1"
-        and raw.get("modelID") == DEEPSEEK_V41_MODEL_ID
-        and raw.get("revision") == DEEPSEEK_V41_REVISION
+        descriptor.kind in DEEPSEEK_V41_MODEL_KINDS
+        and raw.get("modelKind") == descriptor.kind
+        and raw.get("modelID") == descriptor.checkpoint_model_id
+        and raw.get("revision") == descriptor.checkpoint_revision
         and raw.get("layerCount") == layer_count
         and raw.get("expertCount") == expert_count
         and raw.get("selectedExpertCount") == 6
@@ -130,7 +134,7 @@ def _deepseek_v41_contract(raw: dict) -> dict:
     return {
         "required": required,
         "allowed": required,
-        "model_kind": "deepseek-v4.1",
+        "model_kind": descriptor.kind,
         "layer_count": layer_count,
         "expert_count": expert_count,
         "selected_expert_count": 6,
@@ -147,6 +151,7 @@ def _deepseek_v41_prefill(
     cache,
     step_size: int,
 ) -> None:
+    import mlx.core as mx
     for start in range(0, len(token_ids), step_size):
         check_cancelled()
         tokens = mx.array(token_ids[start : start + step_size])[None]
@@ -157,6 +162,7 @@ def _deepseek_v41_prefill(
 def _deepseek_v41_layer_major_prefill(model, token_ids, cache, step_size,
                                       expert_cache, config, target_layers=()):
     """Read each layer once; retain attention chunk order and batch token-local FFN."""
+    import mlx.core as mx
     from contextlib import nullcontext
     import numpy as np
     from ..deepseek_v41.model import SharedState

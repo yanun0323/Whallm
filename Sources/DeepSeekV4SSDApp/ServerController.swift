@@ -607,7 +607,7 @@ struct ModelAdvancedSettings: Codable, Equatable, Sendable {
   ) -> ModelAdvancedSettings? {
     // This model did not exist in the old shared settings. Never import FP8
     // settings, even if the selected model has changed since that save.
-    guard modelKind != .swift1_5Qwen3_8FlashNext,
+    guard modelKind != .swift1_5Qwen3_8FlashNext, modelKind != .deepSeekV41_1017,
       let data = defaults.data(forKey: ServerConfiguration.preferenceKey),
       let legacy = try? JSONDecoder().decode(Legacy.self, from: data)
     else { return nil }

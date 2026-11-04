@@ -85,6 +85,44 @@
       "prefillThreshold": null
     },
     {
+      "kind": "deepseek-v4.1-1017",
+      "displayName": "DeepSeek-V4.1-Flash-1017",
+      "kindLabel": "DeepSeek V4.1 1017",
+      "assistantName": "DeepSeek",
+      "apiModelID": "deepseek-v4.1-flash-1017",
+      "owner": "deepseek-ai",
+      "checkpointModelID": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "checkpointRevision": "1bae0e1088993b9b82de08f59de5be5a34e42170",
+      "manifestVersion": 3,
+      "directoryName": "deepseek-v4.1-flash-1017.dsv4",
+      "requiredPaths": [
+        "common.bin",
+        "config.json",
+        "encoding/encoding.py",
+        "tokenizer/tokenizer.json",
+        "engram/layer_01.weight.bin",
+        "engram/layer_14.weight.bin"
+      ],
+      "features": [
+        "nativeEngine",
+        "promptCache",
+        "dspark"
+      ],
+      "editableSettings": [],
+      "defaults": {
+        "slots": 1152,
+        "promptCacheEntries": 1,
+        "bf16KVCache": true,
+        "maxTokens": 8192,
+        "temperature": 0.2,
+        "topP": 0.98,
+        "topK": 0
+      },
+      "maximumContext": 1048576,
+      "automaticMemoryGiB": 0,
+      "prefillThreshold": null
+    },
+    {
       "kind": "qwen3.8-flash-next",
       "displayName": "Qwen3.8-Flash-Next",
       "kindLabel": "Qwen3.8 Flash Next",

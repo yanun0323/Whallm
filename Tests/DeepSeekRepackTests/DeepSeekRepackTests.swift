@@ -164,6 +164,10 @@ final class DeepSeekRepackTests: XCTestCase {
       tensors: fixture.tensors,
       includeDSpark: true
     )
+    let dsparkBytes = try RepackPlanner.dsparkInstalledBytes(
+      tensors: fixture.tensors.filter { $0.key.hasPrefix("mtp.") })
+    XCTAssertEqual(dsparkBytes, plan.files.filter { $0.path.hasPrefix("dspark/") }
+      .reduce(UInt64(0)) { $0 + $1.size })
 
     XCTAssertEqual(plan.files.count, 48)
     XCTAssertEqual(plan.dspark?.layerCount, 3)
