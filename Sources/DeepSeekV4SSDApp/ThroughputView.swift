@@ -13,7 +13,8 @@ enum BenchmarkContext: String, CaseIterable, Codable, Sendable {
 }
 
 struct ThroughputResult: Codable, Identifiable, Sendable {
-  var id: Int { contextTokens }
+  var id: String { "\(contextTokens):\(trial?.rawValue ?? "single")" }
+  enum Trial: String, Codable, Sendable { case first, repeatRun = "repeat" }
   let model: String
   var displayName: String { ModelDisplayName.resolve(model) }
   let slots: Int?
@@ -42,10 +43,31 @@ struct ThroughputResult: Codable, Identifiable, Sendable {
   var presencePenalty: Double? = nil
   var repetitionPenalty: Double? = nil
   var diagnostics: ThroughputDiagnostics? = nil
+  // Set by the App after a request; older server responses and exports omit it.
+  var trial: Trial? = nil
   // Added by the App: the request estimate under the same condition, for comparison.
   var estimatedRequestMemoryBytes: Double? = nil
 
   static let columns = ["Input / Output", "TTFT", "TPOT", "PP tok/s", "TG tok/s", "Total", "Throughput", "Peak Memory"]
+
+  static func columns(compare: Bool) -> [String] {
+    compare ? ["Run"] + columns + ["Cache hits / misses", "Residents (start / end)", "Expert read (GiB)", "Expert wait (s)"] : columns
+  }
+
+  func cells(compare: Bool) -> [String] {
+    guard compare else { return cells }
+    let counters = diagnostics?.requestTotal
+    func counter(_ key: String) -> String {
+      counters?[key].map { String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), $0) } ?? "—"
+    }
+    func measure(_ key: String, scale: Double = 1) -> String {
+      counters?[key].map { String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), $0 / scale) } ?? "—"
+    }
+    return [trial == .first ? "First" : trial == .repeatRun ? "Repeat" : "Single"] + cells
+      + ["\(counter("hits")) / \(counter("misses"))",
+         "\(diagnostics?.initialResidentExperts.map(String.init) ?? "—") / \(diagnostics?.finalResidentExperts.map(String.init) ?? "—")",
+         measure("bytes_read", scale: 1_073_741_824), measure("wait_seconds")]
+  }
 
   var cells: [String] {
     ["\(contextTokens) / \(generationTokens)", Self.duration(milliseconds: ttftMs), Self.duration(milliseconds: tpotMs),
@@ -97,13 +119,14 @@ enum ThroughputOutputFormat: String, CaseIterable {
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
       return String(decoding: try encoder.encode(results), as: UTF8.self)
     }
-    let headers = ["Model", "Context", "Slots", "Output limit"] + ThroughputResult.columns + ["Temperature", "Seed"]
+    let compare = results.contains { $0.trial != nil }
+    let headers = ["Model", "Context", "Slots", "Output limit"] + ThroughputResult.columns(compare: compare) + ["Temperature", "Seed"]
     let rows: [[String]] = results.map { result in
       let slots = result.slots.map { String($0) } ?? "—"
       let temperature = result.temperature.map { String($0) } ?? "—"
       let seed = result.seed.map { String($0) } ?? "—"
       let prefix: [String] = [result.displayName, result.benchmarkContext.title, slots, String(result.generationLimit)]
-      return prefix + result.cells + [temperature, seed]
+      return prefix + result.cells(compare: compare) + [temperature, seed]
     }
     if self == .plainText {
       let table = [headers] + rows
@@ -248,6 +271,7 @@ final class ThroughputSession: ObservableObject {
   @Published var contextLengths: Set<Int> = [4096, 8192, 16384]
   @Published var generationLength = 128
   @Published var benchmarkContext: BenchmarkContext = .code
+  @Published var compareCacheReuse = false
   @Published private(set) var results: [ThroughputResult] = []
   @Published private(set) var isRunning = false
   @Published private(set) var isUnloading = false
@@ -334,6 +358,7 @@ final class ThroughputSession: ObservableObject {
     guard !isRunning, !model.isEmpty, !contextLengths.isEmpty else { return }
     if model == Self.dryRunModel { runDryRun(); return }
     let lengths = contextLengths.sorted()
+    let compare = compareCacheReuse
     results = []
     resultModel = model
     error = nil
@@ -341,7 +366,7 @@ final class ThroughputSession: ObservableObject {
     phase = "Starting server…"
     generated = 0
     currentContext = lengths[0]
-    task = Task {
+    task = Task { [self] in
       defer { isRunning = false; task = nil }
       var requestedModel = false
       var finalPhase = "Benchmark complete"
@@ -351,16 +376,24 @@ final class ThroughputSession: ObservableObject {
           try Task.checkCancellation()
           currentContext = length
           generated = 0
-          phase = "Loading model…"
-          requestedModel = true
-          let result = try await run(length) { [weak self] event in
-            guard let self else { return }
-            if event.phase == "loading" { phase = "Loading model…" }
-            if event.phase == "running" { phase = "Running benchmark…" }
-            if let count = event.generated { generated = count }
+          let trials: [ThroughputResult.Trial?] = compare ? [.first, .repeatRun] : [nil]
+          for trial in trials {
+            try Task.checkCancellation()
+            generated = 0
+            let runPhase = trial == .first ? "Running first request…"
+              : trial == .repeatRun ? "Running repeat request…" : "Running benchmark…"
+            phase = trial == .repeatRun ? runPhase : "Loading model…"
+            requestedModel = true
+            var result = try await run(length) { [weak self] event in
+              guard let self else { return }
+              if event.phase == "loading" { phase = trial == .repeatRun ? runPhase : "Loading model…" }
+              if event.phase == "running" { phase = runPhase }
+              if let count = event.generated { generated = count }
+            }
+            try Task.checkCancellation()
+            result.trial = trial
+            results.append(result)
           }
-          try Task.checkCancellation()
-          results.append(result)
         }
       } catch {
         if Task.isCancelled {
@@ -480,6 +513,15 @@ struct ThroughputView: View {
                 .labelsHidden().pickerStyle(.segmented).fixedSize().frame(width: 210, alignment: .trailing)
               }
               .padding(.vertical, 12)
+              Divider()
+              HStack(spacing: 16) {
+                settingLabel("Compare cache reuse", detail: "Run each input twice with the model loaded. Prompt reuse stays off.")
+                Spacer(minLength: 8)
+                Toggle(label("Compare cache reuse"), isOn: $session.compareCacheReuse)
+                  .labelsHidden()
+                  .disabled(session.model == ThroughputSession.dryRunModel)
+              }
+              .padding(.vertical, 12)
             }
             .disabled(session.isRunning)
             Divider()
@@ -543,7 +585,10 @@ struct ThroughputView: View {
     .onAppear { selectAvailableModel() }
     .onChange(of: models) { selectAvailableModel() }
     .onChange(of: session.model) {
-      if session.model == ThroughputSession.dryRunModel { session.runDryRun() }
+      if session.model == ThroughputSession.dryRunModel {
+        session.compareCacheReuse = false
+        session.runDryRun()
+      }
     }
   }
 
@@ -573,7 +618,7 @@ struct ThroughputView: View {
 
   private var results: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text(label("Single request results")).font(.headline)
+      Text(label(comparingResults ? "First and repeat request results" : "Single request results")).font(.headline)
       HStack {
         Text(label(session.resultDisplayName))
         if let result = session.results.first {
@@ -590,7 +635,7 @@ struct ThroughputView: View {
         ScrollView(.horizontal) {
           Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
             GridRow {
-              ForEach(ThroughputResult.columns, id: \.self) {
+              ForEach(ThroughputResult.columns(compare: comparingResults), id: \.self) {
                 Text(label($0)).font(.caption).foregroundStyle(.secondary)
                   .fixedSize().frame(maxWidth: .infinity, alignment: .leading).frame(height: 18)
               }
@@ -598,10 +643,10 @@ struct ThroughputView: View {
             Divider().gridCellUnsizedAxes(.horizontal)
             ForEach(session.results) { result in
               GridRow {
-                ForEach(Array(result.cells.enumerated()), id: \.offset) { column, value in
-                  let estimate = column == ThroughputResult.columns.count - 1
+                ForEach(Array(result.cells(compare: comparingResults).enumerated()), id: \.offset) { column, value in
+                  let estimate = column == ThroughputResult.columns(compare: comparingResults).firstIndex(of: "Peak Memory")
                     ? result.estimatedRequestMemoryBytes : nil
-                  memoryCell(value, estimate: estimate)
+                  memoryCell(column == 0 && comparingResults ? label(value) : value, estimate: estimate)
                     .fixedSize()
                     .help(estimate == nil ? "" : label("Whallm's estimate for this same request with Prompt Cache off."))
                     // Top-aligned so every value shares the first line's baseline.
@@ -618,10 +663,19 @@ struct ThroughputView: View {
       }
       .frame(height: 61 + CGFloat(session.results.count) * (resultRowHeight + 10) + 12)
       .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardRadius))
+      if comparingResults {
+        Text(label("Each pair uses the same input and keeps the model loaded. Expert counters are per request; expert bytes are logical payload, not SSD traffic. OS caches may also warm. For the clearest comparison, select one context length."))
+          .font(.caption).foregroundStyle(.secondary)
+        if comparisonOutputDiffers {
+          Text(label("Some paired outputs differ; compare their timing and token counts with care."))
+            .font(.caption).foregroundStyle(.orange)
+        }
+      }
       ForEach(session.results) { result in
         if let diagnostics = result.diagnostics {
           VStack(alignment: .leading, spacing: 4) {
-            Text("\(result.contextTokens) tokens").font(.caption).foregroundStyle(.secondary)
+            Text("\(result.contextTokens) tokens" + (result.trial.map { " · " + label($0 == .first ? "First" : "Repeat") } ?? ""))
+              .font(.caption).foregroundStyle(.secondary)
             ThroughputDiagnosticsView(diagnostics: diagnostics, language: language)
           }
         }
@@ -637,6 +691,18 @@ struct ThroughputView: View {
 
   private var slotsSummary: String {
     Set(session.results.map { $0.slots.map(String.init) ?? "—" }).sorted().joined(separator: " / ")
+  }
+
+  private var comparingResults: Bool { session.results.contains { $0.trial != nil } }
+
+  private var comparisonOutputDiffers: Bool {
+    let results = session.results
+    return stride(from: 0, to: results.count - 1, by: 2).contains { index in
+      let first = results[index], second = results[index + 1]
+      return first.trial == .first && second.trial == .repeatRun
+        && (first.outputTokenSha256 != second.outputTokenSha256
+            || first.generationTokens != second.generationTokens)
+    }
   }
 
   private var resultOutput: some View {
