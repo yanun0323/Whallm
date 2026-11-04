@@ -1,5 +1,102 @@
 import CryptoKit
+import Darwin
 import Foundation
+
+private let dsparkInstallLockFilename = ".dspark-install.lock"
+
+private final class DownloadProgressTracker: @unchecked Sendable {
+  private struct Transfer {
+    var received: UInt64 = 0
+    var written: UInt64 = 0
+  }
+
+  private let lock = NSLock()
+  private let totalBytes: UInt64
+  private let progress: (@Sendable (RepackProgress) -> Void)?
+  private var copiedBytes: UInt64
+  private var downloadedBytes: UInt64
+  private var active: [Int: Transfer] = [:]
+
+  init(copiedBytes: UInt64, downloadedBytes: UInt64, totalBytes: UInt64,
+    progress: (@Sendable (RepackProgress) -> Void)?)
+  {
+    self.copiedBytes = copiedBytes
+    self.downloadedBytes = downloadedBytes
+    self.totalBytes = totalBytes
+    self.progress = progress
+  }
+
+  func received(batch: Int, bytes: UInt64) {
+    let update = lock.withLock { () -> RepackProgress? in
+      var transfer = active[batch] ?? Transfer()
+      guard bytes > transfer.received else { return nil }
+      transfer.received = bytes
+      active[batch] = transfer
+      return snapshot()
+    }
+    if let update { progress?(update) }
+  }
+
+  func wrote(batch: Int, copiedBytes: UInt64, downloadedBytes: UInt64) {
+    let update = lock.withLock {
+      var transfer = active[batch] ?? Transfer()
+      transfer.written += downloadedBytes
+      transfer.received = max(transfer.received, transfer.written)
+      active[batch] = transfer
+      self.copiedBytes += copiedBytes
+      self.downloadedBytes += downloadedBytes
+      return snapshot()
+    }
+    progress?(update)
+  }
+
+  func staged(batch: Int, downloadedBytes: UInt64) {
+    let update = lock.withLock {
+      active.removeValue(forKey: batch)
+      self.downloadedBytes += downloadedBytes
+      return snapshot()
+    }
+    progress?(update)
+  }
+
+  func copied(_ bytes: UInt64) {
+    let update = lock.withLock {
+      copiedBytes += bytes
+      return snapshot()
+    }
+    progress?(update)
+  }
+
+  func finished(batch: Int) {
+    lock.withLock { active.removeValue(forKey: batch) }
+  }
+
+  private func snapshot() -> RepackProgress {
+    let inFlight = active.values.reduce(UInt64(0)) { $0 + $1.received - $1.written }
+    return RepackProgress(
+      copiedBytes: copiedBytes,
+      downloadedBytes: downloadedBytes + inFlight,
+      totalBytes: totalBytes)
+  }
+}
+
+enum StagingCapacity {
+  static let safetyMargin: UInt64 = 1 * 1_024 * 1_024 * 1_024
+
+  static func budget(
+    available: UInt64, temporaryAvailable: UInt64,
+    installedBytes: UInt64, allocatedBytes: UInt64
+  ) -> UInt64? {
+    let remaining = installedBytes > allocatedBytes ? installedBytes - allocatedBytes : 0
+    guard available > remaining else { return nil }
+    let headroom = min(available - remaining, temporaryAvailable)
+    return headroom > safetyMargin ? headroom - safetyMargin : nil
+  }
+
+  static func canPrefetch(current: UInt64, next: UInt64, budget: UInt64) -> Bool {
+    current <= budget && next <= budget - current
+  }
+}
 
 struct Repacker {
   private let source: any CheckpointSource
@@ -7,18 +104,25 @@ struct Repacker {
   private let conversionBatchSize: UInt64 = 64 * 1_024 * 1_024
   private let mergeGap: UInt64 = 64 * 1_024
   private let receiptBatchSize = 256
-  private let downloadConcurrency = 8
   private let conversionConcurrency = 2
 
   init(source: any CheckpointSource) {
-    self.source = source
+    if let huggingFace = source as? HuggingFaceSource,
+      huggingFace.modelID.hasPrefix("deepseek-ai/DeepSeek-V4.1-Flash"),
+      let runtime = XetRuntime.current(), XetRuntime.hasReadToken()
+    {
+      self.source = XetCheckpointSource(base: huggingFace, runtime: runtime)
+    } else {
+      self.source = source
+    }
   }
 
   func run(
     plan: RepackPlan,
     output: URL,
     progress: (@Sendable (RepackProgress) -> Void)?,
-    companions requestedCompanions: [CompanionFile]? = nil
+    companions requestedCompanions: [CompanionFile]? = nil,
+    dsparkInstallBytes: UInt64? = nil
   ) async throws -> InstalledManifest {
     let fileManager = FileManager.default
     let output = output.standardizedFileURL
@@ -52,6 +156,7 @@ struct Repacker {
       var downloadedBytes: UInt64 = 0
       var pendingReceiptCount = 0
       var pending: [WorkChunk] = []
+      var checkedChunks = 0
       for span in makeSpans(plan.copies) {
         var position = span.start
         while position < span.end {
@@ -69,54 +174,151 @@ struct Repacker {
           if completedChunkIsValid {
             copied += payloadBytes
             position = end
-            progress?(
-              RepackProgress(
-                copiedBytes: copied,
-                downloadedBytes: downloadedBytes,
-                totalBytes: plan.checkpointTensorBytes
-              ))
+            checkedChunks += 1
+            if let dsparkInstallBytes {
+              if checkedChunks % 32 == 0 {
+                progress?(RepackProgress(copiedBytes: copied, downloadedBytes: 0,
+                  totalBytes: plan.checkpointTensorBytes - dsparkInstallBytes,
+                  stage: .validatingExisting))
+              }
+            } else {
+              progress?(RepackProgress(copiedBytes: copied, downloadedBytes: downloadedBytes,
+                totalBytes: plan.checkpointTensorBytes))
+            }
           } else {
             pending.append(WorkChunk(span: span, range: position..<end, id: id))
           }
           position = end
         }
       }
-      try await withThrowingTaskGroup(of: DownloadedChunk.self) { group in
-        var iterator = pending.makeIterator()
-        for _ in 0..<min(downloadConcurrency, pending.count) {
-          guard let work = iterator.next() else { break }
-          group.addTask { DownloadedChunk(work: work, data: try await read(work)) }
+      if let dsparkInstallBytes {
+        progress?(RepackProgress(copiedBytes: copied, downloadedBytes: 0,
+          totalBytes: plan.checkpointTensorBytes - dsparkInstallBytes,
+          stage: .validatingExisting))
+      } else {
+        progress?(RepackProgress(copiedBytes: copied, downloadedBytes: downloadedBytes,
+          totalBytes: plan.checkpointTensorBytes))
+      }
+      let batches = makeDownloadBatches(pending, maxBytes: source.downloadBatchSize)
+      let transferProgress = DownloadProgressTracker(
+        copiedBytes: dsparkInstallBytes == nil ? copied : 0,
+        downloadedBytes: downloadedBytes,
+        totalBytes: dsparkInstallBytes == nil ? plan.checkpointTensorBytes : plan.checkpointTensorBytes - copied,
+        progress: progress)
+      let sourceEnds = Dictionary(grouping: plan.copies, by: \.sourceFile).mapValues { copies in
+        copies.map { $0.sourceOffset + $0.length }.max() ?? 0
+      }
+      let shardGroups = Dictionary(grouping: batches, by: \.sourceFile)
+        .sorted { $0.key < $1.key }
+        .enumerated().map { index, entry in
+          StagedBatchGroup(
+            id: index, path: entry.key, batches: entry.value,
+            estimatedBytes: (sourceEnds[entry.key] ?? 0) + 64 * 1_024 * 1_024)
         }
-        while let downloaded = try await group.next() {
-          let work = downloaded.work
-          let written = try write(
-            data: downloaded.data,
-            span: work.span,
-            range: work.range,
-            handles: handles,
-            dirtyFiles: &dirtyFiles
-          )
-          copied += written.bytes
-          downloadedBytes += written.bytes
-          receipt?.completed[work.id] = written.digest
-          pendingReceiptCount += 1
-          progress?(
-            RepackProgress(
-              copiedBytes: copied,
-              downloadedBytes: downloadedBytes,
-              totalBytes: plan.checkpointTensorBytes
-            ))
-          if pendingReceiptCount == receiptBatchSize, let receipt {
-            try persist(
-              receipt: receipt,
-              handles: handles,
-              dirtyFiles: &dirtyFiles,
-              receiptURL: receiptURL
-            )
-            pendingReceiptCount = 0
+      if let staged = source as? any StagedCheckpointSource,
+        let budget = stagingBudget(plan: plan, parent: parent, partial: partial),
+        shardGroups.allSatisfy({ $0.estimatedBytes <= budget })
+      {
+        try await withThrowingTaskGroup(of: StagedGroupResult.self) { group in
+          var iterator = shardGroups.makeIterator()
+          if let first = iterator.next() {
+            group.addTask {
+              StagedGroupResult(group: first, bytes: try await staged.stage(path: first.path) {
+                transferProgress.received(batch: first.id, bytes: $0)
+              })
+            }
           }
-          if let next = iterator.next() {
-            group.addTask { DownloadedChunk(work: next, data: try await read(next)) }
+          while let ready = try await group.next() {
+            let next = iterator.next()
+            let prefetch = next.map {
+              StagingCapacity.canPrefetch(
+                current: ready.group.estimatedBytes, next: $0.estimatedBytes,
+                budget: budget)
+            } ?? false
+            if prefetch, let next {
+              group.addTask {
+                StagedGroupResult(group: next, bytes: try await staged.stage(path: next.path) {
+                  transferProgress.received(batch: next.id, bytes: $0)
+                })
+              }
+            }
+            downloadedBytes += ready.bytes
+            transferProgress.staged(batch: ready.group.id, downloadedBytes: ready.bytes)
+            for batch in ready.group.batches {
+              let data = try await read(path: batch.sourceFile, range: batch.range)
+              guard UInt64(data.count) == batch.range.count else {
+                throw RepackError.badResponse("incomplete staged checkpoint batch for \(batch.sourceFile)")
+              }
+              for work in batch.works {
+                try Task.checkCancellation()
+                let offset = Int(work.range.lowerBound - batch.range.lowerBound)
+                let length = Int(work.range.count)
+                let chunk = batch.works.count == 1
+                  ? data : Data(data[offset..<(offset + length)])
+                let written = try write(
+                  data: chunk, span: work.span, range: work.range,
+                  handles: handles, dirtyFiles: &dirtyFiles)
+                copied += written.bytes
+                receipt?.completed[work.id] = written.digest
+                pendingReceiptCount += 1
+                transferProgress.copied(written.bytes)
+                if pendingReceiptCount == receiptBatchSize, let receipt {
+                  try persist(
+                    receipt: receipt, handles: handles,
+                    dirtyFiles: &dirtyFiles, receiptURL: receiptURL)
+                  pendingReceiptCount = 0
+                }
+              }
+            }
+            await staged.release(path: ready.group.path)
+            if !prefetch, let next {
+              group.addTask {
+                StagedGroupResult(group: next, bytes: try await staged.stage(path: next.path) {
+                  transferProgress.received(batch: next.id, bytes: $0)
+                })
+              }
+            }
+          }
+        }
+      } else {
+        try await withThrowingTaskGroup(of: DownloadedBatch.self) { group in
+          var iterator = batches.makeIterator()
+          for _ in 0..<min(source.downloadConcurrency, batches.count) {
+            guard let batch = iterator.next() else { break }
+            group.addTask {
+              DownloadedBatch(batch: batch, data: try await read(batch, progress: transferProgress))
+            }
+          }
+          while let downloaded = try await group.next() {
+            if let next = iterator.next() {
+              group.addTask {
+                DownloadedBatch(batch: next, data: try await read(next, progress: transferProgress))
+              }
+            }
+            for work in downloaded.batch.works {
+              try Task.checkCancellation()
+              let offset = Int(work.range.lowerBound - downloaded.batch.range.lowerBound)
+              let length = Int(work.range.count)
+              let chunk = downloaded.batch.works.count == 1
+                ? downloaded.data : Data(downloaded.data[offset..<(offset + length)])
+              let written = try write(
+                data: chunk, span: work.span, range: work.range,
+                handles: handles, dirtyFiles: &dirtyFiles)
+              copied += written.bytes
+              downloadedBytes += UInt64(work.range.count)
+              receipt?.completed[work.id] = written.digest
+              pendingReceiptCount += 1
+              transferProgress.wrote(
+                batch: downloaded.batch.id, copiedBytes: written.bytes,
+                downloadedBytes: UInt64(work.range.count))
+              if pendingReceiptCount == receiptBatchSize, let receipt {
+                try persist(
+                  receipt: receipt, handles: handles,
+                  dirtyFiles: &dirtyFiles, receiptURL: receiptURL)
+                pendingReceiptCount = 0
+              }
+            }
+            transferProgress.finished(batch: downloaded.batch.id)
           }
         }
       }
@@ -202,13 +404,32 @@ struct Repacker {
       for handle in handles.values { try handle.close() }
       handles.removeAll()
 
+      let finalizingBytes = plan.files.reduce(UInt64(0)) { $0 + $1.size }
+      var finalizedBytes: UInt64 = 0
+      if dsparkInstallBytes != nil {
+        progress?(RepackProgress(copiedBytes: 0, downloadedBytes: 0,
+          totalBytes: finalizingBytes, stage: .finalizing))
+      }
       var installedFiles = try plan.files.map { file -> InstalledFile in
         let url = try safeFileURL(root: partial, path: file.path)
         let size = try fileSize(url)
         guard size == file.size else {
           throw RepackError.invalidPlan("installed size mismatch for \(file.path)")
         }
-        return InstalledFile(path: file.path, size: size, sha256: try sha256(url))
+        let start = finalizedBytes
+        var lastReportedBucket: UInt64 = 0
+        let digest = try sha256(url) { fileBytes in
+          if dsparkInstallBytes != nil {
+            let bucket = (start + fileBytes) / (128 * 1_024 * 1_024)
+            if bucket > lastReportedBucket || fileBytes == size {
+              lastReportedBucket = bucket
+              progress?(RepackProgress(copiedBytes: start + fileBytes, downloadedBytes: 0,
+                totalBytes: finalizingBytes, stage: .finalizing))
+            }
+          }
+        }
+        finalizedBytes += size
+        return InstalledFile(path: file.path, size: size, sha256: digest)
       }
       var companions = requestedCompanions ?? {
         ModelPackages.companions(for: plan.modelKind ?? .deepSeekV4)
@@ -256,8 +477,10 @@ struct Repacker {
       )
       try fileManager.removeItem(at: receiptURL)
       try fileManager.moveItem(at: partial, to: output)
+      if let staged = source as? any StagedCheckpointSource { await staged.releaseAll() }
       return manifest
     } catch {
+      if let staged = source as? any StagedCheckpointSource { await staged.releaseAll() }
       if let receipt {
         try? persist(
           receipt: receipt,
@@ -275,7 +498,8 @@ struct Repacker {
     plan: RepackPlan,
     output: URL,
     invalidFiles: Set<String>,
-    progress: (@Sendable (RepackProgress) -> Void)?
+    progress: (@Sendable (RepackProgress) -> Void)?,
+    installingDSpark: Bool = false
   ) async throws -> InstalledManifest {
     let fileManager = FileManager.default
     let output = output.standardizedFileURL
@@ -288,7 +512,39 @@ struct Repacker {
       throw RepackError.invalidPlan("partial repair already exists: \(partial.path)")
     }
 
+    let dsparkLock: FileHandle?
+    if installingDSpark {
+      let lockURL = output.appendingPathComponent(dsparkInstallLockFilename)
+      if !fileManager.fileExists(atPath: lockURL.path),
+        !fileManager.createFile(atPath: lockURL.path, contents: nil) {
+        throw RepackError.invalidPlan("cannot create DSpark installation lock")
+      }
+      let handle = try FileHandle(forUpdating: lockURL)
+      guard flock(handle.fileDescriptor, LOCK_EX | LOCK_NB) == 0 else {
+        try handle.close()
+        throw RepackError.invalidPlan("another DSpark installation is active")
+      }
+      dsparkLock = handle
+    } else {
+      dsparkLock = nil
+    }
+    defer {
+      if let dsparkLock {
+        _ = flock(dsparkLock.fileDescriptor, LOCK_UN)
+        try? dsparkLock.close()
+        if fileManager.fileExists(atPath: output.path) {
+          try? fileManager.removeItem(at: output.appendingPathComponent(dsparkInstallLockFilename))
+        }
+      }
+    }
     try fileManager.moveItem(at: output, to: partial)
+    func restoreInstalledModel() throws {
+      guard installingDSpark else { return }
+      guard fileManager.fileExists(atPath: partial.path),
+        !fileManager.fileExists(atPath: output.path) else { return }
+      try fileManager.moveItem(at: partial, to: output)
+    }
+    let resuming = fileManager.fileExists(atPath: receiptURL.path)
     var handles: [String: FileHandle] = [:]
     var receipt: RepackReceipt?
     var dirtyFiles = Set<String>()
@@ -296,7 +552,7 @@ struct Repacker {
       let prepared = try prepare(plan: plan, partial: partial, receiptURL: receiptURL)
       handles = prepared.handles
       receipt = prepared.receipt
-      for file in plan.files where invalidFiles.contains(file.path) {
+      for file in plan.files where invalidFiles.contains(file.path) && !resuming {
         guard let handle = handles[file.path] else {
           throw RepackError.invalidPlan("missing repair destination \(file.path)")
         }
@@ -306,6 +562,16 @@ struct Repacker {
       }
 
       var preparedCount = 0
+      var checkedChunks = 0
+      var checkedBytes: UInt64 = 0
+      let dsparkInstallBytes = installingDSpark
+        ? plan.copies.filter { invalidFiles.contains($0.destinationFile) }.reduce(UInt64(0)) { $0 + $1.length }
+        : nil
+      let existingBytes = plan.checkpointTensorBytes - (dsparkInstallBytes ?? 0)
+      if installingDSpark {
+        progress?(RepackProgress(copiedBytes: 0, downloadedBytes: 0,
+          totalBytes: existingBytes, stage: .preservingExisting))
+      }
       for span in makeSpans(plan.copies) {
         var position = span.start
         while position < span.end {
@@ -321,6 +587,12 @@ struct Repacker {
             let id = chunkID(sourceFile: span.sourceFile, range: range)
             receipt?.completed[id] = try autoreleasepool {
               try destinationDigest(span: span, range: range, handles: handles)
+            }
+            checkedBytes += payloadByteCount(span: span, range: range)
+            checkedChunks += 1
+            if installingDSpark && checkedChunks % 32 == 0 {
+              progress?(RepackProgress(copiedBytes: checkedBytes, downloadedBytes: 0,
+                totalBytes: existingBytes, stage: .preservingExisting))
             }
             preparedCount += 1
             if preparedCount == receiptBatchSize, let receipt {
@@ -361,9 +633,14 @@ struct Repacker {
           receiptURL: receiptURL
         )
       }
+      if installingDSpark {
+        progress?(RepackProgress(copiedBytes: checkedBytes, downloadedBytes: 0,
+          totalBytes: existingBytes, stage: .preservingExisting))
+      }
       for handle in handles.values { try handle.close() }
       handles.removeAll()
     } catch {
+      let failure = error
       if let receipt {
         try? persist(
           receipt: receipt,
@@ -373,9 +650,27 @@ struct Repacker {
         )
       }
       for handle in handles.values { try? handle.close() }
-      throw error
+      do { try restoreInstalledModel() }
+      catch {
+        throw RepackError.invalidPlan(
+          "repair failed (\(failure)); restoring installed model failed: \(error)")
+      }
+      throw failure
     }
-    return try await run(plan: plan, output: output, progress: progress)
+    do {
+      return try await run(plan: plan, output: output, progress: progress,
+        dsparkInstallBytes: installingDSpark ? plan.copies.filter {
+          invalidFiles.contains($0.destinationFile)
+        }.reduce(UInt64(0)) { $0 + $1.length } : nil)
+    } catch {
+      let failure = error
+      do { try restoreInstalledModel() }
+      catch {
+        throw RepackError.invalidPlan(
+          "repair failed (\(failure)); restoring installed model failed: \(error)")
+      }
+      throw failure
+    }
   }
 
   private struct RepackReceipt: Codable {
@@ -849,13 +1144,103 @@ struct Repacker {
     let id: String
   }
 
-  private struct DownloadedChunk: Sendable {
-    let work: WorkChunk
+  private struct WorkBatch: Sendable {
+    let id: Int
+    let sourceFile: String
+    var range: Range<UInt64>
+    var works: [WorkChunk]
+  }
+
+  private struct DownloadedBatch: Sendable {
+    let batch: WorkBatch
     let data: Data
   }
 
-  private func read(_ work: WorkChunk) async throws -> Data {
-    try await read(path: work.span.sourceFile, range: work.range)
+  private struct StagedBatchGroup: Sendable {
+    let id: Int
+    let path: String
+    let batches: [WorkBatch]
+    let estimatedBytes: UInt64
+  }
+
+  private struct StagedGroupResult: Sendable {
+    let group: StagedBatchGroup
+    let bytes: UInt64
+  }
+
+  private func stagingBudget(plan: RepackPlan, parent: URL, partial: URL) -> UInt64? {
+    guard plan.expertConversions?.isEmpty ?? true,
+      let available = try? parent.resourceValues(
+        forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+      ).volumeAvailableCapacityForImportantUsage,
+      available >= 0,
+      let temporaryAvailable = try? FileManager.default.temporaryDirectory.resourceValues(
+        forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+      ).volumeAvailableCapacityForImportantUsage,
+      temporaryAvailable >= 0,
+      let allocated = allocatedBytes(at: partial)
+    else { return nil }
+    return StagingCapacity.budget(
+      available: UInt64(available), temporaryAvailable: UInt64(temporaryAvailable),
+      installedBytes: plan.installedBytes, allocatedBytes: allocated)
+  }
+
+  private func allocatedBytes(at root: URL) -> UInt64? {
+    let keys: Set<URLResourceKey> = [.isRegularFileKey, .totalFileAllocatedSizeKey]
+    guard let enumerator = FileManager.default.enumerator(
+      at: root, includingPropertiesForKeys: Array(keys)) else { return nil }
+    var total: UInt64 = 0
+    for case let url as URL in enumerator {
+      guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
+      if values.isRegularFile == true {
+        guard let size = values.totalFileAllocatedSize, size >= 0 else { return nil }
+        total += UInt64(size)
+      }
+    }
+    return total
+  }
+
+  private func read(_ batch: WorkBatch, progress: DownloadProgressTracker) async throws -> Data {
+    var lastError: Error?
+    for attempt in 0..<3 {
+      do {
+        let data = try await source.data(path: batch.sourceFile, range: batch.range) { bytes in
+          progress.received(batch: batch.id, bytes: bytes)
+        }
+        guard UInt64(data.count) == batch.range.count else {
+          throw RepackError.badResponse("incomplete checkpoint batch for \(batch.sourceFile)")
+        }
+        progress.received(batch: batch.id, bytes: UInt64(data.count))
+        return data
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        lastError = error
+        if attempt < 2 {
+          try await Task.sleep(for: .milliseconds(500 * (attempt + 1)))
+        }
+      }
+    }
+    throw lastError ?? RepackError.badResponse("checkpoint batch request failed")
+  }
+
+  private func makeDownloadBatches(_ works: [WorkChunk], maxBytes: UInt64) -> [WorkBatch] {
+    var batches: [WorkBatch] = []
+    for work in works {
+      if let lastIndex = batches.indices.last,
+        batches[lastIndex].sourceFile == work.span.sourceFile,
+        batches[lastIndex].range.upperBound == work.range.lowerBound,
+        work.range.upperBound - batches[lastIndex].range.lowerBound <= maxBytes
+      {
+        batches[lastIndex].range = batches[lastIndex].range.lowerBound..<work.range.upperBound
+        batches[lastIndex].works.append(work)
+      } else {
+        batches.append(WorkBatch(
+          id: batches.count, sourceFile: work.span.sourceFile,
+          range: work.range, works: [work]))
+      }
+    }
+    return batches
   }
 
   private func makeSpans(_ copies: [TensorCopy]) -> [SourceSpan] {
@@ -887,6 +1272,41 @@ struct Repacker {
 }
 
 public enum InstalledModel {
+  /// A terminated DSpark install may leave the intact main model under .partial.
+  /// The lock prevents recovery while another Whallm process is still installing it.
+  public static func restoreInterruptedDSparkInstallations(in root: URL) -> [URL] {
+    let fileManager = FileManager.default
+    var restored: [URL] = []
+    for descriptor in ModelPackages.descriptors where descriptor.supports("dspark") {
+      let output = root.appendingPathComponent(descriptor.directoryName)
+      let partial = output.appendingPathExtension("partial")
+      let lockURL = partial.appendingPathComponent(dsparkInstallLockFilename)
+      guard !fileManager.fileExists(atPath: output.path),
+        fileManager.fileExists(atPath: lockURL.path),
+        let lock = try? FileHandle(forUpdating: lockURL) else { continue }
+      defer { try? lock.close() }
+      guard flock(lock.fileDescriptor, LOCK_EX | LOCK_NB) == 0 else { continue }
+      defer { _ = flock(lock.fileDescriptor, LOCK_UN) }
+      guard let manifestData = try? Data(contentsOf: partial.appendingPathComponent("manifest.json")),
+        let manifest = try? JSONDecoder().decode(InstalledManifest.self, from: manifestData),
+        manifest.modelID == descriptor.checkpointModelID,
+        manifest.revision == descriptor.checkpointRevision,
+        manifest.files.allSatisfy({ file in
+          guard let url = try? safeFileURL(root: partial, path: file.path),
+            let size = try? fileSize(url) else { return false }
+          return size == file.size
+        }) else { continue }
+      do {
+        try fileManager.moveItem(at: partial, to: output)
+        try? fileManager.removeItem(at: output.appendingPathComponent(dsparkInstallLockFilename))
+        restored.append(output)
+      } catch {
+        continue
+      }
+    }
+    return restored
+  }
+
   public static func removeDSpark(at root: URL) throws -> InstalledManifest {
     let root = root.standardizedFileURL
     let current = try loadManifest(at: root)

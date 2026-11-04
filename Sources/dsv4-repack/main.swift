@@ -21,6 +21,17 @@ struct CLI {
     case "inspect":
       let plan = try await makePlan(model: modelSelection(in: arguments))
       printSummary(plan)
+    case "inspect-dspark":
+      let model = try modelSelection(in: arguments)
+      let bytes: UInt64
+      if model == .deepSeekV41 {
+        bytes = try await DeepSeekV41Checkpoint().dsparkInstalledBytes()
+      } else if model == .deepSeekV4 {
+        bytes = try await DeepSeekV4Checkpoint().dsparkInstalledBytes()
+      } else {
+        throw RepackError.incompatibleModel("the selected model has no DSpark module")
+      }
+      print("DSpark installed bytes: \(bytes)")
     case "plan":
       let output = try value(after: "--output", in: arguments)
       let plan = try await makePlan(model: modelSelection(in: arguments))
@@ -159,6 +170,7 @@ struct CLI {
       """
       Usage:
         dsv4-repack inspect [--model deepseek-v4.1|qwen3.8-flash-next]
+        dsv4-repack inspect-dspark [--model deepseek-v4|deepseek-v4.1]
         dsv4-repack plan [--model deepseek-v4.1|qwen3.8-flash-next] --output plan.json
         dsv4-repack repack [--model deepseek-v4.1|qwen3.8-flash-next] --output MODEL.dsv4 [--plan plan.json]
         dsv4-repack verify --model deepseek-v4-flash-0731.dsv4

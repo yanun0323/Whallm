@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import XCTest
 
 @testable import DeepSeekRepack
@@ -164,6 +165,10 @@ final class DeepSeekRepackTests: XCTestCase {
       tensors: fixture.tensors,
       includeDSpark: true
     )
+    let dsparkBytes = try RepackPlanner.dsparkInstalledBytes(
+      tensors: fixture.tensors.filter { $0.key.hasPrefix("mtp.") })
+    XCTAssertEqual(dsparkBytes, plan.files.filter { $0.path.hasPrefix("dspark/") }
+      .reduce(UInt64(0)) { $0 + $1.size })
 
     XCTAssertEqual(plan.files.count, 48)
     XCTAssertEqual(plan.dspark?.layerCount, 3)
@@ -281,6 +286,140 @@ final class DeepSeekRepackTests: XCTestCase {
     XCTAssertEqual(firstRangeReads, 1)
   }
 
+  func testBatchedDownloadResumesAtEightMiBReceiptBoundaries() async throws {
+    let chunk: UInt64 = 8 * 1_024 * 1_024
+    let size = 2 * chunk + 4
+    var files = companionFiles()
+    files["shard"] = Data(repeating: 7, count: Int(size))
+    let source = FailingCheckpointSource(
+      files: files, failAt: 2 * chunk, failures: 3,
+      batchSize: 2 * chunk, concurrency: 1)
+    let plan = RepackPlan(
+      formatVersion: 1,
+      modelID: ModelContract.modelID,
+      revision: ModelContract.revision,
+      layerCount: ModelContract.layerCount,
+      expertCount: ModelContract.expertCount,
+      selectedExpertCount: ModelContract.selectedExpertCount,
+      expertBlobSize: ModelContract.expertBlobSize,
+      checkpointTensorBytes: size,
+      files: [PlannedFile(path: "common.bin", size: size)],
+      commonTensors: [InstalledTensor(
+        name: "test", dtype: "I8", shape: [Int(size)], offset: 0, length: size)],
+      expertRegions: ModelContract.expertRegions,
+      copies: [TensorCopy(
+        tensor: "test", sourceFile: "shard", sourceOffset: 0, length: size,
+        destinationFile: "common.bin", destinationOffset: 0)]
+    )
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let output = parent.appendingPathComponent("model.dsv4")
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: parent) }
+
+    do {
+      _ = try await Repacker(source: source).run(plan: plan, output: output, progress: nil)
+      XCTFail("the second source batch must fail")
+    } catch {
+      XCTAssertTrue(FileManager.default.fileExists(atPath: output.path + ".partial"))
+    }
+    _ = try await Repacker(source: source).run(plan: plan, output: output, progress: nil)
+    let firstBatchReads = await source.readCount(at: 0)
+    XCTAssertEqual(firstBatchReads, 1)
+    XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")), files["shard"])
+  }
+
+  func testConcurrentBatchesReportProgressBeforeRepacking() async throws {
+    let size: UInt64 = 3 * 8 * 1_024 * 1_024
+    let source = StreamingCheckpointSource(file: Data(repeating: 0x5A, count: Int(size)))
+    let plan = RepackPlan(
+      formatVersion: 1,
+      modelID: ModelContract.modelID,
+      revision: ModelContract.revision,
+      layerCount: ModelContract.layerCount,
+      expertCount: ModelContract.expertCount,
+      selectedExpertCount: ModelContract.selectedExpertCount,
+      expertBlobSize: ModelContract.expertBlobSize,
+      checkpointTensorBytes: size,
+      files: [PlannedFile(path: "common.bin", size: size)],
+      commonTensors: [InstalledTensor(
+        name: "test", dtype: "I8", shape: [Int(size)], offset: 0, length: size)],
+      expertRegions: ModelContract.expertRegions,
+      copies: [TensorCopy(
+        tensor: "test", sourceFile: "shard", sourceOffset: 0, length: size,
+        destinationFile: "common.bin", destinationOffset: 0)]
+    )
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let output = parent.appendingPathComponent("model.dsv4")
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    let updates = RepackProgressProbe()
+
+    _ = try await Repacker(source: source).run(
+      plan: plan, output: output, progress: { updates.add($0) }, companions: [])
+    let peak = await source.peakConcurrent
+    XCTAssertGreaterThanOrEqual(peak, 2)
+    XCTAssertTrue(updates.values.contains { $0.downloadedBytes > 0 && $0.copiedBytes == 0 })
+    XCTAssertEqual(updates.values.last?.copiedBytes, size)
+    XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")).count, Int(size))
+  }
+
+  func testStagedShardsReportTransferAndReleaseFiles() async throws {
+    let size: UInt64 = 16 * 1_024 * 1_024
+    let source = StagedFixtureSource(files: [
+      "first.safetensors": Data(repeating: 1, count: Int(size / 2)),
+      "second.safetensors": Data(repeating: 2, count: Int(size / 2)),
+    ])
+    let plan = RepackPlan(
+      formatVersion: 1,
+      modelID: ModelContract.modelID,
+      revision: ModelContract.revision,
+      layerCount: ModelContract.layerCount,
+      expertCount: ModelContract.expertCount,
+      selectedExpertCount: ModelContract.selectedExpertCount,
+      expertBlobSize: ModelContract.expertBlobSize,
+      checkpointTensorBytes: size,
+      files: [PlannedFile(path: "common.bin", size: size)],
+      commonTensors: [InstalledTensor(
+        name: "test", dtype: "I8", shape: [Int(size)], offset: 0, length: size)],
+      expertRegions: ModelContract.expertRegions,
+      copies: [
+        TensorCopy(tensor: "first", sourceFile: "first.safetensors", sourceOffset: 0,
+          length: size / 2, destinationFile: "common.bin", destinationOffset: 0),
+        TensorCopy(tensor: "second", sourceFile: "second.safetensors", sourceOffset: 0,
+          length: size / 2, destinationFile: "common.bin", destinationOffset: size / 2),
+      ]
+    )
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let output = parent.appendingPathComponent("model.dsv4")
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    let updates = RepackProgressProbe()
+
+    _ = try await Repacker(source: source).run(
+      plan: plan, output: output, progress: { updates.add($0) }, companions: [])
+    let staged = await source.stagedCount
+    let released = await source.releasedCount
+    XCTAssertEqual(staged, 2)
+    XCTAssertEqual(released, 2)
+    XCTAssertTrue(updates.values.contains { $0.downloadedBytes > 0 && $0.copiedBytes == 0 })
+    let data = try Data(contentsOf: output.appendingPathComponent("common.bin"))
+    XCTAssertEqual(data.prefix(Int(size / 2)), Data(repeating: 1, count: Int(size / 2)))
+    XCTAssertEqual(data.suffix(Int(size / 2)), Data(repeating: 2, count: Int(size / 2)))
+  }
+
+  func testStagingBudgetAllowsOneLargeShardWithoutRequiringSpaceForTwo() throws {
+    let budget = try XCTUnwrap(StagingCapacity.budget(
+      available: 622_752_977_316, temporaryAvailable: 622_752_977_316,
+      installedBytes: 501_382_643_728, allocatedBytes: 19_698_999_296))
+    let largeShard: UInt64 = 101_537_926_640 + 64 * 1_024 * 1_024
+    let regularShard: UInt64 = 7_410_000_000 + 64 * 1_024 * 1_024
+    XCTAssertGreaterThan(budget, largeShard)
+    XCTAssertTrue(StagingCapacity.canPrefetch(
+      current: regularShard, next: regularShard, budget: budget))
+    XCTAssertFalse(StagingCapacity.canPrefetch(
+      current: largeShard, next: largeShard, budget: budget))
+  }
+
   func testAuditFindsChecksumFailureAndRepairDownloadsInvalidFile() async throws {
     var files = companionFiles()
     files["shard"] = Data([1, 2, 3, 4])
@@ -331,6 +470,95 @@ final class DeepSeekRepackTests: XCTestCase {
     )
     XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")), Data(1...4))
     XCTAssertTrue(try InstalledModel.audit(manifest: repaired, at: output).isValid)
+  }
+
+  func testDSparkRepairReportsExistingChecksTransferAndFinalizationSeparately() async throws {
+    var files = companionFiles()
+    files["base"] = Data([1, 2, 3, 4])
+    files["draft"] = Data([5, 6, 7, 8])
+    let source = MemoryCheckpointSource(files: files)
+    let baseCopy = TensorCopy(tensor: "base", sourceFile: "base", sourceOffset: 0,
+      length: 4, destinationFile: "common.bin", destinationOffset: 0)
+    let draftCopy = TensorCopy(tensor: "draft", sourceFile: "draft", sourceOffset: 0,
+      length: 4, destinationFile: "dspark/common.bin", destinationOffset: 0)
+    func plan(includeDraft: Bool) -> RepackPlan {
+      RepackPlan(formatVersion: 1, modelID: ModelContract.modelID,
+        revision: ModelContract.revision, layerCount: ModelContract.layerCount,
+        expertCount: ModelContract.expertCount,
+        selectedExpertCount: ModelContract.selectedExpertCount,
+        expertBlobSize: ModelContract.expertBlobSize,
+        checkpointTensorBytes: includeDraft ? 8 : 4,
+        files: [PlannedFile(path: "common.bin", size: 4)]
+          + (includeDraft ? [PlannedFile(path: "dspark/common.bin", size: 4)] : []),
+        commonTensors: [], expertRegions: ModelContract.expertRegions,
+        copies: [baseCopy] + (includeDraft ? [draftCopy] : []))
+    }
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let output = parent.appendingPathComponent(ModelKind.deepSeekV4.descriptor.directoryName)
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    _ = try await Repacker(source: source).run(plan: plan(includeDraft: false),
+      output: output, progress: nil)
+
+    var unavailableFiles = files
+    unavailableFiles.removeValue(forKey: "draft")
+    do {
+      _ = try await Repacker(source: MemoryCheckpointSource(files: unavailableFiles)).repair(
+        plan: plan(includeDraft: true), output: output,
+        invalidFiles: ["dspark/common.bin"], progress: nil, installingDSpark: true)
+      XCTFail("DSpark repair should fail when the draft shard is unavailable")
+    } catch is RepackError {
+      XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
+      XCTAssertFalse(FileManager.default.fileExists(atPath: output.appendingPathExtension("partial").path))
+      XCTAssertTrue(FileManager.default.fileExists(
+        atPath: output.appendingPathComponent("repack-receipt.json").path))
+      XCTAssertFalse(FileManager.default.fileExists(
+        atPath: output.appendingPathComponent(".dspark-install.lock").path))
+      XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("common.bin")),
+        Data([1, 2, 3, 4]))
+    }
+
+    let updates = RepackProgressProbe()
+    _ = try await Repacker(source: source).repair(plan: plan(includeDraft: true),
+      output: output, invalidFiles: ["dspark/common.bin"],
+      progress: { updates.add($0) }, installingDSpark: true)
+    let transitions = updates.values.map(\.stage).reduce(into: [RepackStage]()) { stages, stage in
+      if stages.last != stage { stages.append(stage) }
+    }
+    XCTAssertEqual(transitions, [.preservingExisting, .validatingExisting, .copying, .finalizing])
+    XCTAssertEqual(updates.values.first { $0.stage == .copying }?.totalBytes, 4)
+    XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("dspark/common.bin")),
+      Data([5, 6, 7, 8]))
+    XCTAssertFalse(FileManager.default.fileExists(
+      atPath: output.appendingPathComponent("repack-receipt.json").path))
+    let marker = output.appendingPathComponent(".dspark-install.lock")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    try Data().write(to: marker)
+    let partial = output.appendingPathExtension("partial")
+    try FileManager.default.moveItem(at: output, to: partial)
+    let descriptor = ModelKind.deepSeekV4.descriptor
+    XCTAssertTrue(descriptor.supports("dspark"))
+    let interruptedManifest = try JSONDecoder().decode(InstalledManifest.self,
+      from: Data(contentsOf: partial.appendingPathComponent("manifest.json")))
+    XCTAssertEqual(interruptedManifest.modelID, descriptor.checkpointModelID)
+    XCTAssertEqual(interruptedManifest.revision, descriptor.checkpointRevision)
+    for file in interruptedManifest.files {
+      XCTAssertEqual(try FileManager.default.attributesOfItem(
+        atPath: partial.appendingPathComponent(file.path).path)[.size] as? UInt64, file.size)
+    }
+    let activeLock = try FileHandle(forUpdating: partial.appendingPathComponent(".dspark-install.lock"))
+    XCTAssertEqual(flock(activeLock.fileDescriptor, LOCK_EX | LOCK_NB), 0)
+    XCTAssertTrue(InstalledModel.restoreInterruptedDSparkInstallations(in: parent).isEmpty)
+    _ = flock(activeLock.fileDescriptor, LOCK_UN)
+    try activeLock.close()
+    let availableLock = try FileHandle(forUpdating: partial.appendingPathComponent(".dspark-install.lock"))
+    XCTAssertEqual(flock(availableLock.fileDescriptor, LOCK_EX | LOCK_NB), 0)
+    _ = flock(availableLock.fileDescriptor, LOCK_UN)
+    try availableLock.close()
+    XCTAssertEqual(InstalledModel.restoreInterruptedDSparkInstallations(in: parent), [output])
+    XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: partial.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
   }
 
   func testMXFP4MatchesMLXFixedVector() throws {
@@ -817,15 +1045,95 @@ private struct MemoryCheckpointSource: CheckpointSource {
   }
 }
 
+private actor StreamingCheckpointSource: CheckpointSource {
+  let file: Data
+  let downloadBatchSize: UInt64 = 8 * 1_024 * 1_024
+  let downloadConcurrency = 3
+  var active = 0
+  var peakConcurrent = 0
+
+  init(file: Data) { self.file = file }
+
+  func data(path: String) async throws -> Data { file }
+
+  func data(path: String, range: Range<UInt64>) async throws -> Data {
+    try await data(path: path, range: range, onProgress: { _ in })
+  }
+
+  func data(path: String, range: Range<UInt64>,
+    onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> Data
+  {
+    active += 1
+    peakConcurrent = max(peakConcurrent, active)
+    onProgress(UInt64(range.count / 2))
+    try await Task.sleep(for: .milliseconds(100))
+    onProgress(UInt64(range.count))
+    active -= 1
+    return Data(file[Int(range.lowerBound)..<Int(range.upperBound)])
+  }
+}
+
+private actor StagedFixtureSource: StagedCheckpointSource {
+  let files: [String: Data]
+  var active = Set<String>()
+  var stagedCount = 0
+  var releasedCount = 0
+
+  init(files: [String: Data]) { self.files = files }
+
+  func stage(path: String, onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> UInt64 {
+    guard let file = files[path] else { throw RepackError.badResponse("missing fixture shard") }
+    onProgress(UInt64(file.count / 2))
+    onProgress(UInt64(file.count))
+    active.insert(path)
+    stagedCount += 1
+    return UInt64(file.count)
+  }
+
+  func release(path: String) async {
+    if active.remove(path) != nil { releasedCount += 1 }
+  }
+
+  func releaseAll() async {
+    releasedCount += active.count
+    active.removeAll()
+  }
+
+  func data(path: String) async throws -> Data {
+    guard let file = files[path] else { throw RepackError.badResponse("missing fixture shard") }
+    return file
+  }
+
+  func data(path: String, range: Range<UInt64>) async throws -> Data {
+    guard active.contains(path), let file = files[path] else {
+      throw RepackError.badResponse("shard was not staged")
+    }
+    return Data(file[Int(range.lowerBound)..<Int(range.upperBound)])
+  }
+}
+
+private final class RepackProgressProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var recorded: [RepackProgress] = []
+
+  func add(_ value: RepackProgress) { lock.withLock { recorded.append(value) } }
+  var values: [RepackProgress] { lock.withLock { recorded } }
+}
+
 private actor FailingCheckpointSource: CheckpointSource {
   let files: [String: Data]
   let failAt: UInt64
+  let downloadBatchSize: UInt64
+  let downloadConcurrency: Int
   var failures: Int
   var reads: [UInt64: Int] = [:]
 
-  init(files: [String: Data], failAt: UInt64, failures: Int) {
+  init(files: [String: Data], failAt: UInt64, failures: Int,
+    batchSize: UInt64 = 8 * 1_024 * 1_024, concurrency: Int = 8) {
     self.files = files
     self.failAt = failAt
+    self.downloadBatchSize = batchSize
+    self.downloadConcurrency = concurrency
     self.failures = failures
   }
 

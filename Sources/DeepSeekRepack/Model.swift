@@ -505,10 +505,26 @@ public struct InstalledManifest: Codable, Equatable, Sendable {
   }
 }
 
+public enum RepackStage: Int, Sendable {
+  case preservingExisting
+  case validatingExisting
+  case copying
+  case finalizing
+}
+
 public struct RepackProgress: Sendable {
   public let copiedBytes: UInt64
   public let downloadedBytes: UInt64
   public let totalBytes: UInt64
+  public let stage: RepackStage
+
+  public init(copiedBytes: UInt64, downloadedBytes: UInt64, totalBytes: UInt64,
+    stage: RepackStage = .copying) {
+    self.copiedBytes = copiedBytes
+    self.downloadedBytes = downloadedBytes
+    self.totalBytes = totalBytes
+    self.stage = stage
+  }
 }
 
 public enum InstalledFileIssueKind: String, Equatable, Sendable {

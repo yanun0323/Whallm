@@ -1,8 +1,32 @@
 import Foundation
 
 protocol CheckpointSource: Sendable {
+  var downloadBatchSize: UInt64 { get }
+  var downloadConcurrency: Int { get }
   func data(path: String) async throws -> Data
   func data(path: String, range: Range<UInt64>) async throws -> Data
+  func data(path: String, range: Range<UInt64>,
+    onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> Data
+}
+
+/// Sources that stage one complete shard so later range reads are local.
+protocol StagedCheckpointSource: CheckpointSource {
+  func stage(path: String, onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> UInt64
+  func release(path: String) async
+  func releaseAll() async
+}
+
+extension CheckpointSource {
+  var downloadBatchSize: UInt64 { 8 * 1_024 * 1_024 }
+  var downloadConcurrency: Int { 8 }
+
+  func data(path: String, range: Range<UInt64>,
+    onProgress: @escaping @Sendable (UInt64) -> Void) async throws -> Data
+  {
+    let result = try await data(path: path, range: range)
+    onProgress(UInt64(result.count))
+    return result
+  }
 }
 
 struct HuggingFaceSource: CheckpointSource {
@@ -114,7 +138,8 @@ public struct DeepSeekV4Checkpoint: Sendable {
     self.source = source
   }
 
-  public func makeRepackPlan(includeDSpark: Bool = true) async throws -> RepackPlan {
+  public func makeRepackPlan(includeDSpark: Bool = true,
+    metadataProgress: (@Sendable (Int, Int) -> Void)? = nil) async throws -> RepackPlan {
     let configData = try await source.data(path: "config.json")
     let config: ModelConfig
     do {
@@ -125,24 +150,35 @@ public struct DeepSeekV4Checkpoint: Sendable {
     try ModelContract.validate(config)
 
     if includeDSpark {
-      let dsparkData = try await source.data(path: "inference/config.json")
-      let dsparkConfig: DSparkConfig
-      do {
-        dsparkConfig = try JSONDecoder().decode(DSparkConfig.self, from: dsparkData)
-      } catch {
-        throw RepackError.incompatibleModel("cannot decode DSpark config: \(error)")
-      }
-      try ModelContract.validate(dsparkConfig)
+      try await validateDSparkConfig()
     }
 
     let indexData = try await source.data(path: "model.safetensors.index.json")
     let index = try CheckpointIndex.decode(indexData)
-    let tensors = try await readTensors(index: index)
+    let tensors = try await readTensors(index: index, progress: metadataProgress)
     return try RepackPlanner.makePlan(
       index: index,
       tensors: tensors,
       includeDSpark: includeDSpark
     )
+  }
+
+  /// Reads only checkpoint metadata and the MTP shard headers.
+  public func dsparkInstalledBytes() async throws -> UInt64 {
+    try await validateDSparkConfig()
+    let index = try CheckpointIndex.decode(try await source.data(path: "model.safetensors.index.json"))
+    let mtp = index.weightMap.filter { $0.key.hasPrefix("mtp.") }
+    guard !mtp.isEmpty else { throw RepackError.incompatibleModel("checkpoint has no DSpark tensors") }
+    let tensors = try await readTensors(index: CheckpointIndex(totalSize: 0, weightMap: mtp))
+    return try RepackPlanner.dsparkInstalledBytes(tensors: tensors)
+  }
+
+  private func validateDSparkConfig() async throws {
+    let data = try await source.data(path: "inference/config.json")
+    let config: DSparkConfig
+    do { config = try JSONDecoder().decode(DSparkConfig.self, from: data) }
+    catch { throw RepackError.incompatibleModel("cannot decode DSpark config: \(error)") }
+    try ModelContract.validate(config)
   }
 
   public func repack(
@@ -200,14 +236,15 @@ public struct DeepSeekV4Checkpoint: Sendable {
 
   public func installDSpark(
     at output: URL,
-    progress: (@Sendable (RepackProgress) -> Void)? = nil
+    progress: (@Sendable (RepackProgress) -> Void)? = nil,
+    metadataProgress: (@Sendable (Int, Int) -> Void)? = nil
   ) async throws -> InstalledManifest {
     let manifest = try InstalledModel.loadManifest(at: output)
     try Self.validateDSparkInstallTarget(manifest)
     if manifest.dspark != nil {
       return try InstalledModel.verify(at: output)
     }
-    let plan = try await makeRepackPlan(includeDSpark: true)
+    let plan = try await makeRepackPlan(includeDSpark: true, metadataProgress: metadataProgress)
     let dsparkFiles = Set(
       plan.files.lazy.map(\.path).filter { $0.hasPrefix("dspark/") }
         + ["inference/config.json"]
@@ -216,7 +253,8 @@ public struct DeepSeekV4Checkpoint: Sendable {
       plan: plan,
       output: output,
       invalidFiles: dsparkFiles,
-      progress: progress
+      progress: progress,
+      installingDSpark: true
     )
   }
 
@@ -226,10 +264,13 @@ public struct DeepSeekV4Checkpoint: Sendable {
     }
   }
 
-  private func readTensors(index: CheckpointIndex) async throws -> [String: SafeTensor] {
+  private func readTensors(index: CheckpointIndex,
+    progress: (@Sendable (Int, Int) -> Void)? = nil) async throws -> [String: SafeTensor] {
     var headers: [String: (base: UInt64, header: SafeTensorsHeader)] = [:]
     // ponytail: Header reads are serial. Add bounded parallel reads only if inspect latency matters.
-    for shard in Set(index.weightMap.values).sorted() {
+    let shards = Set(index.weightMap.values).sorted()
+    progress?(0, shards.count)
+    for (position, shard) in shards.enumerated() {
       let prefix = try await source.data(path: shard, range: 0..<8)
       let headerLength = try littleEndianUInt64(prefix)
       guard headerLength > 1, headerLength <= 64 * 1_024 * 1_024 else {
@@ -237,6 +278,7 @@ public struct DeepSeekV4Checkpoint: Sendable {
       }
       let data = try await source.data(path: shard, range: 8..<(8 + headerLength))
       headers[shard] = (8 + headerLength, try SafeTensorsHeader.decode(data))
+      progress?(position + 1, shards.count)
     }
 
     var tensors: [String: SafeTensor] = [:]
